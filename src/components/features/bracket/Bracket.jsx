@@ -31,13 +31,13 @@ function MatchCard({ match, prediction, onPredict }) {
 
 export default function Bracket() {
   const { user } = useAuth()
-  const { competitions } = useCompetitions()
+  const { competitions, loading: compsLoading } = useCompetitions()
   const [comp, setComp] = useState(null)
   const [rounds, setRounds] = useState([])
   const [preds, setPreds] = useState({})
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   useEffect(()=>{ if(competitions.length&&!comp){ const ko=competitions.find(c=>c.format==='knockout'||c.format==='group_knockout'); setComp(ko?.id||competitions[0]?.id) }}, [competitions])
-  useEffect(()=>{ if(comp&&user) load() }, [comp,user])
+  useEffect(()=>{ if(comp&&user) load(); else setLoading(false) }, [comp,user])
 
   async function load() {
     setLoading(true)
@@ -56,6 +56,20 @@ export default function Bracket() {
     else await supabase.from('bracket_predictions').insert({ match_id:matchId, competition_id:comp, user_id:user.id, predicted_winner:winner })
     setPreds(p=>({...p,[matchId]:winner}))
     toast.success('Bracket prediction saved!')
+  }
+
+  // Still checking whether the account belongs to any competition at all
+  if (compsLoading) {
+    return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
+  }
+
+  // Confirmed: no competitions exist for this account yet — normal first-run state
+  if (competitions.length === 0) {
+    return (
+      <Card className="p-6 text-center">
+        <EmptyState icon="ti-tournament" title="No competitions yet" description="Once you're part of a competition with a knockout stage, its bracket will appear here."/>
+      </Card>
+    )
   }
 
   return (

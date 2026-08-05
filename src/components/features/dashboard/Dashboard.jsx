@@ -11,17 +11,17 @@ import CompetitionSelector from '../../layout/CompetitionSelector'
 import { format } from 'date-fns'
 
 export default function Dashboard() {
-  const { user } = useAuth()
-  const { competitions } = useCompetitions()
+  const { user, isAdmin } = useAuth()
+  const { competitions, loading: compsLoading } = useCompetitions()
   const [comp,    setComp]    = useState(null)
   const [results, setResults] = useState([])
   const [gw,      setGW]      = useState(null)
   const [stats,   setStats]   = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const { overall } = useLeaderboard(comp)
 
   useEffect(() => { if (competitions.length && !comp) setComp(competitions[0]?.id) }, [competitions])
-  useEffect(() => { if (comp && user) load() }, [comp, user])
+  useEffect(() => { if (comp && user) load(); else setLoading(false) }, [comp, user])
 
   async function load() {
     setLoading(true)
@@ -49,6 +49,29 @@ export default function Dashboard() {
   }
   const medals = ['🥇','🥈','🥉']
   const ptColors = ['var(--gold)','#b4b2a9','#f0997b']
+
+  // Still checking whether the account belongs to any competition at all
+  if (compsLoading) {
+    return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
+  }
+
+  // Confirmed: this account isn't part of any competition yet (e.g. brand new install,
+  // or a player account that hasn't been added to one). This is the normal first-run
+  // state, not an error, so show guidance instead of an empty dashboard shell.
+  if (competitions.length === 0) {
+    return (
+      <Card className="p-6 text-center">
+        <EmptyState
+          icon="ti-trophy"
+          title="No competitions yet"
+          description={isAdmin
+            ? "Create your first competition in Admin to get started."
+            : "You haven't been added to a competition yet. Ask your admin to add you."}
+          action={isAdmin ? <Link to="/admin" className="btn btn-primary btn-sm">Go to Admin</Link> : null}
+        />
+      </Card>
+    )
+  }
 
   return (
     <div>
