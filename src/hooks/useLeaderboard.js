@@ -3,9 +3,12 @@ import { supabase } from '../lib/supabase'
 
 export function useLeaderboard(competitionId) {
   const [overall, setOverall] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => { if (competitionId) load(competitionId) }, [competitionId])
+  useEffect(() => {
+    if (competitionId) load(competitionId)
+    else { setOverall([]); setLoading(false) }
+  }, [competitionId])
 
   async function load(id) {
     setLoading(true)
@@ -20,9 +23,12 @@ export function useLeaderboard(competitionId) {
 
 export function useWeeklyLeaderboard(gameweekId) {
   const [weekly,  setWeekly]  = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => { if (gameweekId) load(gameweekId) }, [gameweekId])
+  useEffect(() => {
+    if (gameweekId) load(gameweekId)
+    else { setWeekly([]); setLoading(false) }
+  }, [gameweekId])
 
   async function load(gwId) {
     setLoading(true)
@@ -38,9 +44,12 @@ export function useWeeklyLeaderboard(gameweekId) {
 export function useMonthlyLeaderboard(competitionId, monthKey) {
   const [monthly,          setMonthly]          = useState([])
   const [gameweeksInMonth, setGameweeksInMonth] = useState([])
-  const [loading,          setLoading]          = useState(true)
+  const [loading,          setLoading]          = useState(false)
 
-  useEffect(() => { if (competitionId && monthKey) load(competitionId, monthKey) }, [competitionId, monthKey])
+  useEffect(() => {
+    if (competitionId && monthKey) load(competitionId, monthKey)
+    else { setMonthly([]); setGameweeksInMonth([]); setLoading(false) }
+  }, [competitionId, monthKey])
 
   async function load(compId, mKey) {
     setLoading(true)

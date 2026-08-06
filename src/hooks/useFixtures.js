@@ -3,9 +3,12 @@ import { supabase } from '../lib/supabase'
 
 export function useFixtures(gameweekId) {
   const [fixtures, setFixtures] = useState([])
-  const [loading,  setLoading]  = useState(true)
+  const [loading,  setLoading]  = useState(false)
 
-  useEffect(() => { if (gameweekId) load(gameweekId) }, [gameweekId])
+  useEffect(() => {
+    if (gameweekId) load(gameweekId)
+    else { setFixtures([]); setLoading(false) }
+  }, [gameweekId])
 
   async function load(gwId) {
     setLoading(true)
@@ -27,9 +30,12 @@ export function useFixtures(gameweekId) {
 
 export function usePredictions(gameweekId, userId) {
   const [predictions, setPredictions] = useState({})
-  const [loading,     setLoading]     = useState(true)
+  const [loading,     setLoading]     = useState(false)
 
-  useEffect(() => { if (gameweekId && userId) load(gameweekId, userId) }, [gameweekId, userId])
+  useEffect(() => {
+    if (gameweekId && userId) load(gameweekId, userId)
+    else { setPredictions({}); setLoading(false) }
+  }, [gameweekId, userId])
 
   async function load(gwId, uid) {
     setLoading(true)
