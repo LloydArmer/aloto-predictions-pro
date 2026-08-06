@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
-import { AlotoMark } from '../ui/AlotoLogo'
 import toast from 'react-hot-toast'
 
 const NAV = [
@@ -35,17 +34,9 @@ export default function AppLayout({ children }) {
         style={{ background: 'var(--bg-surface)', borderBottom: '0.5px solid var(--border)' }}>
         <div className="max-w-5xl mx-auto px-4 flex items-center" style={{ height: 52 }}>
 
-          {/* Brand mark + wordmark */}
+          {/* Brand mark */}
           <div className="flex items-center gap-2.5 mr-5 flex-shrink-0">
-            <AlotoMark size={26} />
-            <div className="flex flex-col leading-none">
-              <span className="font-black text-sm tracking-widest" style={{ color: '#f0f2f8', letterSpacing: '1.5px' }}>
-                ALOTO
-              </span>
-              <span style={{ color: 'var(--accent)', fontSize: 9, letterSpacing: '1.8px', fontWeight: 600 }}>
-                PREDICTION PRO
-              </span>
-            </div>
+            <img src="/icon.png" alt="ALOTO Prediction Pro" width={26} height={26} style={{ borderRadius: 6 }} />
           </div>
 
           {/* Desktop links */}
@@ -136,10 +127,7 @@ export default function AppLayout({ children }) {
         <div className="flex items-center justify-between pt-4"
           style={{ borderTop: '0.5px solid var(--border)' }}>
           <div className="flex items-center gap-2">
-            <AlotoMark size={16} />
-            <span className="text-xs font-black tracking-widest" style={{ color: 'var(--txt-muted)', letterSpacing: '1.5px' }}>
-              ALOTO
-            </span>
+            <img src="/icon.png" alt="ALOTO Prediction Pro" width={16} height={16} style={{ borderRadius: 4 }} />
           </div>
           <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>
             ALOTO Prediction Pro · Built by ALOTO
