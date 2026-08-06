@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useLeaderboard } from '../../../hooks/useLeaderboard'
-import { Card, Spinner, EmptyState, FormPip } from '../../ui'
+import { Card, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 
 function Pos({ n }) {
@@ -31,13 +31,11 @@ export default function Table() {
                   <th style={{ width:40, textAlign:'right' }}>P</th>
                   <th style={{ width:52, textAlign:'right' }}>Exact</th>
                   <th style={{ width:56, textAlign:'right' }}>Result</th>
-                  <th style={{ width:96 }}>Form</th>
                   <th style={{ width:56, textAlign:'right', paddingRight:14 }}>Pts</th>
                 </tr></thead>
                 <tbody>
                   {overall.map((p,i) => {
                     const isMe = p.user_id === user?.id
-                    const form = (p.form||'').split('').slice(-5)
                     return (
                       <tr key={p.user_id} className={isMe?'highlight':''}>
                         <td style={{ paddingLeft:14 }}><Pos n={i+1}/></td>
@@ -50,7 +48,6 @@ export default function Table() {
                         <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.games_played||0}</td>
                         <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.exact_scores||0}</td>
                         <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.correct_results||0}</td>
-                        <td><div className="flex items-center gap-px">{form.length>0?form.map((f,j)=><FormPip key={j} outcome={f}/>):<span style={{ color:'var(--txt-muted)', fontSize:11 }}>—</span>}</div></td>
                         <td style={{ textAlign:'right', paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points||0}</span></td>
                       </tr>
                     )
