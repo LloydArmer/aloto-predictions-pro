@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../../hooks/useAuth'
 import { Button, Input } from '../../ui'
-import { AlotoWordmark } from '../../ui/AlotoLogo'
 import toast from 'react-hot-toast'
 
 function AuthShell({ title, subtitle, children }) {
@@ -10,7 +9,7 @@ function AuthShell({ title, subtitle, children }) {
     <div className="min-h-screen flex flex-col items-center justify-center px-4"
       style={{ background: 'var(--bg-base)' }}>
       <div className="mb-8 flex flex-col items-center gap-4">
-        <AlotoWordmark width={300} />
+        <img src="/logo.png" alt="ALOTO Prediction Pro" width={300} style={{ height: 'auto' }} />
         <p className="text-sm" style={{ color: 'var(--txt-second)' }}>{subtitle}</p>
       </div>
       <div className="w-full max-w-sm rounded-xl p-6"
