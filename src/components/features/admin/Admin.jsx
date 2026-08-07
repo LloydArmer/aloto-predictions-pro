@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { supabase } from '../../../lib/supabase'
-import { recalculateGameweek } from '../../../lib/scoring'
+import { recalculateGameweek, resolveBracketRound } from '../../../lib/scoring'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
@@ -11,6 +11,7 @@ const TABS = [
   { key: 'competitions', label: 'Competitions', icon: 'ti-trophy' },
   { key: 'rules',        label: 'Points rules', icon: 'ti-star' },
   { key: 'gameweeks',    label: 'Gameweeks & fixtures', icon: 'ti-calendar' },
+  { key: 'bracket',      label: 'Bracket', icon: 'ti-tournament' },
   { key: 'participants', label: 'Participants', icon: 'ti-users' },
 ]
 
@@ -50,6 +51,7 @@ export default function Admin() {
       )}
       {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
+      {tab === 'bracket' && <BracketTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} />}
     </div>
   )
@@ -155,6 +157,8 @@ function RulesTab({ competitionId, competitions }) {
         clean_sheet_bonus: Number(rules.clean_sheet_bonus),
         correct_finalist_points: Number(rules.correct_finalist_points),
         correct_winner_points: Number(rules.correct_winner_points),
+        full_house_results_bonus: Number(rules.full_house_results_bonus),
+        full_house_scores_bonus: Number(rules.full_house_scores_bonus),
       }).eq('competition_id', competitionId)
       if (error) throw error
       toast.success('Rules saved!')
@@ -169,8 +173,10 @@ function RulesTab({ competitionId, competitions }) {
     { key: 'exact_score_points',      label: 'Exact score' },
     { key: 'correct_result_points',   label: 'Correct result (W/D/L)' },
     { key: 'clean_sheet_bonus',       label: 'Clean sheet bonus' },
-    { key: 'correct_finalist_points', label: 'Correct knockout finalist' },
-    { key: 'correct_winner_points',   label: 'Correct knockout winner' },
+    { key: 'full_house_results_bonus', label: 'Full house — all results correct in a GW' },
+    { key: 'full_house_scores_bonus',  label: 'Full house — all scores exact in a GW' },
+    { key: 'correct_finalist_points', label: 'Correct knockout finalist (legacy, unused)' },
+    { key: 'correct_winner_points',   label: 'Correct knockout winner (legacy, unused)' },
   ]
 
   return (
@@ -339,6 +345,189 @@ function FixturesPanel({ gameweekId }) {
           <Button variant="primary" size="sm" className="mt-3" onClick={recalc} disabled={recalculating}>
             {recalculating ? 'Recalculating…' : 'Recalculate GW'}
           </Button>
+        </>
+      }
+    </div>
+  )
+}
+
+// ───────────────────────── Bracket ─────────────────────────
+const ROUND_OPTIONS = [
+  { value: 'r64', label: 'Round of 64' },
+  { value: 'r32', label: 'Round of 32' },
+  { value: 'r16', label: 'Round of 16' },
+  { value: 'qf',  label: 'Quarter-final' },
+  { value: 'sf',  label: 'Semi-final' },
+  { value: 'f',   label: 'Final' },
+]
+
+function BracketTab({ competitionId, competitions }) {
+  const comp = competitions.find(c => c.id === competitionId)
+  const [matches, setMatches] = useState([])
+  const [gameweeks, setGameweeks] = useState([])
+  const [participants, setParticipants] = useState([])
+  const [roundGwMap, setRoundGwMap] = useState({}) // { round: [gameweek_id, ...] }
+  const [loading, setLoading] = useState(false)
+  const [round, setRound] = useState('r16')
+  const [selectedGws, setSelectedGws] = useState([])
+  const [selectedParticipants, setSelectedParticipants] = useState([])
+  const [resolving, setResolving] = useState(false)
+
+  useEffect(() => { if (competitionId) load(); else { setMatches([]); setGameweeks([]); setParticipants([]) } }, [competitionId])
+  useEffect(() => { setSelectedGws(roundGwMap[round] || []) }, [round, roundGwMap])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const [{ data: m }, { data: gws }, { data: parts }, { data: rgws }] = await Promise.all([
+        supabase.from('bracket_matches').select('*, home:home_user_id(display_name), away:away_user_id(display_name), winner:winner_user_id(display_name)').eq('competition_id', competitionId).order('round_order'),
+        supabase.from('gameweeks').select('*').eq('competition_id', competitionId).order('number'),
+        supabase.from('participants').select('user_id, profiles(display_name, email)').eq('competition_id', competitionId),
+        supabase.from('bracket_round_gameweeks').select('*').eq('competition_id', competitionId),
+      ])
+      setMatches(m || [])
+      setGameweeks(gws || [])
+      setParticipants(parts || [])
+      const map = {}
+      ;(rgws || []).forEach(r => { if (!map[r.round]) map[r.round] = []; map[r.round].push(r.gameweek_id) })
+      setRoundGwMap(map)
+    } finally { setLoading(false) }
+  }
+
+  async function saveRoundGameweeks() {
+    await supabase.from('bracket_round_gameweeks').delete().eq('competition_id', competitionId).eq('round', round)
+    if (selectedGws.length) {
+      await supabase.from('bracket_round_gameweeks').insert(selectedGws.map(gw_id => ({ competition_id: competitionId, round, gameweek_id: gw_id })))
+    }
+    setRoundGwMap(prev => ({ ...prev, [round]: selectedGws }))
+    toast.success(`GW mapping saved for ${ROUND_OPTIONS.find(r => r.value === round)?.label}`)
+  }
+
+  async function randomDraw() {
+    if (selectedParticipants.length < 2) { toast.error('Select at least 2 participants'); return }
+    const shuffled = [...selectedParticipants].sort(() => Math.random() - 0.5)
+    const roundOrder = ROUND_OPTIONS.findIndex(r => r.value === round)
+    const inserts = []
+    for (let i = 0; i < shuffled.length; i += 2) {
+      if (shuffled[i + 1]) inserts.push({ competition_id: competitionId, round, round_order: roundOrder, home_user_id: shuffled[i], away_user_id: shuffled[i + 1] })
+      else inserts.push({ competition_id: competitionId, round, round_order: roundOrder, home_user_id: shuffled[i] }) // bye
+    }
+    const { error } = await supabase.from('bracket_matches').insert(inserts)
+    if (error) { toast.error('Could not create matches'); return }
+    toast.success(`${inserts.length} match${inserts.length !== 1 ? 'es' : ''} drawn`)
+    setSelectedParticipants([])
+    load()
+  }
+
+  async function setWinnerManually(matchId, winnerUserId) {
+    const { error } = await supabase.from('bracket_matches').update({ winner_user_id: winnerUserId, status: 'completed' }).eq('id', matchId)
+    if (error) { toast.error('Could not set winner'); return }
+    toast.success('Winner set')
+    load()
+  }
+
+  async function resolve() {
+    setResolving(true)
+    try {
+      const result = await resolveBracketRound(supabase, competitionId, round)
+      if (result.tied.length) toast.error(`${result.resolved} resolved, ${result.tied.length} still tied — pick winner manually below`)
+      else toast.success(`${result.resolved} match${result.resolved !== 1 ? 'es' : ''} resolved`)
+      load()
+    } catch { toast.error('Could not resolve round') }
+    finally { setResolving(false) }
+  }
+
+  if (!competitionId) return <EmptyState icon="ti-tournament" title="Create a competition first" />
+  if (comp && comp.format === 'league') {
+    return <EmptyState icon="ti-tournament" title="This competition is League format" description="The bracket only applies to Knockout or Group + knockout competitions." />
+  }
+  if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
+
+  const matchedIds = new Set(matches.flatMap(m => [m.home_user_id, m.away_user_id]).filter(Boolean))
+  const availableParticipants = participants.filter(p => !matchedIds.has(p.user_id))
+  const roundMatches = matches.filter(m => m.round === round)
+
+  return (
+    <div>
+      <div className="flex gap-1.5 flex-wrap mb-4">
+        {ROUND_OPTIONS.map(r => (
+          <button key={r.value} onClick={() => setRound(r.value)}
+            className="px-3 py-1.5 rounded-full text-xs"
+            style={{ background: round === r.value ? 'var(--accent-dim)' : 'var(--bg-surface)', color: round === r.value ? 'var(--accent)' : 'var(--txt-second)', border: '0.5px solid var(--border)' }}>
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      <Card className="p-4 mb-4">
+        <SectionLabel className="mb-2">Which gameweek(s) decide this round?</SectionLabel>
+        <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Points earned in these gameweeks decide who wins each {ROUND_OPTIONS.find(r => r.value === round)?.label.toLowerCase()} matchup.</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {gameweeks.length === 0 && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>No gameweeks yet — add some in the Gameweeks tab first</span>}
+          {gameweeks.map(gw => (
+            <label key={gw.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={selectedGws.includes(gw.id)}
+                onChange={e => setSelectedGws(prev => e.target.checked ? [...prev, gw.id] : prev.filter(id => id !== gw.id))} />
+              GW{gw.number}
+            </label>
+          ))}
+        </div>
+        <Button size="sm" onClick={saveRoundGameweeks} disabled={!gameweeks.length}>Save mapping</Button>
+      </Card>
+
+      <Card className="p-4 mb-4">
+        <SectionLabel className="mb-2">Randomly draw this round</SectionLabel>
+        {availableParticipants.length === 0
+          ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>All participants already have a match — check other rounds, or the matches below.</p>
+          : <>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {availableParticipants.map(p => (
+                <label key={p.user_id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={selectedParticipants.includes(p.user_id)}
+                    onChange={e => setSelectedParticipants(prev => e.target.checked ? [...prev, p.user_id] : prev.filter(id => id !== p.user_id))} />
+                  {p.profiles?.display_name}
+                </label>
+              ))}
+            </div>
+            <Button size="sm" variant="primary" onClick={randomDraw}>Randomly pair selected ({selectedParticipants.length})</Button>
+          </>
+        }
+      </Card>
+
+      <SectionLabel className="mb-2">{ROUND_OPTIONS.find(r => r.value === round)?.label} matches</SectionLabel>
+      {roundMatches.length === 0
+        ? <EmptyState icon="ti-tournament" title="No matches drawn for this round yet" />
+        : <>
+          {roundMatches.map(m => (
+            <Card key={m.id} className="p-3 mb-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--txt-primary)' }}>
+                  <span style={{ fontWeight: m.winner_user_id === m.home_user_id ? 600 : 400 }}>{m.home?.display_name || 'TBD'}</span>
+                  {m.home_points != null && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>({m.home_points}pts)</span>}
+                  <span style={{ color: 'var(--txt-muted)' }}>vs</span>
+                  {m.away_user_id
+                    ? <><span style={{ fontWeight: m.winner_user_id === m.away_user_id ? 600 : 400 }}>{m.away?.display_name}</span>
+                        {m.away_points != null && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>({m.away_points}pts)</span>}</>
+                    : <span style={{ color: 'var(--txt-muted)' }}>bye</span>
+                  }
+                </div>
+                {m.status === 'completed'
+                  ? <Badge variant="result">{m.winner?.display_name} advances</Badge>
+                  : m.home_user_id && m.away_user_id && (
+                    <Select style={{ width: 160 }} onChange={e => e.target.value && setWinnerManually(m.id, e.target.value)} defaultValue="">
+                      <option value="" disabled>Pick winner manually…</option>
+                      <option value={m.home_user_id}>{m.home?.display_name}</option>
+                      <option value={m.away_user_id}>{m.away?.display_name}</option>
+                    </Select>
+                  )
+                }
+              </div>
+            </Card>
+          ))}
+          <Button variant="primary" size="sm" className="mt-2" onClick={resolve} disabled={resolving || !roundGwMap[round]?.length}>
+            {resolving ? 'Resolving…' : 'Resolve round from gameweek points'}
+          </Button>
+          {!roundGwMap[round]?.length && <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Save a gameweek mapping above first.</p>}
         </>
       }
     </div>

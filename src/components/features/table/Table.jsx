@@ -24,13 +24,15 @@ export default function Table() {
         : overall.length === 0 ? <EmptyState icon="ti-list-numbers" title="No scores yet" description="Table will populate once the first gameweek is scored"/>
         : <Card className="overflow-hidden p-0">
             <div className="overflow-x-auto">
-              <table className="data-table w-full" style={{ minWidth:520 }}>
+              <table className="data-table w-full" style={{ minWidth:640 }}>
                 <thead><tr>
-                  <th style={{ width:36, paddingLeft:14 }}>#</th>
+                  <th style={{ width:32, paddingLeft:14 }}>#</th>
                   <th>Player</th>
-                  <th style={{ width:40, textAlign:'right' }}>P</th>
-                  <th style={{ width:52, textAlign:'right' }}>Exact</th>
-                  <th style={{ width:56, textAlign:'right' }}>Result</th>
+                  <th style={{ width:36, textAlign:'right' }}>P</th>
+                  <th style={{ width:64, textAlign:'right' }}>Pts for Results</th>
+                  <th style={{ width:60, textAlign:'right' }}>Correct Scores</th>
+                  <th style={{ width:56, textAlign:'right' }}>FH Results</th>
+                  <th style={{ width:52, textAlign:'right' }}>FH Scores</th>
                   <th style={{ width:56, textAlign:'right', paddingRight:14 }}>Pts</th>
                 </tr></thead>
                 <tbody>
@@ -43,11 +45,12 @@ export default function Table() {
                           <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>
                             {p.display_name}{isMe&&<span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
                           </p>
-                          <p className="text-xs" style={{ color:'var(--txt-muted)' }}>{p.exact_scores||0} exact · {p.correct_results||0} correct</p>
                         </td>
                         <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.games_played||0}</td>
-                        <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.exact_scores||0}</td>
                         <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.correct_results||0}</td>
+                        <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.exact_scores||0}</td>
+                        <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.full_house_results_count||0}</td>
+                        <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.full_house_scores_count||0}</td>
                         <td style={{ textAlign:'right', paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points||0}</span></td>
                       </tr>
                     )
