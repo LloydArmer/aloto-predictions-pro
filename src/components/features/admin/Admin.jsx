@@ -3,9 +3,9 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { supabase } from '../../../lib/supabase'
 import { recalculateGameweek, resolveBracketRound } from '../../../lib/scoring'
+import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
 import toast from 'react-hot-toast'
-import { format } from 'date-fns'
 
 const TABS = [
   { key: 'competitions', label: 'Competitions', icon: 'ti-trophy' },
@@ -47,7 +47,8 @@ export default function Admin() {
 
       {tab === 'competitions' && (
         <CompetitionsTab user={user} competitions={competitions} loading={compsLoading}
-          createCompetition={createCompetition} selectedComp={selectedComp} setSelectedComp={setSelectedComp} />
+          createCompetition={createCompetition} refetchComps={refetchComps}
+          selectedComp={selectedComp} setSelectedComp={setSelectedComp} />
       )}
       {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
@@ -60,7 +61,7 @@ export default function Admin() {
 const FORMAT_EMOJI = { league: '📊', knockout: '🏆', group_knockout: '🏆' }
 
 // ───────────────────────── Competitions ─────────────────────────
-function CompetitionsTab({ user, competitions, loading, createCompetition, selectedComp, setSelectedComp }) {
+function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
   const [emoji, setEmoji] = useState(FORMAT_EMOJI.league)
@@ -86,6 +87,16 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, selec
       toast.success('Competition created!')
     } catch (err) { toast.error(err.message || 'Could not create competition') }
     finally { setSaving(false) }
+  }
+
+  async function onDelete(comp) {
+    const confirmed = window.confirm(`Delete "${comp.name}"? This permanently removes its gameweeks, fixtures, predictions, scores, and bracket — this cannot be undone. Are you sure you want to do this?`)
+    if (!confirmed) return
+    const { error } = await supabase.from('competitions').delete().eq('id', comp.id)
+    if (error) { toast.error('Could not delete competition'); return }
+    toast.success(`"${comp.name}" deleted`)
+    if (selectedComp === comp.id) setSelectedComp(null)
+    refetchComps()
   }
 
   return (
@@ -119,16 +130,20 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, selec
       {loading ? <div className="flex justify-center py-10"><Spinner /></div>
         : competitions.length === 0 ? <EmptyState icon="ti-trophy" title="No competitions yet" description="Create your first one above"/>
         : competitions.map(c => (
-            <Card key={c.id} onClick={() => setSelectedComp(c.id)}
-              className="p-3 mb-2 flex items-center justify-between cursor-pointer"
+            <Card key={c.id}
+              className="p-3 mb-2 flex items-center justify-between"
               style={{ border: selectedComp === c.id ? '1px solid var(--accent)' : '0.5px solid var(--border)' }}>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 cursor-pointer" onClick={() => setSelectedComp(c.id)} style={{ flex: 1 }}>
                 <span>{c.emoji}</span>
                 <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>{c.name}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant={c.status === 'active' ? 'result' : 'upcoming'}>{c.status}</Badge>
                 {selectedComp === c.id && <i className="ti ti-check" style={{ color: 'var(--accent)' }} />}
+                <button onClick={() => onDelete(c)} title="Delete competition"
+                  className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
+                  <i className="ti ti-trash text-sm" aria-hidden="true" />
+                </button>
               </div>
             </Card>
           ))
@@ -162,9 +177,6 @@ function RulesTab({ competitionId, competitions }) {
       const { error } = await supabase.from('point_rules').update({
         exact_score_points: Number(rules.exact_score_points),
         correct_result_points: Number(rules.correct_result_points),
-        clean_sheet_bonus: Number(rules.clean_sheet_bonus),
-        correct_finalist_points: Number(rules.correct_finalist_points),
-        correct_winner_points: Number(rules.correct_winner_points),
         full_house_results_bonus: Number(rules.full_house_results_bonus),
         full_house_scores_bonus: Number(rules.full_house_scores_bonus),
       }).eq('competition_id', competitionId)
@@ -180,11 +192,8 @@ function RulesTab({ competitionId, competitions }) {
   const fields = [
     { key: 'exact_score_points',      label: 'Exact score' },
     { key: 'correct_result_points',   label: 'Correct result (W/D/L)' },
-    { key: 'clean_sheet_bonus',       label: 'Clean sheet bonus' },
     { key: 'full_house_results_bonus', label: 'Full house — all results correct in a GW' },
     { key: 'full_house_scores_bonus',  label: 'Full house — all scores exact in a GW' },
-    { key: 'correct_finalist_points', label: 'Correct knockout finalist (legacy, unused)' },
-    { key: 'correct_winner_points',   label: 'Correct knockout winner (legacy, unused)' },
   ]
 
   return (
@@ -207,8 +216,10 @@ function GameweeksTab({ competitionId }) {
   const [gws, setGws] = useState([])
   const [loading, setLoading] = useState(false)
   const [openGw, setOpenGw] = useState(null)
+  const [newNumber, setNewNumber] = useState('')
 
   useEffect(() => { if (competitionId) load(); else setGws([]) }, [competitionId])
+  useEffect(() => { setNewNumber(String((gws[gws.length - 1]?.number || 0) + 1)) }, [gws])
 
   async function load() {
     setLoading(true)
@@ -218,11 +229,14 @@ function GameweeksTab({ competitionId }) {
     } finally { setLoading(false) }
   }
 
-  async function addGameweek() {
-    const nextNum = (gws[gws.length - 1]?.number || 0) + 1
-    const { error } = await supabase.from('gameweeks').insert({ competition_id: competitionId, number: nextNum })
+  async function addGameweek(e) {
+    e.preventDefault()
+    const num = Number(newNumber)
+    if (!num || num < 1) { toast.error('Enter a valid gameweek number'); return }
+    if (gws.some(g => g.number === num)) { toast.error(`GW${num} already exists`); return }
+    const { error } = await supabase.from('gameweeks').insert({ competition_id: competitionId, number: num })
     if (error) { toast.error('Could not add gameweek'); return }
-    toast.success(`GW${nextNum} added`)
+    toast.success(`GW${num} added`)
     load()
   }
 
@@ -232,26 +246,46 @@ function GameweeksTab({ competitionId }) {
     setGws(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g))
   }
 
+  // Setting a gameweek active automatically marks whichever gameweek was
+  // previously active (if any) as completed — this is the single value
+  // Dashboard/Predict use to know "what's the current gameweek".
+  async function setActive(gw) {
+    const prevActive = gws.find(g => g.status === 'active' && g.id !== gw.id)
+    if (prevActive) await updateGw(prevActive.id, { status: 'completed' })
+    await updateGw(gw.id, { status: 'active' })
+  }
+
   if (!competitionId) return <EmptyState icon="ti-calendar" title="Create a competition first" />
 
   return (
     <div>
-      <Button variant="primary" onClick={addGameweek} className="mb-4">+ Add gameweek</Button>
+      <Card className="p-4 mb-4">
+        <SectionLabel className="mb-3">Add a gameweek</SectionLabel>
+        <form onSubmit={addGameweek} className="flex items-end gap-2">
+          <div>
+            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Gameweek number</p>
+            <Input type="number" min="1" value={newNumber} onChange={e => setNewNumber(e.target.value)} style={{ width: 100 }} />
+          </div>
+          <Button type="submit" variant="primary" size="sm">Add gameweek</Button>
+        </form>
+      </Card>
+
       {loading ? <div className="flex justify-center py-10"><Spinner /></div>
-        : gws.length === 0 ? <EmptyState icon="ti-calendar" title="No gameweeks yet" description="Click 'Add gameweek' to start"/>
+        : gws.length === 0 ? <EmptyState icon="ti-calendar" title="No gameweeks yet" description="Add one above to start"/>
         : gws.map(gw => (
             <Card key={gw.id} className="p-3 mb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>GW{gw.number}</span>
-                  <Select value={gw.status} onChange={e => updateGw(gw.id, { status: e.target.value })} style={{ width: 120 }}>
-                    <option value="upcoming">Upcoming</option>
-                    <option value="active">Active</option>
-                    <option value="completed">Completed</option>
-                  </Select>
-                  <Input placeholder="2025-08" value={gw.month_key || ''} style={{ width: 100 }}
-                    onChange={e => setGws(prev => prev.map(g => g.id === gw.id ? { ...g, month_key: e.target.value } : g))}
-                    onBlur={e => updateGw(gw.id, { month_key: e.target.value })} />
+                  <Badge variant={gw.status === 'active' ? 'result' : gw.status === 'completed' ? 'exact' : 'upcoming'}>{gw.status}</Badge>
+                  {gw.status !== 'active' && <Button size="sm" onClick={() => setActive(gw)}>Set as current gameweek</Button>}
+                  {gw.status === 'active' && <Button size="sm" onClick={() => updateGw(gw.id, { status: 'completed' })}>Mark completed</Button>}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Month (for monthly leaderboard):</span>
+                    <Input placeholder="2025-08" value={gw.month_key || ''} style={{ width: 90 }}
+                      onChange={e => setGws(prev => prev.map(g => g.id === gw.id ? { ...g, month_key: e.target.value } : g))}
+                      onBlur={e => updateGw(gw.id, { month_key: e.target.value })} />
+                  </div>
                 </div>
                 <Button size="sm" onClick={() => setOpenGw(openGw === gw.id ? null : gw.id)}>
                   {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
@@ -271,7 +305,6 @@ function FixturesPanel({ gameweekId }) {
   const [home, setHome] = useState('')
   const [away, setAway] = useState('')
   const [kickoff, setKickoff] = useState('')
-  const [venue, setVenue] = useState('')
   const [scores, setScores] = useState({})
   const [recalculating, setRecalculating] = useState(false)
 
@@ -290,11 +323,20 @@ function FixturesPanel({ gameweekId }) {
     if (!home.trim() || !away.trim() || !kickoff) { toast.error('Home team, away team and kickoff time are required'); return }
     const { error } = await supabase.from('fixtures').insert({
       gameweek_id: gameweekId, home_team: home.trim(), away_team: away.trim(),
-      kickoff_time: new Date(kickoff).toISOString(), venue: venue.trim() || null,
+      kickoff_time: ukLocalToISO(kickoff),
     })
     if (error) { toast.error('Could not add fixture'); return }
-    setHome(''); setAway(''); setKickoff(''); setVenue('')
+    setHome(''); setAway(''); setKickoff('')
     toast.success('Fixture added')
+    load()
+  }
+
+  async function deleteFixture(fx) {
+    const confirmed = window.confirm(`Delete ${fx.home_team} vs ${fx.away_team}? Any predictions already made for it will be deleted too. Are you sure?`)
+    if (!confirmed) return
+    const { error } = await supabase.from('fixtures').delete().eq('id', fx.id)
+    if (error) { toast.error('Could not delete fixture'); return }
+    toast.success('Fixture deleted')
     load()
   }
 
@@ -324,9 +366,9 @@ function FixturesPanel({ gameweekId }) {
         <Input placeholder="Home team" value={home} onChange={e => setHome(e.target.value)} style={{ flex: '1 1 120px' }} />
         <Input placeholder="Away team" value={away} onChange={e => setAway(e.target.value)} style={{ flex: '1 1 120px' }} />
         <Input type="datetime-local" value={kickoff} onChange={e => setKickoff(e.target.value)} style={{ flex: '1 1 170px' }} />
-        <Input placeholder="Venue (optional)" value={venue} onChange={e => setVenue(e.target.value)} style={{ flex: '1 1 120px' }} />
         <Button type="submit" variant="primary" size="sm">Add fixture</Button>
       </form>
+      <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Kickoff times are treated as UK local time (GMT/BST automatically) and locked for predictions exactly at kickoff.</p>
 
       {loading ? <div className="flex justify-center py-6"><Spinner size="sm"/></div>
         : fixtures.length === 0 ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No fixtures yet</p>
@@ -335,19 +377,25 @@ function FixturesPanel({ gameweekId }) {
             <div key={fx.id} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
               <div>
                 <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{fx.home_team} vs {fx.away_team}</p>
-                <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{format(new Date(fx.kickoff_time), 'EEE d MMM, HH:mm')}{fx.venue ? ` · ${fx.venue}` : ''}</p>
+                <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{formatUK(fx.kickoff_time, { weekday: 'short', day: '2-digit', month: 'short' })} UK</p>
               </div>
-              {fx.status === 'completed'
-                ? <Badge variant="result">{fx.home_score} – {fx.away_score}</Badge>
-                : <div className="flex items-center gap-1.5">
-                    <Input type="number" min="0" placeholder="H" style={{ width: 46 }}
-                      value={scores[fx.id]?.home ?? ''} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...s[fx.id], home: e.target.value } }))} />
-                    <span style={{ color: 'var(--txt-muted)' }}>–</span>
-                    <Input type="number" min="0" placeholder="A" style={{ width: 46 }}
-                      value={scores[fx.id]?.away ?? ''} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...s[fx.id], away: e.target.value } }))} />
-                    <Button size="sm" onClick={() => saveResult(fx)}>Save</Button>
-                  </div>
-              }
+              <div className="flex items-center gap-2">
+                {fx.status === 'completed'
+                  ? <Badge variant="result">{fx.home_score} – {fx.away_score}</Badge>
+                  : <div className="flex items-center gap-1.5">
+                      <Input type="number" min="0" placeholder="H" style={{ width: 46 }}
+                        value={scores[fx.id]?.home ?? ''} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...s[fx.id], home: e.target.value } }))} />
+                      <span style={{ color: 'var(--txt-muted)' }}>–</span>
+                      <Input type="number" min="0" placeholder="A" style={{ width: 46 }}
+                        value={scores[fx.id]?.away ?? ''} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...s[fx.id], away: e.target.value } }))} />
+                      <Button size="sm" onClick={() => saveResult(fx)}>Save</Button>
+                    </div>
+                }
+                <button onClick={() => deleteFixture(fx)} title="Delete fixture"
+                  className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
+                  <i className="ti ti-trash text-sm" aria-hidden="true" />
+                </button>
+              </div>
             </div>
           ))}
           <Button variant="primary" size="sm" className="mt-3" onClick={recalc} disabled={recalculating}>
@@ -547,7 +595,9 @@ function ParticipantsTab({ competitionId }) {
   const [participants, setParticipants] = useState([])
   const [invitations, setInvitations] = useState([])
   const [loading, setLoading] = useState(false)
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [adding, setAdding] = useState(false)
 
   useEffect(() => { if (competitionId) load(); else { setParticipants([]); setInvitations([]) } }, [competitionId])
@@ -555,7 +605,7 @@ function ParticipantsTab({ competitionId }) {
   async function load() {
     setLoading(true)
     try {
-      const { data: parts } = await supabase.from('participants').select('*, profiles(display_name, email, avatar_initials)').eq('competition_id', competitionId)
+      const { data: parts } = await supabase.from('participants').select('*, profiles(display_name, email, phone_number, avatar_initials)').eq('competition_id', competitionId)
       setParticipants(parts || [])
       const { data: invs } = await supabase.from('invitations').select('*').eq('competition_id', competitionId).is('accepted_at', null)
       setInvitations(invs || [])
@@ -565,20 +615,21 @@ function ParticipantsTab({ competitionId }) {
   async function addParticipant(e) {
     e.preventDefault()
     const em = email.trim().toLowerCase()
-    if (!em) return
+    if (!em) { toast.error('Email is required'); return }
     setAdding(true)
     try {
       const { data: profile } = await supabase.from('profiles').select('id').eq('email', em).maybeSingle()
       if (profile) {
+        if (name.trim() || phone.trim()) await supabase.rpc('admin_update_participant', { target_id: profile.id, new_display_name: name.trim(), new_phone: phone.trim() })
         const { error } = await supabase.from('participants').insert({ competition_id: competitionId, user_id: profile.id, role: 'player' })
         if (error) { if (error.code === '23505') toast.error('Already a participant'); else throw error; return }
         toast.success('Player added!')
       } else {
-        const { error } = await supabase.from('invitations').insert({ competition_id: competitionId, email: em })
+        const { error } = await supabase.from('invitations').insert({ competition_id: competitionId, email: em, display_name: name.trim() || null, phone_number: phone.trim() || null })
         if (error) { if (error.code === '23505') toast.error('Already invited'); else throw error; return }
-        toast.success("They haven't signed up yet — invite recorded. Add them here once they do.")
+        toast.success("They haven't signed up yet — invite recorded with their details. Add them here once they do.")
       }
-      setEmail(''); load()
+      setName(''); setEmail(''); setPhone(''); load()
     } catch { toast.error('Could not add player') }
     finally { setAdding(false) }
   }
@@ -589,11 +640,13 @@ function ParticipantsTab({ competitionId }) {
     <div>
       <Card className="p-4 mb-4">
         <SectionLabel className="mb-3">Add a player</SectionLabel>
-        <form onSubmit={addParticipant} className="flex gap-2">
-          <Input type="email" placeholder="player@example.com" value={email} onChange={e => setEmail(e.target.value)} className="flex-1" />
+        <form onSubmit={addParticipant} className="flex flex-wrap gap-2">
+          <Input placeholder="Name" value={name} onChange={e => setName(e.target.value)} style={{ flex: '1 1 130px' }} />
+          <Input type="email" placeholder="player@example.com" value={email} onChange={e => setEmail(e.target.value)} style={{ flex: '1 1 160px' }} />
+          <Input type="tel" placeholder="+447700900123" value={phone} onChange={e => setPhone(e.target.value)} style={{ flex: '1 1 140px' }} />
           <Button type="submit" variant="primary" disabled={adding}>{adding ? 'Adding…' : 'Add'}</Button>
         </form>
-        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>If they've already signed up, they're added immediately. If not, share your site link with them — you can add them here once they've created an account.</p>
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>If they've already signed up, they're added immediately with these details. If not, share your site link — you can add them here once they've created an account.</p>
       </Card>
 
       {loading ? <div className="flex justify-center py-10"><Spinner /></div> : <>
@@ -604,7 +657,7 @@ function ParticipantsTab({ competitionId }) {
               <div key={p.id} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
                 <div>
                   <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{p.profiles?.display_name}</p>
-                  <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.profiles?.email}</p>
+                  <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.profiles?.email}{p.profiles?.phone_number ? ` · ${p.profiles.phone_number}` : ''}</p>
                 </div>
                 <Badge variant={p.role === 'admin' ? 'admin' : 'upcoming'}>{p.role}</Badge>
               </div>
@@ -615,7 +668,10 @@ function ParticipantsTab({ competitionId }) {
           <SectionLabel className="mb-2 mt-4">Pending invites ({invitations.length})</SectionLabel>
           {invitations.map(inv => (
             <div key={inv.id} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-sm" style={{ color: 'var(--txt-second)' }}>{inv.email}</p>
+              <div>
+                <p className="text-sm" style={{ color: 'var(--txt-second)' }}>{inv.display_name || inv.email}</p>
+                <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{inv.email}{inv.phone_number ? ` · ${inv.phone_number}` : ''}</p>
+              </div>
               <Badge variant="upcoming">awaiting sign-up</Badge>
             </div>
           ))}

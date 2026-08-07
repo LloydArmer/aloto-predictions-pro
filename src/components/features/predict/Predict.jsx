@@ -6,7 +6,7 @@ import { supabase } from '../../../lib/supabase'
 import { Card, Badge, Button, Spinner, EmptyState, LiveDot } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import toast from 'react-hot-toast'
-import { format, isPast, subHours } from 'date-fns'
+import { format, isPast } from 'date-fns'
 
 function ScoreInput({ value, onChange, disabled }) {
   return <input type="number" min="0" max="20" value={value}
@@ -22,8 +22,7 @@ function FixtureCard({ fixture, prediction, onSave }) {
   useEffect(() => { setHome(prediction?.predicted_home ?? ''); setAway(prediction?.predicted_away ?? '') }, [prediction])
 
   const kickoff  = new Date(fixture.kickoff_time)
-  const deadline = subHours(kickoff, 1)
-  const isLocked = isPast(deadline)
+  const isLocked = isPast(kickoff)
   const hasResult = fixture.home_score !== null
 
   async function save() {
@@ -59,7 +58,7 @@ function FixtureCard({ fixture, prediction, onSave }) {
       </div>
       {!isLocked && !hasResult && (
         <div className="flex items-center justify-between mt-3">
-          <p className="text-xs" style={{ color:'var(--txt-muted)' }}>Deadline: {format(deadline,'EEE d MMM, HH:mm')}</p>
+          <p className="text-xs" style={{ color:'var(--txt-muted)' }}>Deadline: {format(kickoff,'EEE d MMM, HH:mm')} (kickoff)</p>
           <Button variant="primary" size="sm" onClick={save} disabled={saving}>
             <i className="ti ti-check text-xs"/>{saving ? 'Saving…' : 'Save'}
           </Button>

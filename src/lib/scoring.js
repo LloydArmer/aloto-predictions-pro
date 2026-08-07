@@ -18,10 +18,6 @@ export function scoreOnePrediction(prediction, fixture, rules) {
     points += rules.correct_result_points
     breakdown.push({ label: 'Correct result', pts: rules.correct_result_points })
   }
-  if (rules.clean_sheet_bonus > 0) {
-    if (aa === 0 && pa === 0) { points += rules.clean_sheet_bonus; breakdown.push({ label: 'Clean sheet (home)', pts: rules.clean_sheet_bonus }) }
-    if (ah === 0 && ph === 0) { points += rules.clean_sheet_bonus; breakdown.push({ label: 'Clean sheet (away)', pts: rules.clean_sheet_bonus }) }
-  }
   return { points, breakdown, isExact, isCorrectResult }
 }
 
@@ -35,7 +31,7 @@ export function outcomeLabel(prediction, fixture) {
 }
 
 export function defaultRules() {
-  return { exact_score_points: 5, correct_result_points: 2, clean_sheet_bonus: 1, correct_finalist_points: 5, correct_winner_points: 10 }
+  return { exact_score_points: 5, correct_result_points: 2, full_house_results_bonus: 0, full_house_scores_bonus: 0 }
 }
 
 export async function recalculateGameweek(supabase, gameweekId, rules) {
