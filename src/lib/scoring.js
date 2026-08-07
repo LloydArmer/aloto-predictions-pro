@@ -101,16 +101,24 @@ export async function resolveBracketRound(supabase, competitionId, round) {
   const { data: matches } = await supabase.from('bracket_matches').select('*').eq('competition_id', competitionId).eq('round', round)
   const results = { resolved: 0, tied: [] }
 
+  async function advance(match, winnerId) {
+    if (match.feeds_into_match_id && match.feeds_into_side) {
+      await supabase.from('bracket_matches').update({ [match.feeds_into_side + '_user_id']: winnerId }).eq('id', match.feeds_into_match_id)
+    }
+  }
+
   for (const m of (matches || [])) {
     if (m.status === 'completed') continue
 
     // Bye — only one side of the matchup is set
     if (m.home_user_id && !m.away_user_id) {
       await supabase.from('bracket_matches').update({ winner_user_id: m.home_user_id, status: 'completed' }).eq('id', m.id)
+      await advance(m, m.home_user_id)
       results.resolved++; continue
     }
     if (m.away_user_id && !m.home_user_id) {
       await supabase.from('bracket_matches').update({ winner_user_id: m.away_user_id, status: 'completed' }).eq('id', m.id)
+      await advance(m, m.away_user_id)
       results.resolved++; continue
     }
     if (!m.home_user_id || !m.away_user_id || !gwIds.length) continue
@@ -135,6 +143,7 @@ export async function resolveBracketRound(supabase, competitionId, round) {
       await supabase.from('bracket_matches').update({
         winner_user_id: winner, home_points: h.points, away_points: a.points, status: 'completed',
       }).eq('id', m.id)
+      await advance(m, winner)
       results.resolved++
     } else {
       await supabase.from('bracket_matches').update({ home_points: h.points, away_points: a.points }).eq('id', m.id)
