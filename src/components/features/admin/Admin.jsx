@@ -57,12 +57,20 @@ export default function Admin() {
   )
 }
 
+const FORMAT_EMOJI = { league: '📊', knockout: '🏆', group_knockout: '🏆' }
+
 // ───────────────────────── Competitions ─────────────────────────
 function CompetitionsTab({ user, competitions, loading, createCompetition, selectedComp, setSelectedComp }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
-  const [emoji, setEmoji] = useState('⚽')
+  const [emoji, setEmoji] = useState(FORMAT_EMOJI.league)
+  const [emojiTouched, setEmojiTouched] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  function changeFormat(newFormat) {
+    setFormat(newFormat)
+    if (!emojiTouched) setEmoji(FORMAT_EMOJI[newFormat])
+  }
 
   async function submit(e) {
     e.preventDefault()
@@ -74,7 +82,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, selec
       const { error } = await supabase.from('participants').insert({ competition_id: comp.id, user_id: user.id, role: 'admin' })
       if (error) throw error
       setSelectedComp(comp.id)
-      setName('')
+      setName(''); setFormat('league'); setEmoji(FORMAT_EMOJI.league); setEmojiTouched(false)
       toast.success('Competition created!')
     } catch (err) { toast.error(err.message || 'Could not create competition') }
     finally { setSaving(false) }
@@ -92,7 +100,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, selec
           <div className="flex gap-3">
             <div className="flex-1">
               <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
-              <Select value={format} onChange={e => setFormat(e.target.value)} className="w-full">
+              <Select value={format} onChange={e => changeFormat(e.target.value)} className="w-full">
                 <option value="league">League</option>
                 <option value="knockout">Knockout</option>
                 <option value="group_knockout">Group + knockout</option>
@@ -100,7 +108,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, selec
             </div>
             <div style={{ width: 90 }}>
               <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Emoji</p>
-              <Input value={emoji} onChange={e => setEmoji(e.target.value)} className="w-full text-center" />
+              <Input value={emoji} onChange={e => { setEmoji(e.target.value); setEmojiTouched(true) }} className="w-full text-center" />
             </div>
           </div>
           <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Creating…' : 'Create competition'}</Button>
