@@ -238,10 +238,10 @@ function GameweeksTab({ competitionId }) {
     e.preventDefault()
     const num = newNumber.trim()
     if (!num) { toast.error('Enter a gameweek label'); return }
-    if (gws.some(g => g.number === num)) { toast.error(`GW${num} already exists`); return }
+    if (gws.some(g => g.number === num)) { toast.error(`"${num}" already exists`); return }
     const { error } = await supabase.from('gameweeks').insert({ competition_id: competitionId, number: num })
     if (error) { toast.error('Could not add gameweek'); return }
-    toast.success(`GW${num} added`)
+    toast.success(`"${num}" added`)
     load()
   }
 
@@ -258,6 +258,16 @@ function GameweeksTab({ competitionId }) {
     const prevActive = gws.find(g => g.status === 'active' && g.id !== gw.id)
     if (prevActive) await updateGw(prevActive.id, { status: 'completed' })
     await updateGw(gw.id, { status: 'active' })
+  }
+
+  async function deleteGameweek(gw) {
+    const confirmed = window.confirm(`Delete "${gw.number}"? This permanently removes its fixtures, predictions, and scores — this cannot be undone. Are you sure you want to do this?`)
+    if (!confirmed) return
+    const { error } = await supabase.from('gameweeks').delete().eq('id', gw.id)
+    if (error) { toast.error('Could not delete gameweek'); return }
+    toast.success(`"${gw.number}" deleted`)
+    if (openGw === gw.id) setOpenGw(null)
+    load()
   }
 
   if (!competitionId) return <EmptyState icon="ti-calendar" title="Create a competition first" />
@@ -281,7 +291,7 @@ function GameweeksTab({ competitionId }) {
             <Card key={gw.id} className="p-3 mb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>GW{gw.number}</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>{gw.number}</span>
                   <Badge variant={gw.status === 'active' ? 'result' : gw.status === 'completed' ? 'exact' : 'upcoming'}>{gw.status}</Badge>
                   {gw.status !== 'active' && <Button size="sm" onClick={() => setActive(gw)}>Set as current gameweek</Button>}
                   {gw.status === 'active' && <Button size="sm" onClick={() => updateGw(gw.id, { status: 'completed' })}>Mark completed</Button>}
@@ -292,9 +302,15 @@ function GameweeksTab({ competitionId }) {
                       onBlur={e => updateGw(gw.id, { month_key: e.target.value })} />
                   </div>
                 </div>
-                <Button size="sm" onClick={() => setOpenGw(openGw === gw.id ? null : gw.id)}>
-                  {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button size="sm" onClick={() => setOpenGw(openGw === gw.id ? null : gw.id)}>
+                    {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
+                  </Button>
+                  <button onClick={() => deleteGameweek(gw)} title="Delete gameweek"
+                    className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
+                    <i className="ti ti-trash text-sm" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
               {openGw === gw.id && <FixturesPanel gameweekId={gw.id} />}
             </Card>
@@ -529,7 +545,7 @@ function BracketTab({ competitionId, competitions }) {
             <label key={gw.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
               <input type="checkbox" checked={selectedGws.includes(gw.id)}
                 onChange={e => setSelectedGws(prev => e.target.checked ? [...prev, gw.id] : prev.filter(id => id !== gw.id))} />
-              GW{gw.number}
+              {gw.number}
             </label>
           ))}
         </div>

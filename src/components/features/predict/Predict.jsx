@@ -101,7 +101,7 @@ export default function Predict() {
       <div className="flex gap-1.5 flex-wrap mb-4 overflow-x-auto pb-1">
         {gameweeks.map(gw => (
           <button key={gw.id} className={`pill ${selectedGW?.id===gw.id?'active':''}`} onClick={()=>setSelectedGW(gw)}>
-            GW{gw.number}{gw.status==='active'&&<span className="live-dot ml-1"/>}
+            {gw.number}{gw.status==='active'&&<span className="live-dot ml-1"/>}
           </button>
         ))}
       </div>

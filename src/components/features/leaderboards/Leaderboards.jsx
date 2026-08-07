@@ -55,19 +55,19 @@ function WeeklyPane({ gameweeks, userId }) {
     <div>
       <div className="flex gap-1.5 flex-wrap mb-4 overflow-x-auto pb-1">
         {[...gameweeks].reverse().slice(0,10).map(gw=>(
-          <button key={gw.id} className={`pill ${sel?.id===gw.id?'active':''}`} onClick={()=>setSel(gw)}>GW{gw.number}</button>
+          <button key={gw.id} className={`pill ${sel?.id===gw.id?'active':''}`} onClick={()=>setSel(gw)}>{gw.number}</button>
         ))}
       </div>
       {loading ? <div className="flex justify-center py-16"><Spinner size="lg"/></div>
         : weekly.length===0 ? <EmptyState icon="ti-medal" title="No scores yet" description="Scores appear after each gameweek is completed"/>
         : <>
-          <WinnerBanner player={{...winner, display_name:winner.profiles?.display_name}} label={`GW${sel?.number}`}/>
+          <WinnerBanner player={{...winner, display_name:winner.profiles?.display_name}} label={`${sel?.number}`}/>
           <div className="grid grid-cols-3 gap-2.5 mb-4">
             <StatCard label="Highest score" value={weekly[0]?.points||0} sub={weekly[0]?.profiles?.display_name}/>
             <StatCard label="Avg score" value={Math.round(weekly.reduce((a,b)=>a+(b.points||0),0)/weekly.length)} sub={`${weekly.length} players`}/>
             <StatCard label="Exact scores" value={weekly.reduce((a,b)=>a+(b.exact_scores||0),0)} sub="total this GW"/>
           </div>
-          <SectionLabel className="mb-2">GW{sel?.number} rankings</SectionLabel>
+          <SectionLabel className="mb-2">{sel?.number} rankings</SectionLabel>
           <Card className="overflow-hidden p-0 mb-4">
             <table className="data-table w-full">
               <thead><tr>
@@ -90,7 +90,7 @@ function WeeklyPane({ gameweeks, userId }) {
             </table>
           </Card>
           <button className="wa-btn" onClick={()=>openWhatsApp(buildWeeklyMessage(sel,weekly.map(w=>({display_name:w.profiles?.display_name||'Player',points:w.points})),window.location.origin))}>
-            <i className="ti ti-brand-whatsapp text-base" aria-hidden="true"/>Share GW{sel?.number} results to WhatsApp
+            <i className="ti ti-brand-whatsapp text-base" aria-hidden="true"/>Share {sel?.number} results to WhatsApp
           </button>
         </>
       }
@@ -126,7 +126,7 @@ function MonthlyPane({ competitionId, months, userId }) {
               {gw.status==='completed'&&<i className="ti ti-check" style={{ fontSize:10 }}/>}
               {gw.status==='active'&&<i className="ti ti-player-play" style={{ fontSize:10 }}/>}
               {gw.status==='upcoming'&&<i className="ti ti-clock" style={{ fontSize:10 }}/>}
-              GW{gw.number}
+              {gw.number}
             </span>
           ))}
           {gameweeksInMonth.length===0&&<span className="text-xs" style={{ color:'var(--txt-muted)' }}>No gameweeks assigned yet</span>}
@@ -151,7 +151,7 @@ function MonthlyPane({ competitionId, months, userId }) {
               <table className="data-table w-full" style={{ minWidth:400 }}>
                 <thead><tr>
                   <th style={{ width:36,paddingLeft:14 }}>#</th><th>Player</th>
-                  {gameweeksInMonth.map(gw=><th key={gw.id} style={{ width:40,textAlign:'right',fontSize:10 }}>GW{gw.number}</th>)}
+                  {gameweeksInMonth.map(gw=><th key={gw.id} style={{ width:40,textAlign:'right',fontSize:10 }}>{gw.number}</th>)}
                   <th style={{ width:54,textAlign:'right',paddingRight:14 }}>Total</th>
                 </tr></thead>
                 <tbody>

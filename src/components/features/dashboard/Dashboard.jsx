@@ -88,7 +88,7 @@ export default function Dashboard() {
           </div>
 
           <Card className="p-4 mb-4">
-            <SectionLabel className="mb-3">{gw ? `GW${gw.number} — your predictions` : 'Recent predictions'}</SectionLabel>
+            <SectionLabel className="mb-3">{gw ? `${gw.number} — your predictions` : 'Recent predictions'}</SectionLabel>
             {results.length === 0
               ? <EmptyState icon="ti-calendar-off" title="No fixtures yet" action={<Link to="/predict" className="btn btn-primary btn-sm">Go to predictions</Link>}/>
               : results.map(f => {
@@ -143,7 +143,7 @@ export default function Dashboard() {
             if (gw && overall.length) openWhatsApp(buildWeeklyMessage(gw, overall.slice(0,3).map(p=>({ display_name: p.display_name, points: p.total_points })), window.location.origin))
           }}>
             <i className="ti ti-brand-whatsapp text-base" aria-hidden="true"/>
-            Share {gw ? `GW${gw.number}` : 'latest'} standings to WhatsApp
+            Share {gw ? gw.number : 'latest'} standings to WhatsApp
           </button>
         </>
       )}

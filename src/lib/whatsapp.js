@@ -3,7 +3,7 @@ import { format } from 'date-fns'
 export function buildWeeklyMessage(gameweek, rankings, appUrl) {
   const medals = ['🥇','🥈','🥉']
   return [
-    `🎯 *ALOTO Prediction Pro — GW${gameweek.number} Results*`,
+    `🎯 *ALOTO Prediction Pro — ${gameweek.number} Results*`,
     `📅 ${format(new Date(), 'dd MMM yyyy')}`,
     '',
     '📊 *This week\'s top scorers:*',
