@@ -219,7 +219,12 @@ function GameweeksTab({ competitionId }) {
   const [newNumber, setNewNumber] = useState('')
 
   useEffect(() => { if (competitionId) load(); else setGws([]) }, [competitionId])
-  useEffect(() => { setNewNumber(String((gws[gws.length - 1]?.number || 0) + 1)) }, [gws])
+  useEffect(() => {
+    const last = gws[gws.length - 1]?.number
+    // Only auto-suggest a "next" value when the last one was a plain number —
+    // for anything alphanumeric (e.g. "QF1") there's no sensible auto-increment.
+    setNewNumber(last && /^\d+$/.test(last) ? String(Number(last) + 1) : '')
+  }, [gws])
 
   async function load() {
     setLoading(true)
@@ -231,8 +236,8 @@ function GameweeksTab({ competitionId }) {
 
   async function addGameweek(e) {
     e.preventDefault()
-    const num = Number(newNumber)
-    if (!num || num < 1) { toast.error('Enter a valid gameweek number'); return }
+    const num = newNumber.trim()
+    if (!num) { toast.error('Enter a gameweek label'); return }
     if (gws.some(g => g.number === num)) { toast.error(`GW${num} already exists`); return }
     const { error } = await supabase.from('gameweeks').insert({ competition_id: competitionId, number: num })
     if (error) { toast.error('Could not add gameweek'); return }
@@ -263,8 +268,8 @@ function GameweeksTab({ competitionId }) {
         <SectionLabel className="mb-3">Add a gameweek</SectionLabel>
         <form onSubmit={addGameweek} className="flex items-end gap-2">
           <div>
-            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Gameweek number</p>
-            <Input type="number" min="1" value={newNumber} onChange={e => setNewNumber(e.target.value)} style={{ width: 100 }} />
+            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Gameweek label</p>
+            <Input value={newNumber} onChange={e => setNewNumber(e.target.value)} placeholder="1, R16, QF1…" style={{ width: 100 }} />
           </div>
           <Button type="submit" variant="primary" size="sm">Add gameweek</Button>
         </form>
