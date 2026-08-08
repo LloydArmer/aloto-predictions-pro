@@ -17,12 +17,12 @@ function MatchCard({ match, userId }) {
     <div className="rounded-md overflow-hidden mb-2" style={{ border: '0.5px solid var(--border-med)', background: 'var(--bg-surface)' }}>
       {rows.map((r, i) => !r.uid && i === 1
         ? <div key={i} className="flex items-center px-3 py-2.5" style={{ opacity: 0.4 }}><span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Bye</span></div>
-        : <div key={i} className="flex items-center justify-between px-3 py-2.5"
+        : <div key={i} className="flex items-center justify-between px-3 py-2.5 gap-2"
             style={{ borderBottom: i === 0 ? '0.5px solid var(--border)' : '', background: isCompleted && match.winner_user_id === r.uid ? 'var(--accent-dim)' : r.uid === userId ? 'rgba(79,142,247,0.06)' : '' }}>
-            <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: match.winner_user_id === r.uid ? 500 : 400 }}>
+            <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: match.winner_user_id === r.uid ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
               {r.name || 'TBD'}{r.uid === userId && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
               {r.pts != null && <span className="text-sm font-medium" style={{ color: 'var(--accent)' }}>{r.pts} pts</span>}
               {match.winner_user_id === r.uid && <i className="ti ti-star text-xs" style={{ color: 'var(--gold)' }} />}
             </div>

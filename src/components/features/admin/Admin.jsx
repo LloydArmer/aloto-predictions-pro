@@ -131,11 +131,11 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
         : competitions.length === 0 ? <EmptyState icon="ti-trophy" title="No competitions yet" description="Create your first one above"/>
         : competitions.map(c => (
             <Card key={c.id}
-              className="p-3 mb-2 flex items-center justify-between"
+              className="p-3 mb-2 flex items-center justify-between flex-wrap gap-2"
               style={{ border: selectedComp === c.id ? '1px solid var(--accent)' : '0.5px solid var(--border)' }}>
-              <div className="flex items-center gap-2 cursor-pointer" onClick={() => setSelectedComp(c.id)} style={{ flex: 1 }}>
+              <div className="flex items-center gap-2 cursor-pointer" onClick={() => setSelectedComp(c.id)} style={{ flex: '1 1 140px', minWidth: 0 }}>
                 <span>{c.emoji}</span>
-                <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>{c.name}</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant={c.status === 'active' ? 'result' : 'upcoming'}>{c.status}</Badge>
@@ -395,9 +395,9 @@ function FixturesPanel({ gameweekId }) {
         : fixtures.length === 0 ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No fixtures yet</p>
         : <>
           {fixtures.map(fx => (
-            <div key={fx.id} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-              <div>
-                <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{fx.home_team} vs {fx.away_team}</p>
+            <div key={fx.id} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+              <div style={{ minWidth: 0, flex: '1 1 160px' }}>
+                <p className="text-sm" style={{ color: 'var(--txt-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fx.home_team} vs {fx.away_team}</p>
                 <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{formatUK(fx.kickoff_time, { weekday: 'short', day: '2-digit', month: 'short' })} UK</p>
               </div>
               <div className="flex items-center gap-2">
@@ -837,10 +837,10 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
         {participants.length === 0
           ? <p className="text-xs mb-4" style={{ color: 'var(--txt-muted)' }}>No participants yet</p>
           : participants.map(p => (
-              <div key={p.id} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-                <div>
+              <div key={p.id} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+                <div style={{ minWidth: 0, flex: '1 1 160px' }}>
                   <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{p.profiles?.display_name}</p>
-                  <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.profiles?.email}{p.profiles?.phone_number ? ` · ${p.profiles.phone_number}` : ''}</p>
+                  <p className="text-xs" style={{ color: 'var(--txt-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.profiles?.email}{p.profiles?.phone_number ? ` · ${p.profiles.phone_number}` : ''}</p>
                 </div>
                 <Badge variant={p.role === 'admin' ? 'admin' : 'upcoming'}>{p.role}</Badge>
               </div>
@@ -850,12 +850,12 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
         {invitations.length > 0 && <>
           <SectionLabel className="mb-2 mt-4">Pending invites ({invitations.length})</SectionLabel>
           {invitations.map(inv => (
-            <div key={inv.id} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-              <div>
+            <div key={inv.id} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+              <div style={{ minWidth: 0, flex: '1 1 140px' }}>
                 <p className="text-sm" style={{ color: 'var(--txt-second)' }}>{inv.display_name || inv.email}</p>
-                <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{inv.email}{inv.phone_number ? ` · ${inv.phone_number}` : ''}</p>
+                <p className="text-xs" style={{ color: 'var(--txt-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.email}{inv.phone_number ? ` · ${inv.phone_number}` : ''}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {inv.phone_number && (
                   <a href={whatsappShareLink(inv.phone_number, inv.display_name)} target="_blank" rel="noreferrer"
                     className="text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-second)', border: '0.5px solid var(--border)' }}>

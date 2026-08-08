@@ -69,7 +69,8 @@ function WeeklyPane({ gameweeks, userId }) {
           </div>
           <SectionLabel className="mb-2">{sel?.number} rankings</SectionLabel>
           <Card className="overflow-hidden p-0 mb-4">
-            <table className="data-table w-full">
+            <div className="overflow-x-auto">
+            <table className="data-table w-full" style={{ minWidth:400 }}>
               <thead><tr>
                 <th style={{ width:36,paddingLeft:14 }}>#</th><th>Player</th>
                 <th style={{ width:52,textAlign:'right' }}>Exact</th>
@@ -88,6 +89,7 @@ function WeeklyPane({ gameweeks, userId }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </Card>
           <button className="wa-btn" onClick={()=>openWhatsApp(buildWeeklyMessage(sel,weekly.map(w=>({display_name:w.profiles?.display_name||'Player',points:w.points})),window.location.origin))}>
             <i className="ti ti-brand-whatsapp text-base" aria-hidden="true"/>Share {sel?.number} results to WhatsApp

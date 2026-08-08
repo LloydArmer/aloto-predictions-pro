@@ -41,10 +41,10 @@ export function SectionLabel({ children, className = '' }) {
 
 export function StatCard({ label, value, sub, accentColor }) {
   return (
-    <div className="stat-card">
-      <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>{label}</p>
-      <p className="text-2xl font-medium" style={{ color: accentColor || 'var(--txt-primary)' }}>{value}</p>
-      {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--txt-second)' }}>{sub}</p>}
+    <div className="stat-card" style={{ minWidth: 0 }}>
+      <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</p>
+      <p className="text-2xl font-medium" style={{ color: accentColor || 'var(--txt-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</p>
+      {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--txt-second)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</p>}
     </div>
   )
 }

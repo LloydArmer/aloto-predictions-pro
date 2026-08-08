@@ -95,8 +95,8 @@ export default function Dashboard() {
                   const cfg = ocfg[f.outcome || 'upcoming']
                   const hasResult = f.home_score !== null
                   return (
-                    <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-                      <div>
+                    <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+                      <div style={{ minWidth: 0, flex: '1 1 200px' }}>
                         <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
                           {f.home_team} {hasResult ? `${f.home_score} – ${f.away_score}` : 'vs'} {f.away_team}
                         </p>
@@ -123,10 +123,10 @@ export default function Dashboard() {
           <Card className="p-4 mb-4">
             <SectionLabel className="mb-3">Current top 3</SectionLabel>
             {overall.slice(0,3).map((p,i) => (
-              <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-                <div className="flex items-center gap-2.5">
+              <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+                <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
                   <span className="text-lg">{medals[i]}</span>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
                       {p.display_name}
                       {p.user_id === user?.id && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}

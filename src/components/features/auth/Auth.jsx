@@ -9,7 +9,7 @@ function AuthShell({ title, subtitle, children }) {
     <div className="min-h-screen flex flex-col items-center justify-center px-4"
       style={{ background: 'var(--bg-base)' }}>
       <div className="mb-8 flex flex-col items-center gap-4">
-        <img src="/logo.png" alt="ALOTO Prediction Pro" width={300} style={{ height: 'auto' }} />
+        <img src="/logo.png" alt="ALOTO Prediction Pro" style={{ width: 300, maxWidth: '100%', height: 'auto' }} />
         <p className="text-sm" style={{ color: 'var(--txt-second)' }}>{subtitle}</p>
       </div>
       <div className="w-full max-w-sm rounded-xl p-6"
