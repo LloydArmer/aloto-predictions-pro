@@ -801,14 +801,18 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
       // time) as normal, and remove this placeholder.
       const { error } = await supabase.from('invitations').insert({ competition_id: competitionId, email: em || null, display_name: name.trim(), phone_number: phone.trim() || null })
       if (error) { if (error.code === '23505') toast.error('Already invited'); else throw error; return }
-      if (phone.trim() && channel !== 'whatsapp_share') inviteResult = await sendInvite(phone.trim(), name.trim())
-      if (phone.trim() && channel === 'whatsapp_share') {
+      if (channel === 'whatsapp_share') {
         // Open it right now, in the same click, rather than making the
         // admin hunt for the link afterwards in the pending list below.
+        // Works with or without a phone number — without one, WhatsApp
+        // just lets the admin pick who to send it to themselves.
         window.open(whatsappShareLink(phone.trim(), name.trim()), '_blank')
         toast.success('Invite recorded — opening WhatsApp for you to send it now.')
-      } else {
+      } else if (phone.trim()) {
+        inviteResult = await sendInvite(phone.trim(), name.trim())
         toast.success("They haven't signed up yet — invite recorded with their details. Add them here once they do.")
+      } else {
+        toast.success("They haven't signed up yet — invite recorded. Add them here once they do.")
       }
       if (phone.trim() && channel !== 'whatsapp_share' && inviteResult.sent) toast.success(`Invite text sent via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}!`)
       if (phone.trim() && channel !== 'whatsapp_share' && inviteResult.sent === false) toast.error(`Added, but the invite message failed to send: ${inviteResult.error}`)
@@ -894,12 +898,10 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
                 <p className="text-xs" style={{ color: 'var(--txt-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.email}{inv.phone_number ? ` · ${inv.phone_number}` : ''}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {inv.phone_number && (
-                  <a href={whatsappShareLink(inv.phone_number, inv.display_name)} target="_blank" rel="noreferrer"
-                    className="text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-second)', border: '0.5px solid var(--border)' }}>
-                    Share via WhatsApp
-                  </a>
-                )}
+                <a href={whatsappShareLink(inv.phone_number, inv.display_name)} target="_blank" rel="noreferrer"
+                  className="text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-second)', border: '0.5px solid var(--border)' }}>
+                  Share via WhatsApp
+                </a>
                 {inv.phone_number && <Button size="sm" onClick={() => resendInvite(inv)} disabled={sendingId === inv.id}>{sendingId === inv.id ? 'Sending…' : 'Resend SMS'}</Button>}
                 <Badge variant="upcoming">awaiting sign-up</Badge>
                 <button onClick={() => deleteInvite(inv)} title="Delete invite"
