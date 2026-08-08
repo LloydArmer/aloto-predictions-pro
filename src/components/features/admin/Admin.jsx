@@ -16,7 +16,7 @@ const TABS = [
 ]
 
 export default function Admin() {
-  const { user, isAdmin } = useAuth()
+  const { user, profile, isAdmin } = useAuth()
   const { competitions, loading: compsLoading, createCompetition, refetch: refetchComps } = useCompetitions()
   const [tab, setTab] = useState('competitions')
   const [selectedComp, setSelectedComp] = useState(null)
@@ -53,7 +53,7 @@ export default function Admin() {
       {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'bracket' && <BracketTab competitionId={selectedComp} competitions={competitions} />}
-      {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} />}
+      {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
     </div>
   )
 }
@@ -502,36 +502,59 @@ function BracketTab({ competitionId, competitions }) {
     const preview = drawPreview()
     if (!preview) { toast.error('Need at least 2 participants, and no more than 64'); return }
     const { N, T, targetRoundValue, byeCount, playoffCount } = preview
-    const targetIndex = ROUND_OPTIONS.findIndex(r => r.value === targetRoundValue)
     const shuffled = [...participants].map(p => p.user_id).sort(() => Math.random() - 0.5)
 
-    if (playoffCount === 0) {
-      const inserts = []
-      for (let i = 0; i < shuffled.length; i += 2) {
-        inserts.push({ competition_id: competitionId, round: targetRoundValue, round_order: targetIndex, home_user_id: shuffled[i], away_user_id: shuffled[i + 1] })
+    // Build the full chain of round sizes from T down to 2 (the Final) —
+    // e.g. T=8 → [8, 4, 2] → Quarter-final, Semi-final, Final.
+    const sizes = []
+    for (let s = T; s >= 2; s /= 2) sizes.push(s)
+
+    // Create every round's match "shells" first (empty — participants get
+    // filled in below), so we have real IDs to chain feeds_into links across.
+    const shellsBySize = {}
+    for (const size of sizes) {
+      const roundValue = ROUND_FOR_SIZE[size]
+      const roundIndex = ROUND_OPTIONS.findIndex(r => r.value === roundValue)
+      const shells = []
+      for (let i = 0; i < size / 2; i++) shells.push({ competition_id: competitionId, round: roundValue, round_order: roundIndex })
+      const { data: created, error } = await supabase.from('bracket_matches').insert(shells).select()
+      if (error || !created) { toast.error(`Could not create ${ROUND_OPTIONS[roundIndex].label} matches`); return }
+      shellsBySize[size] = created
+    }
+
+    // Chain each round's matches to feed their winner into the next round —
+    // match i and i+1 of this round feed into match floor(i/2) of the next.
+    for (let idx = 0; idx < sizes.length - 1; idx++) {
+      const cur = shellsBySize[sizes[idx]], next = shellsBySize[sizes[idx + 1]]
+      for (let i = 0; i < cur.length; i++) {
+        const nextMatchIndex = Math.floor(i / 2)
+        const side = i % 2 === 0 ? 'home' : 'away'
+        await supabase.from('bracket_matches').update({ feeds_into_match_id: next[nextMatchIndex].id, feeds_into_side: side }).eq('id', cur[i].id)
       }
-      const { error } = await supabase.from('bracket_matches').insert(inserts)
-      if (error) { toast.error('Could not create draw'); return }
-      toast.success(`${N} participants is already a clean bracket size — drawn straight into ${ROUND_OPTIONS[targetIndex].label}`)
+    }
+
+    const targetLabel = ROUND_OPTIONS.find(r => r.value === targetRoundValue)?.label
+    const targetMatches = shellsBySize[T]
+
+    if (playoffCount === 0) {
+      for (let i = 0; i < targetMatches.length; i++) {
+        await supabase.from('bracket_matches').update({ home_user_id: shuffled[i * 2], away_user_id: shuffled[i * 2 + 1] }).eq('id', targetMatches[i].id)
+      }
+      toast.success(`${N} participants — full bracket generated from ${targetLabel} through to the Final`)
+      setRound(targetRoundValue)
       load(); return
     }
 
     const byes = shuffled.slice(0, byeCount)
     const playoffPlayers = shuffled.slice(byeCount)
 
-    // Create the target round's match shells first, empty, so we have IDs
-    // to link the playoff winners into.
-    const targetShells = []
-    for (let i = 0; i < T / 2; i++) targetShells.push({ competition_id: competitionId, round: targetRoundValue, round_order: targetIndex })
-    const { data: createdTargets, error: targetErr } = await supabase.from('bracket_matches').insert(targetShells).select()
-    if (targetErr || !createdTargets) { toast.error('Could not create draw'); return }
-
     for (let i = 0; i < byeCount; i++) {
       const matchIndex = Math.floor(i / 2)
       const side = i % 2 === 0 ? 'home_user_id' : 'away_user_id'
-      await supabase.from('bracket_matches').update({ [side]: byes[i] }).eq('id', createdTargets[matchIndex].id)
+      await supabase.from('bracket_matches').update({ [side]: byes[i] }).eq('id', targetMatches[matchIndex].id)
     }
 
+    const targetIndex = ROUND_OPTIONS.findIndex(r => r.value === targetRoundValue)
     const playoffInserts = []
     for (let k = 0; k < playoffCount; k++) {
       const slotIndex = byeCount + k
@@ -540,13 +563,13 @@ function BracketTab({ competitionId, competitions }) {
       playoffInserts.push({
         competition_id: competitionId, round: 'playoff', round_order: targetIndex - 1,
         home_user_id: playoffPlayers[k * 2], away_user_id: playoffPlayers[k * 2 + 1],
-        feeds_into_match_id: createdTargets[matchIndex].id, feeds_into_side: side,
+        feeds_into_match_id: targetMatches[matchIndex].id, feeds_into_side: side,
       })
     }
     const { error: playoffErr } = await supabase.from('bracket_matches').insert(playoffInserts)
     if (playoffErr) { toast.error('Could not create playoff round'); return }
 
-    toast.success(`${N} participants: ${byeCount} get a bye straight to ${ROUND_OPTIONS[targetIndex].label}, ${playoffCount} playoff match${playoffCount !== 1 ? 'es' : ''} decide who joins them`)
+    toast.success(`Full bracket generated: ${byeCount} byes into ${targetLabel}, ${playoffCount} playoff match${playoffCount !== 1 ? 'es' : ''}, chained all the way through to the Final`)
     setRound('playoff')
     load()
   }
@@ -615,14 +638,14 @@ function BracketTab({ competitionId, competitions }) {
 
       {!hasAnyMatches && preview && (
         <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.35)' }}>
-          <SectionLabel className="mb-2">Auto-generate knockout draw</SectionLabel>
+          <SectionLabel className="mb-2">Auto-generate full knockout bracket</SectionLabel>
           {preview.playoffCount === 0
-            ? <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>{preview.N} participants is already a clean bracket size — draws straight into <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong>, no playoff needed.</p>
+            ? <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>{preview.N} participants is already a clean bracket size — the whole bracket, from <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong> through to the <strong>Final</strong>, will be created and linked in one go.</p>
             : <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
-                {preview.N} participants doesn't divide evenly. <strong>{preview.byeCount}</strong> randomly-chosen participant{preview.byeCount !== 1 ? 's' : ''} get a bye straight to <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong>, and <strong>{preview.playoffCount}</strong> playoff match{preview.playoffCount !== 1 ? 'es' : ''} (among the remaining {preview.playoffCount * 2}) decide who joins them.
+                {preview.N} participants doesn't divide evenly. <strong>{preview.byeCount}</strong> randomly-chosen participant{preview.byeCount !== 1 ? 's' : ''} get a bye straight to <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong>, and <strong>{preview.playoffCount}</strong> playoff match{preview.playoffCount !== 1 ? 'es' : ''} decide who joins them — every round after that, all the way to the <strong>Final</strong>, is created and linked at the same time, so winners automatically advance as each round resolves.
               </p>
           }
-          <Button variant="primary" size="sm" onClick={autoGenerateDraw}>Generate draw for all {preview.N} participants</Button>
+          <Button variant="primary" size="sm" onClick={autoGenerateDraw}>Generate full bracket for all {preview.N} participants</Button>
         </Card>
       )}
 
@@ -643,7 +666,8 @@ function BracketTab({ competitionId, competitions }) {
       </Card>
 
       <Card className="p-4 mb-4">
-        <SectionLabel className="mb-2">Randomly draw this round</SectionLabel>
+        <SectionLabel className="mb-2">Manually draw this round</SectionLabel>
+        <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Only needed if you want a different pairing than what auto-generate created, or you're setting up a round from scratch without it.</p>
         {availableParticipants.length === 0
           ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>All participants already have a match — check other rounds, or the matches below.</p>
           : <>
@@ -702,14 +726,17 @@ function BracketTab({ competitionId, competitions }) {
 }
 
 // ───────────────────────── Participants ─────────────────────────
-function ParticipantsTab({ competitionId }) {
+function ParticipantsTab({ competitionId, competitions, inviterName }) {
+  const comp = competitions.find(c => c.id === competitionId)
   const [participants, setParticipants] = useState([])
   const [invitations, setInvitations] = useState([])
   const [loading, setLoading] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [channel, setChannel] = useState('sms')
   const [adding, setAdding] = useState(false)
+  const [sendingId, setSendingId] = useState(null)
 
   useEffect(() => { if (competitionId) load(); else { setParticipants([]); setInvitations([]) } }, [competitionId])
 
@@ -723,6 +750,19 @@ function ParticipantsTab({ competitionId }) {
     } finally { setLoading(false) }
   }
 
+  async function sendInvite(toPhone, toName) {
+    if (!toPhone) return { skipped: true }
+    try {
+      const { data, error } = await supabase.functions.invoke('send-invite', {
+        body: { phone: toPhone, name: toName, channel, competitionName: comp?.name, inviterName },
+      })
+      if (error || !data?.success) throw new Error(data?.error || error?.message || 'Invite failed')
+      return { sent: true }
+    } catch (err) {
+      return { sent: false, error: err.message }
+    }
+  }
+
   async function addParticipant(e) {
     e.preventDefault()
     const em = email.trim().toLowerCase()
@@ -730,6 +770,7 @@ function ParticipantsTab({ competitionId }) {
     setAdding(true)
     try {
       const { data: profile } = await supabase.from('profiles').select('id').eq('email', em).maybeSingle()
+      let inviteResult = { skipped: true }
       if (profile) {
         if (name.trim() || phone.trim()) await supabase.rpc('admin_update_participant', { target_id: profile.id, new_display_name: name.trim(), new_phone: phone.trim() })
         const { error } = await supabase.from('participants').insert({ competition_id: competitionId, user_id: profile.id, role: 'player' })
@@ -738,11 +779,23 @@ function ParticipantsTab({ competitionId }) {
       } else {
         const { error } = await supabase.from('invitations').insert({ competition_id: competitionId, email: em, display_name: name.trim() || null, phone_number: phone.trim() || null })
         if (error) { if (error.code === '23505') toast.error('Already invited'); else throw error; return }
+        if (phone.trim()) inviteResult = await sendInvite(phone.trim(), name.trim())
         toast.success("They haven't signed up yet — invite recorded with their details. Add them here once they do.")
       }
+      if (phone.trim() && inviteResult.sent) toast.success(`Invite text sent via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}!`)
+      if (phone.trim() && inviteResult.sent === false) toast.error(`Added, but the invite message failed to send: ${inviteResult.error}`)
       setName(''); setEmail(''); setPhone(''); load()
     } catch { toast.error('Could not add player') }
     finally { setAdding(false) }
+  }
+
+  async function resendInvite(inv) {
+    if (!inv.phone_number) { toast.error('No phone number on file for this invite'); return }
+    setSendingId(inv.id)
+    const result = await sendInvite(inv.phone_number, inv.display_name)
+    if (result.sent) toast.success(`Invite resent via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}!`)
+    else if (result.sent === false) toast.error(`Could not send: ${result.error}`)
+    setSendingId(null)
   }
 
   if (!competitionId) return <EmptyState icon="ti-users" title="Create a competition first" />
@@ -751,13 +804,17 @@ function ParticipantsTab({ competitionId }) {
     <div>
       <Card className="p-4 mb-4">
         <SectionLabel className="mb-3">Add a player</SectionLabel>
-        <form onSubmit={addParticipant} className="flex flex-wrap gap-2">
+        <form onSubmit={addParticipant} className="flex flex-wrap gap-2 items-center">
           <Input placeholder="Name" value={name} onChange={e => setName(e.target.value)} style={{ flex: '1 1 130px' }} />
           <Input type="email" placeholder="player@example.com" value={email} onChange={e => setEmail(e.target.value)} style={{ flex: '1 1 160px' }} />
           <Input type="tel" placeholder="+447700900123" value={phone} onChange={e => setPhone(e.target.value)} style={{ flex: '1 1 140px' }} />
+          <Select value={channel} onChange={e => setChannel(e.target.value)} style={{ width: 110 }}>
+            <option value="sms">via SMS</option>
+            <option value="whatsapp">via WhatsApp</option>
+          </Select>
           <Button type="submit" variant="primary" disabled={adding}>{adding ? 'Adding…' : 'Add'}</Button>
         </form>
-        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>If they've already signed up, they're added immediately with these details. If not, share your site link — you can add them here once they've created an account.</p>
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>If a phone number is given, an invite text is sent automatically. WhatsApp only works for numbers already opted into your sandbox — use SMS for a first invite to someone new.</p>
       </Card>
 
       {loading ? <div className="flex justify-center py-10"><Spinner /></div> : <>
@@ -783,7 +840,10 @@ function ParticipantsTab({ competitionId }) {
                 <p className="text-sm" style={{ color: 'var(--txt-second)' }}>{inv.display_name || inv.email}</p>
                 <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{inv.email}{inv.phone_number ? ` · ${inv.phone_number}` : ''}</p>
               </div>
-              <Badge variant="upcoming">awaiting sign-up</Badge>
+              <div className="flex items-center gap-2">
+                {inv.phone_number && <Button size="sm" onClick={() => resendInvite(inv)} disabled={sendingId === inv.id}>{sendingId === inv.id ? 'Sending…' : 'Resend invite'}</Button>}
+                <Badge variant="upcoming">awaiting sign-up</Badge>
+              </div>
             </div>
           ))}
         </>}
