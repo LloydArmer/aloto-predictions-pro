@@ -734,7 +734,7 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [channel, setChannel] = useState('sms')
+  const [channel, setChannel] = useState('whatsapp_share')
   const [adding, setAdding] = useState(false)
   const [sendingId, setSendingId] = useState(null)
 
@@ -763,6 +763,18 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
     }
   }
 
+  // Opens the admin's own WhatsApp to send the invite personally — this
+  // works for anyone, unlike the Twilio-sent WhatsApp option above, which
+  // only works once someone has already joined your sandbox.
+  function whatsappShareLink(toPhone, toName) {
+    const site = window.location.origin
+    const greeting = toName ? `Hi ${toName}!` : 'Hi!'
+    const what = comp?.name ? `invited you to join "${comp.name}" on ALOTO Prediction Pro` : 'invited you to join ALOTO Prediction Pro'
+    const text = `🎯 ${greeting} ${inviterName || 'You\'ve been'} ${what}. Sign up here: ${site}/signup`
+    const digits = (toPhone || '').replace(/[^\d+]/g, '').replace(/^\+/, '')
+    return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`
+  }
+
   async function addParticipant(e) {
     e.preventDefault()
     const em = email.trim().toLowerCase()
@@ -779,11 +791,13 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
       } else {
         const { error } = await supabase.from('invitations').insert({ competition_id: competitionId, email: em, display_name: name.trim() || null, phone_number: phone.trim() || null })
         if (error) { if (error.code === '23505') toast.error('Already invited'); else throw error; return }
-        if (phone.trim()) inviteResult = await sendInvite(phone.trim(), name.trim())
-        toast.success("They haven't signed up yet — invite recorded with their details. Add them here once they do.")
+        if (phone.trim() && channel !== 'whatsapp_share') inviteResult = await sendInvite(phone.trim(), name.trim())
+        toast.success(phone.trim() && channel === 'whatsapp_share'
+          ? "Invite recorded — use the \"Share via WhatsApp\" link below to send it yourself."
+          : "They haven't signed up yet — invite recorded with their details. Add them here once they do.")
       }
-      if (phone.trim() && inviteResult.sent) toast.success(`Invite text sent via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}!`)
-      if (phone.trim() && inviteResult.sent === false) toast.error(`Added, but the invite message failed to send: ${inviteResult.error}`)
+      if (phone.trim() && channel !== 'whatsapp_share' && inviteResult.sent) toast.success(`Invite text sent via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}!`)
+      if (phone.trim() && channel !== 'whatsapp_share' && inviteResult.sent === false) toast.error(`Added, but the invite message failed to send: ${inviteResult.error}`)
       setName(''); setEmail(''); setPhone(''); load()
     } catch { toast.error('Could not add player') }
     finally { setAdding(false) }
@@ -808,13 +822,14 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
           <Input placeholder="Name" value={name} onChange={e => setName(e.target.value)} style={{ flex: '1 1 130px' }} />
           <Input type="email" placeholder="player@example.com" value={email} onChange={e => setEmail(e.target.value)} style={{ flex: '1 1 160px' }} />
           <Input type="tel" placeholder="+447700900123" value={phone} onChange={e => setPhone(e.target.value)} style={{ flex: '1 1 140px' }} />
-          <Select value={channel} onChange={e => setChannel(e.target.value)} style={{ width: 110 }}>
-            <option value="sms">via SMS</option>
-            <option value="whatsapp">via WhatsApp</option>
+          <Select value={channel} onChange={e => setChannel(e.target.value)} style={{ width: 150 }}>
+            <option value="whatsapp_share">Share via my WhatsApp</option>
+            <option value="sms">Auto-send SMS</option>
+            <option value="whatsapp">Auto-send WhatsApp</option>
           </Select>
           <Button type="submit" variant="primary" disabled={adding}>{adding ? 'Adding…' : 'Add'}</Button>
         </form>
-        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>If a phone number is given, an invite text is sent automatically. WhatsApp only works for numbers already opted into your sandbox — use SMS for a first invite to someone new.</p>
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}><strong>Share via my WhatsApp</strong> opens a message in your own WhatsApp for you to send — works for anyone. The auto-send options text on your behalf via Twilio, but SMS needs a verified number on your trial account, and WhatsApp only works for numbers already opted into your sandbox.</p>
       </Card>
 
       {loading ? <div className="flex justify-center py-10"><Spinner /></div> : <>
@@ -841,7 +856,13 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
                 <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{inv.email}{inv.phone_number ? ` · ${inv.phone_number}` : ''}</p>
               </div>
               <div className="flex items-center gap-2">
-                {inv.phone_number && <Button size="sm" onClick={() => resendInvite(inv)} disabled={sendingId === inv.id}>{sendingId === inv.id ? 'Sending…' : 'Resend invite'}</Button>}
+                {inv.phone_number && (
+                  <a href={whatsappShareLink(inv.phone_number, inv.display_name)} target="_blank" rel="noreferrer"
+                    className="text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-second)', border: '0.5px solid var(--border)' }}>
+                    Share via WhatsApp
+                  </a>
+                )}
+                {inv.phone_number && <Button size="sm" onClick={() => resendInvite(inv)} disabled={sendingId === inv.id}>{sendingId === inv.id ? 'Sending…' : 'Resend SMS'}</Button>}
                 <Badge variant="upcoming">awaiting sign-up</Badge>
               </div>
             </div>
