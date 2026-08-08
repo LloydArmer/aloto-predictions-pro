@@ -777,25 +777,34 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
 
   async function addParticipant(e) {
     e.preventDefault()
+    if (!name.trim()) { toast.error('Name is required'); return }
     const em = email.trim().toLowerCase()
-    if (!em) { toast.error('Email is required'); return }
     setAdding(true)
     try {
-      const { data: profile } = await supabase.from('profiles').select('id').eq('email', em).maybeSingle()
       let inviteResult = { skipped: true }
-      if (profile) {
-        if (name.trim() || phone.trim()) await supabase.rpc('admin_update_participant', { target_id: profile.id, new_display_name: name.trim(), new_phone: phone.trim() })
-        const { error } = await supabase.from('participants').insert({ competition_id: competitionId, user_id: profile.id, role: 'player' })
-        if (error) { if (error.code === '23505') toast.error('Already a participant'); else throw error; return }
-        toast.success('Player added!')
-      } else {
-        const { error } = await supabase.from('invitations').insert({ competition_id: competitionId, email: em, display_name: name.trim() || null, phone_number: phone.trim() || null })
-        if (error) { if (error.code === '23505') toast.error('Already invited'); else throw error; return }
-        if (phone.trim() && channel !== 'whatsapp_share') inviteResult = await sendInvite(phone.trim(), name.trim())
-        toast.success(phone.trim() && channel === 'whatsapp_share'
-          ? "Invite recorded — use the \"Share via WhatsApp\" link below to send it yourself."
-          : "They haven't signed up yet — invite recorded with their details. Add them here once they do.")
+      if (em) {
+        const { data: profile } = await supabase.from('profiles').select('id').eq('email', em).maybeSingle()
+        if (profile) {
+          if (name.trim() || phone.trim()) await supabase.rpc('admin_update_participant', { target_id: profile.id, new_display_name: name.trim(), new_phone: phone.trim() })
+          const { error } = await supabase.from('participants').insert({ competition_id: competitionId, user_id: profile.id, role: 'player' })
+          if (error) { if (error.code === '23505') toast.error('Already a participant'); else throw error; return }
+          toast.success('Player added!')
+          setName(''); setEmail(''); setPhone(''); load()
+          return
+        }
       }
+
+      // No email, or an email that hasn't signed up yet — record as a
+      // placeholder invite with whatever details were given. Without an
+      // email there's nothing to auto-match against a future signup, so
+      // once they've joined, add them again here (with their email this
+      // time) as normal, and remove this placeholder.
+      const { error } = await supabase.from('invitations').insert({ competition_id: competitionId, email: em || null, display_name: name.trim(), phone_number: phone.trim() || null })
+      if (error) { if (error.code === '23505') toast.error('Already invited'); else throw error; return }
+      if (phone.trim() && channel !== 'whatsapp_share') inviteResult = await sendInvite(phone.trim(), name.trim())
+      toast.success(phone.trim() && channel === 'whatsapp_share'
+        ? "Invite recorded — use the \"Share via WhatsApp\" link below to send it yourself."
+        : "They haven't signed up yet — invite recorded with their details. Add them here once they do.")
       if (phone.trim() && channel !== 'whatsapp_share' && inviteResult.sent) toast.success(`Invite text sent via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}!`)
       if (phone.trim() && channel !== 'whatsapp_share' && inviteResult.sent === false) toast.error(`Added, but the invite message failed to send: ${inviteResult.error}`)
       setName(''); setEmail(''); setPhone(''); load()
@@ -819,9 +828,9 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
       <Card className="p-4 mb-4">
         <SectionLabel className="mb-3">Add a player</SectionLabel>
         <form onSubmit={addParticipant} className="flex flex-wrap gap-2 items-center">
-          <Input placeholder="Name" value={name} onChange={e => setName(e.target.value)} style={{ flex: '1 1 130px' }} />
-          <Input type="email" placeholder="player@example.com" value={email} onChange={e => setEmail(e.target.value)} style={{ flex: '1 1 160px' }} />
-          <Input type="tel" placeholder="+447700900123" value={phone} onChange={e => setPhone(e.target.value)} style={{ flex: '1 1 140px' }} />
+          <Input placeholder="Name (required)" value={name} onChange={e => setName(e.target.value)} style={{ flex: '1 1 130px' }} />
+          <Input type="email" placeholder="Email (optional)" value={email} onChange={e => setEmail(e.target.value)} style={{ flex: '1 1 160px' }} />
+          <Input type="tel" placeholder="Phone (optional)" value={phone} onChange={e => setPhone(e.target.value)} style={{ flex: '1 1 140px' }} />
           <Select value={channel} onChange={e => setChannel(e.target.value)} style={{ width: 150 }}>
             <option value="whatsapp_share">Share via my WhatsApp</option>
             <option value="sms">Auto-send SMS</option>
@@ -829,7 +838,7 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
           </Select>
           <Button type="submit" variant="primary" disabled={adding}>{adding ? 'Adding…' : 'Add'}</Button>
         </form>
-        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}><strong>Share via my WhatsApp</strong> opens a message in your own WhatsApp for you to send — works for anyone. The auto-send options text on your behalf via Twilio, but SMS needs a verified number on your trial account, and WhatsApp only works for numbers already opted into your sandbox.</p>
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Only a name is required — send them the signup link via <strong>Share via my WhatsApp</strong>, which works for anyone with just a phone number. If you also give an email and they've already signed up, they're added straight away.</p>
       </Card>
 
       {loading ? <div className="flex justify-center py-10"><Spinner /></div> : <>
