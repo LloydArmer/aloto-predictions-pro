@@ -802,14 +802,37 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
       const { error } = await supabase.from('invitations').insert({ competition_id: competitionId, email: em || null, display_name: name.trim(), phone_number: phone.trim() || null })
       if (error) { if (error.code === '23505') toast.error('Already invited'); else throw error; return }
       if (phone.trim() && channel !== 'whatsapp_share') inviteResult = await sendInvite(phone.trim(), name.trim())
-      toast.success(phone.trim() && channel === 'whatsapp_share'
-        ? "Invite recorded — use the \"Share via WhatsApp\" link below to send it yourself."
-        : "They haven't signed up yet — invite recorded with their details. Add them here once they do.")
+      if (phone.trim() && channel === 'whatsapp_share') {
+        // Open it right now, in the same click, rather than making the
+        // admin hunt for the link afterwards in the pending list below.
+        window.open(whatsappShareLink(phone.trim(), name.trim()), '_blank')
+        toast.success('Invite recorded — opening WhatsApp for you to send it now.')
+      } else {
+        toast.success("They haven't signed up yet — invite recorded with their details. Add them here once they do.")
+      }
       if (phone.trim() && channel !== 'whatsapp_share' && inviteResult.sent) toast.success(`Invite text sent via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}!`)
       if (phone.trim() && channel !== 'whatsapp_share' && inviteResult.sent === false) toast.error(`Added, but the invite message failed to send: ${inviteResult.error}`)
       setName(''); setEmail(''); setPhone(''); load()
     } catch { toast.error('Could not add player') }
     finally { setAdding(false) }
+  }
+
+  async function deleteParticipant(p) {
+    const confirmed = window.confirm(`Remove ${p.profiles?.display_name || 'this player'} from this competition? Their account isn't deleted, just removed from here. Are you sure?`)
+    if (!confirmed) return
+    const { error } = await supabase.from('participants').delete().eq('id', p.id)
+    if (error) { toast.error('Could not remove player'); return }
+    toast.success(`${p.profiles?.display_name || 'Player'} removed`)
+    load()
+  }
+
+  async function deleteInvite(inv) {
+    const confirmed = window.confirm(`Delete the pending invite for ${inv.display_name || inv.email}? Are you sure?`)
+    if (!confirmed) return
+    const { error } = await supabase.from('invitations').delete().eq('id', inv.id)
+    if (error) { toast.error('Could not delete invite'); return }
+    toast.success('Invite deleted')
+    load()
   }
 
   async function resendInvite(inv) {
@@ -851,7 +874,13 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
                   <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{p.profiles?.display_name}</p>
                   <p className="text-xs" style={{ color: 'var(--txt-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.profiles?.email}{p.profiles?.phone_number ? ` · ${p.profiles.phone_number}` : ''}</p>
                 </div>
-                <Badge variant={p.role === 'admin' ? 'admin' : 'upcoming'}>{p.role}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={p.role === 'admin' ? 'admin' : 'upcoming'}>{p.role}</Badge>
+                  <button onClick={() => deleteParticipant(p)} title="Remove participant"
+                    className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
+                    <i className="ti ti-trash text-sm" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             ))
         }
@@ -873,6 +902,10 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
                 )}
                 {inv.phone_number && <Button size="sm" onClick={() => resendInvite(inv)} disabled={sendingId === inv.id}>{sendingId === inv.id ? 'Sending…' : 'Resend SMS'}</Button>}
                 <Badge variant="upcoming">awaiting sign-up</Badge>
+                <button onClick={() => deleteInvite(inv)} title="Delete invite"
+                  className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
+                  <i className="ti ti-trash text-sm" aria-hidden="true" />
+                </button>
               </div>
             </div>
           ))}
