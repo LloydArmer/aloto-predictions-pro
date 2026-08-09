@@ -110,24 +110,24 @@ export default function Dashboard() {
                   const cfg = ocfg[f.outcome || 'upcoming']
                   const hasResult = f.home_score !== null
                   return (
-                    <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
-                      <div style={{ minWidth: 0, flex: '1 1 200px' }}>
-                        <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
-                          {f.home_team} {hasResult ? `${f.home_score} – ${f.away_score}` : 'vs'} {f.away_team}
-                        </p>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--txt-muted)' }}>
+                    <div key={f.id} className="py-2.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
+                      <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+                        {f.home_team} {hasResult ? `${f.home_score} – ${f.away_score}` : 'vs'} {f.away_team}
+                      </p>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <p className="text-xs" style={{ color: 'var(--txt-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {f.myPrediction
                             ? `You predicted: ${f.myPrediction.predicted_home}–${f.myPrediction.predicted_away}`
                             : hasResult ? 'No prediction' : format(new Date(f.kickoff_time),'EEE HH:mm')}
                         </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap justify-end" style={{ flexShrink: 0, marginLeft: 'auto' }}>
-                        <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                        {f.outcome && f.outcome !== 'upcoming' && (
-                          <span className="text-xs font-medium" style={{ color: f.outcome==='exact'?'var(--green)':f.outcome==='miss'?'var(--red)':'var(--accent)' }}>
-                            {f.outcome==='exact'?'+5':f.outcome==='result'?'+2':'0'} pts
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                          <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                          {f.outcome && f.outcome !== 'upcoming' && (
+                            <span className="text-xs font-medium" style={{ color: f.outcome==='exact'?'var(--green)':f.outcome==='miss'?'var(--red)':'var(--accent)' }}>
+                              {f.outcome==='exact'?'+5':f.outcome==='result'?'+2':'0'} pts
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
