@@ -3,9 +3,18 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
-import { Card, Badge, Button, Select, Spinner, EmptyState } from '../../ui'
+import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
+
+// Three-tier colouring shared by the fixture cards and the results matrix —
+// green for an exact score, amber for a correct result, muted for neither.
+function pointsStyle(points, rules) {
+  if (!rules) return { bg: 'var(--bg-elevated)', color: 'var(--txt-muted)' }
+  if (points >= rules.exact_score_points && rules.exact_score_points > 0) return { bg: 'var(--green-dim)', color: 'var(--green)' }
+  if (points >= rules.correct_result_points && rules.correct_result_points > 0) return { bg: 'rgba(245,166,35,0.14)', color: 'var(--amber)' }
+  return { bg: 'var(--bg-elevated)', color: 'var(--txt-muted)' }
+}
 
 function ScoreInput({ value, onChange, disabled }) {
   return <input type="number" min="0" max="20" value={value}
@@ -14,14 +23,21 @@ function ScoreInput({ value, onChange, disabled }) {
     style={disabled ? { opacity:0.45, cursor:'not-allowed' } : {}}/>
 }
 
-function AllPredictions({ fixtureId, userId }) {
+function AllPredictions({ fixtureId, userId, rules }) {
   const [rows, setRows] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     supabase.from('predictions').select('predicted_home, predicted_away, points_earned, user_id, profiles(display_name)')
-      .eq('fixture_id', fixtureId).order('points_earned', { ascending: false })
-      .then(({ data }) => { setRows(data || []); setLoading(false) })
+      .eq('fixture_id', fixtureId)
+      .then(({ data }) => {
+        const sorted = (data || []).sort((a, b) => {
+          if (a.user_id === userId) return -1
+          if (b.user_id === userId) return 1
+          return b.points_earned - a.points_earned
+        })
+        setRows(sorted); setLoading(false)
+      })
   }, [fixtureId])
 
   if (loading) return <div className="flex justify-center py-4"><Spinner size="sm"/></div>
@@ -29,23 +45,27 @@ function AllPredictions({ fixtureId, userId }) {
 
   return (
     <div className="mt-2 rounded-md overflow-hidden" style={{ border:'0.5px solid var(--border)' }}>
-      {rows.map((r, i) => (
-        <div key={i} className="flex items-center justify-between px-3 py-2"
-          style={{ background: r.user_id === userId ? 'rgba(79,142,247,0.08)' : i % 2 ? 'var(--bg-surface)' : 'transparent', borderBottom: i < rows.length-1 ? '0.5px solid var(--border)' : '' }}>
-          <span className="text-xs" style={{ color:'var(--txt-primary)', fontWeight: r.user_id === userId ? 600 : 400 }}>
-            {r.profiles?.display_name}{r.user_id === userId && <span style={{ color:'var(--accent)' }}> (you)</span>}
-          </span>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium" style={{ color:'var(--txt-second)' }}>{r.predicted_home}–{r.predicted_away}</span>
-            <Badge variant={r.points_earned > 0 ? 'result' : 'upcoming'}>{r.points_earned}pts</Badge>
+      {rows.map((r, i) => {
+        const isMe = r.user_id === userId
+        const ps = pointsStyle(r.points_earned, rules)
+        return (
+          <div key={i} className="flex items-center justify-between px-3 py-2"
+            style={{ background: isMe ? 'var(--accent-dim)' : 'transparent', borderBottom: i < rows.length-1 ? '0.5px solid var(--border)' : '' }}>
+            <span className="text-xs" style={{ color: isMe ? 'var(--accent)' : 'var(--txt-primary)', fontWeight: isMe ? 700 : 400 }}>
+              {r.profiles?.display_name}{isMe && ' (you)'}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium" style={{ color:'var(--txt-second)' }}>{r.predicted_home}–{r.predicted_away}</span>
+              <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: ps.bg, color: ps.color }}>{r.points_earned}pts</span>
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
 
-function FixtureCard({ fixture, prediction, userId, onSave }) {
+function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSave }) {
   const [home, setHome] = useState(prediction?.predicted_home ?? '')
   const [away, setAway] = useState(prediction?.predicted_away ?? '')
   const [saving, setSaving] = useState(false)
@@ -56,6 +76,7 @@ function FixtureCard({ fixture, prediction, userId, onSave }) {
   const isLocked = isPast(kickoff)
   const hasResult = fixture.home_score !== null
   const justSaved = !!prediction
+  const ps = hasResult && prediction ? pointsStyle(prediction.points_earned, rules) : null
 
   async function save() {
     if (home === '' || away === '') { toast.error('Enter both scores'); return }
@@ -67,30 +88,42 @@ function FixtureCard({ fixture, prediction, userId, onSave }) {
 
   return (
     <Card className="p-4 mb-3" style={justSaved && !isLocked ? { border: '1px solid var(--green)' } : {}}>
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-1">
-        <span className="text-xs" style={{ color:'var(--txt-muted)' }}>{format(kickoff,'EEE d MMM · HH:mm')}</span>
-        {isLocked ? <Badge variant="miss">Locked</Badge> : <Badge variant="upcoming">Open</Badge>}
-      </div>
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="flex-1 text-sm font-medium" style={{ color:'var(--txt-primary)', minWidth: 80 }}>{fixture.home_team}</span>
-        {hasResult ? (
-          <div className="flex items-center gap-2">
-            <div className="score-box flex items-center justify-center" style={{ cursor:'default', background:'var(--bg-raised)' }}>{fixture.home_score}</div>
-            <span style={{ color:'var(--txt-muted)' }} className="font-medium">–</span>
-            <div className="score-box flex items-center justify-center" style={{ cursor:'default', background:'var(--bg-raised)' }}>{fixture.away_score}</div>
-          </div>
-        ) : (
+      <p className="text-base font-semibold" style={{ color:'var(--txt-primary)' }}>
+        {fixture.home_team} <span style={{ color:'var(--txt-muted)', fontWeight:400 }}>vs</span> {fixture.away_team}
+      </p>
+      <p className="text-xs mb-3" style={{ color:'var(--txt-muted)' }}>{gwLabel} · KO: {format(kickoff,'EEE d MMM')} at {format(kickoff,'HH:mm')}</p>
+
+      {hasResult ? (
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <span className="text-base font-bold" style={{ color:'var(--green)' }}>Result: {fixture.home_score}–{fixture.away_score}</span>
+          {prediction && <span className="text-xs font-medium px-2.5 py-1 rounded-md" style={{ background: ps.bg, color: ps.color }}>{prediction.points_earned}pts</span>}
+          <span className="text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1" style={{ background:'rgba(239,68,68,0.14)', color:'var(--red)' }}>
+            <i className="ti ti-lock text-xs" aria-hidden="true"/>Locked
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 flex-wrap mb-2">
           <div className="flex items-center gap-2">
             <ScoreInput value={home} onChange={setHome} disabled={isLocked}/>
             <span style={{ color:'var(--txt-muted)' }} className="font-medium">–</span>
             <ScoreInput value={away} onChange={setAway} disabled={isLocked}/>
           </div>
-        )}
-        <span className="flex-1 text-sm font-medium text-right" style={{ color:'var(--txt-primary)', minWidth: 80 }}>{fixture.away_team}</span>
-      </div>
+          {isLocked && (
+            <span className="text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1" style={{ background:'rgba(239,68,68,0.14)', color:'var(--red)' }}>
+              <i className="ti ti-lock text-xs" aria-hidden="true"/>Locked
+            </span>
+          )}
+        </div>
+      )}
+
+      {hasResult && (
+        <p className="text-sm mb-2" style={{ color:'var(--txt-second)' }}>
+          Your prediction: <strong style={{ color:'var(--txt-primary)' }}>{prediction ? `${prediction.predicted_home}–${prediction.predicted_away}` : '—'}</strong>
+        </p>
+      )}
 
       {!isLocked && !hasResult && (
-        <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
+        <div className="flex items-center justify-between mt-1 flex-wrap gap-2">
           <p className="text-xs" style={{ color:'var(--txt-muted)' }}>
             {justSaved
               ? <span style={{ color:'var(--green)' }}>Saved {format(new Date(prediction.submitted_at), 'd MMM, HH:mm')} — you can still change this until kickoff</span>
@@ -102,24 +135,97 @@ function FixtureCard({ fixture, prediction, userId, onSave }) {
         </div>
       )}
 
-      {prediction && hasResult && (
-        <div className="mt-2.5 pt-2.5 flex items-center justify-between" style={{ borderTop:'0.5px solid var(--border)' }}>
-          <span className="text-xs" style={{ color:'var(--txt-muted)' }}>Your prediction: {prediction.predicted_home}–{prediction.predicted_away}</span>
-          <span className="text-xs font-medium" style={{ color: prediction.points_earned > 0 ? (prediction.points_earned >= 5 ? 'var(--green)' : 'var(--accent)') : 'var(--txt-muted)' }}>
-            {prediction.points_earned > 0 ? `+${prediction.points_earned} pts` : '0 pts'}
-          </span>
-        </div>
-      )}
-
       {isLocked && (
-        <div className="mt-2.5 pt-2.5" style={{ borderTop:'0.5px solid var(--border)' }}>
-          <button onClick={() => setShowAll(v => !v)} className="text-xs" style={{ color:'var(--accent)' }}>
-            {showAll ? 'Hide' : 'Show'} everyone's predictions
-          </button>
-          {showAll && <AllPredictions fixtureId={fixture.id} userId={userId} />}
-        </div>
+        <button onClick={() => setShowAll(v => !v)} className="text-xs flex items-center gap-1" style={{ color:'var(--accent)' }}>
+          <i className={`ti ti-chevron-${showAll ? 'up' : 'down'} text-xs`} aria-hidden="true"/>
+          {showAll ? 'Hide' : 'Show'} all predictions {count != null && `(${count})`}
+        </button>
       )}
+      {isLocked && showAll && <AllPredictions fixtureId={fixture.id} userId={userId} rules={rules} />}
     </Card>
+  )
+}
+
+// ───────────────────────── Gameweek Results tab ─────────────────────────
+function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
+  const [fixtures, setFixtures] = useState([])
+  const [participants, setParticipants] = useState([])
+  const [predMap, setPredMap] = useState({}) // { userId: { fixtureId: pred } }
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { if (gwId) load(); else setLoading(false) }, [gwId])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const [{ data: fx }, { data: parts }, { data: preds }] = await Promise.all([
+        supabase.from('fixtures').select('*').eq('gameweek_id', gwId).order('kickoff_time'),
+        supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
+        supabase.from('predictions').select('user_id, fixture_id, predicted_home, predicted_away, points_earned').eq('gameweek_id', gwId),
+      ])
+      setFixtures(fx || [])
+      const totals = {}
+      ;(preds || []).forEach(p => { totals[p.user_id] = (totals[p.user_id] || 0) + (p.points_earned || 0) })
+      const sortedParts = [...(parts || [])].sort((a,b) => (totals[b.user_id]||0) - (totals[a.user_id]||0))
+      setParticipants(sortedParts)
+      const map = {}
+      ;(preds || []).forEach(p => { if (!map[p.user_id]) map[p.user_id] = {}; map[p.user_id][p.fixture_id] = p })
+      setPredMap(map)
+    } finally { setLoading(false) }
+  }
+
+  if (!gwId) return <EmptyState icon="ti-calendar-off" title="No gameweek selected" />
+  if (loading) return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
+
+  return (
+    <div>
+      <Card className="p-4 mb-4">
+        <p className="text-sm font-semibold mb-3" style={{ color:'var(--txt-primary)' }}>Results</p>
+        {fixtures.length === 0
+          ? <p className="text-xs" style={{ color:'var(--txt-muted)' }}>No fixtures this gameweek</p>
+          : fixtures.map(f => (
+              <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor:'var(--border)' }}>
+                <span className="text-sm" style={{ color:'var(--txt-primary)' }}>{f.home_team} vs {f.away_team}</span>
+                <span className="text-sm font-bold" style={{ color: f.home_score !== null ? 'var(--green)' : 'var(--txt-muted)' }}>
+                  {f.home_score !== null ? `${f.home_score} – ${f.away_score}` : format(new Date(f.kickoff_time), 'HH:mm')}
+                </span>
+              </div>
+            ))
+        }
+      </Card>
+
+      {participants.length > 0 && fixtures.length > 0 && (
+        <Card className="overflow-hidden p-0">
+          <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & points</p>
+          <div className="overflow-x-auto">
+            <table className="data-table w-full" style={{ minWidth: 120 + fixtures.length * 100 }}>
+              <thead><tr>
+                <th style={{ width: 110, paddingLeft: 14 }}>Participant</th>
+                {fixtures.map(f => <th key={f.id} style={{ width: 100, textAlign:'center', fontSize: 10, lineHeight: 1.3 }}>{f.home_team}<br/>v<br/>{f.away_team}</th>)}
+              </tr></thead>
+              <tbody>
+                {participants.map(p => (
+                  <tr key={p.user_id}>
+                    <td style={{ paddingLeft: 14 }}><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.profiles?.display_name}</p></td>
+                    {fixtures.map(f => {
+                      const pred = predMap[p.user_id]?.[f.id]
+                      if (!pred) return <td key={f.id} style={{ textAlign:'center' }}><span className="text-xs" style={{ color:'var(--txt-muted)' }}>—</span></td>
+                      const ps = pointsStyle(pred.points_earned, rules)
+                      return (
+                        <td key={f.id} style={{ textAlign:'center', background: ps.bg, padding: '8px 4px' }}>
+                          <p className="text-sm font-semibold" style={{ color: ps.color }}>{pred.predicted_home}–{pred.predicted_away}</p>
+                          <p className="text-xs" style={{ color: ps.color, opacity: 0.85 }}>{pred.points_earned}pts</p>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
   )
 }
 
@@ -130,11 +236,14 @@ export default function Predict() {
   const [gameweeks, setGameweeks] = useState([])
   const [selectedGW, setSelectedGW] = useState(null)
   const [rules, setRules] = useState(null)
+  const [tab, setTab] = useState('mine')
+  const [counts, setCounts] = useState({})
   const { fixtures, loading: lf } = useFixtures(selectedGW?.id)
   const { predictions, loading: lp, savePrediction } = usePredictions(selectedGW?.id, user?.id)
 
   useEffect(() => { if (competitions.length && !comp) setComp(competitions[0]?.id) }, [competitions])
   useEffect(() => { if (comp) { loadGWs(); loadRules() } }, [comp])
+  useEffect(() => { if (selectedGW) loadCounts() }, [selectedGW])
 
   async function loadGWs() {
     const { data } = await supabase.from('gameweeks').select('*').eq('competition_id', comp).order('number')
@@ -146,6 +255,12 @@ export default function Predict() {
   async function loadRules() {
     const { data } = await supabase.from('point_rules').select('*').eq('competition_id', comp).maybeSingle()
     setRules(data)
+  }
+
+  async function loadCounts() {
+    const { data } = await supabase.from('predictions').select('fixture_id').eq('gameweek_id', selectedGW.id)
+    const c = {}; (data||[]).forEach(p => { c[p.fixture_id] = (c[p.fixture_id]||0) + 1 })
+    setCounts(c)
   }
 
   return (
@@ -160,6 +275,15 @@ export default function Predict() {
         </Select>
       </div>
 
+      <div className="flex gap-4 mb-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
+        {[['mine','My Predictions'],['results','Gameweek Results']].map(([k,label]) => (
+          <button key={k} onClick={() => setTab(k)} className="text-sm pb-2"
+            style={{ color: tab===k ? 'var(--accent)' : 'var(--txt-muted)', fontWeight: tab===k ? 600 : 400, borderBottom: tab===k ? '2px solid var(--accent)' : '2px solid transparent' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       {selectedGW && rules && (
         <div className="mb-4 p-3 rounded-md text-xs" style={{ background:'var(--bg-surface)', border:'0.5px solid var(--border)' }}>
           <span style={{ color:'var(--txt-second)' }}>
@@ -171,10 +295,13 @@ export default function Predict() {
         </div>
       )}
 
-      {lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg"/></div>
+      {tab === 'mine' ? (
+        lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg"/></div>
         : fixtures.length === 0 ? <EmptyState icon="ti-calendar-off" title="No fixtures this gameweek" description="Fixtures will appear when the admin adds them"/>
-        : fixtures.map(f => <FixtureCard key={f.id} fixture={f} prediction={predictions[f.id]} userId={user?.id} onSave={(fid,h,a)=>savePrediction(fid,h,a,selectedGW.id,user.id)}/>)
-      }
+        : fixtures.map(f => <FixtureCard key={f.id} fixture={f} prediction={predictions[f.id]} userId={user?.id} count={counts[f.id]} rules={rules} gwLabel={selectedGW?.number} onSave={(fid,h,a)=>savePrediction(fid,h,a,selectedGW.id,user.id)}/>)
+      ) : (
+        <GameweekResultsTab competitionId={comp} gwId={selectedGW?.id} gwLabel={selectedGW?.number} rules={rules} />
+      )}
     </div>
   )
 }
