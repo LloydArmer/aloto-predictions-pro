@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
+import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
@@ -13,14 +14,13 @@ import { format } from 'date-fns'
 export default function Dashboard() {
   const { user, isAdmin } = useAuth()
   const { competitions, loading: compsLoading } = useCompetitions()
-  const [comp,    setComp]    = useState(null)
+  const [comp,    setComp]    = useSelectedCompetition(competitions)
   const [results, setResults] = useState([])
   const [gw,      setGW]      = useState(null)
   const [stats,   setStats]   = useState(null)
   const [loading, setLoading] = useState(false)
   const { overall } = useLeaderboard(comp)
 
-  useEffect(() => { if (competitions.length && !comp) setComp(competitions[0]?.id) }, [competitions])
   useEffect(() => { if (comp && user) load(); else setLoading(false) }, [comp, user])
 
   async function load() {
@@ -45,7 +45,7 @@ export default function Dashboard() {
   const ocfg = {
     exact:    { label: 'Exact score!',    variant: 'exact'    },
     result:   { label: 'Correct result',  variant: 'result'   },
-    miss:     { label: 'No points',       variant: 'miss'     },
+    miss:     { label: 'Missed',          variant: 'miss'     },
     upcoming: { label: 'Upcoming',        variant: 'upcoming' },
   }
   const medals = ['🥇','🥈','🥉']

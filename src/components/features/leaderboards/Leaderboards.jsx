@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
+import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useWeeklyLeaderboard, useMonthlyLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
-import { Card, SectionLabel, StatCard, Spinner, EmptyState, Badge, Select } from '../../ui'
+import { Card, SectionLabel, StatCard, Spinner, EmptyState, Badge } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import { buildWeeklyMessage, buildMonthlyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import { format } from 'date-fns'
@@ -53,9 +54,11 @@ function WeeklyPane({ gameweeks, userId }) {
   const winner = weekly[0]
   return (
     <div>
-      <Select value={sel?.id || ''} onChange={e => setSel(gameweeks.find(g => g.id === e.target.value) || null)} className="mb-4" style={{ maxWidth: 200 }}>
-        {[...gameweeks].reverse().map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
-      </Select>
+      <div className="flex gap-1.5 flex-wrap mb-4 overflow-x-auto pb-1">
+        {[...gameweeks].reverse().slice(0,10).map(gw=>(
+          <button key={gw.id} className={`pill ${sel?.id===gw.id?'active':''}`} onClick={()=>setSel(gw)}>{gw.number}</button>
+        ))}
+      </div>
       {loading ? <div className="flex justify-center py-16"><Spinner size="lg"/></div>
         : weekly.length===0 ? <EmptyState icon="ti-medal" title="No scores yet" description="Scores appear after each gameweek is completed"/>
         : <>
@@ -107,9 +110,11 @@ function MonthlyPane({ competitionId, months, userId }) {
   const upcomingGWs=gameweeksInMonth.filter(g=>g.status==='upcoming')
   return (
     <div>
-      <Select value={sel?.key || ''} onChange={e => setSel(months.find(m => m.key === e.target.value) || null)} className="mb-4" style={{ maxWidth: 200 }}>
-        {[...months].reverse().map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
-      </Select>
+      <div className="flex gap-1.5 flex-wrap mb-4 overflow-x-auto pb-1">
+        {[...months].reverse().map(m=>(
+          <button key={m.key} className={`pill ${sel?.key===m.key?'active':''}`} onClick={()=>setSel(m)}>{m.label}</button>
+        ))}
+      </div>
       <Card raised className="p-4 mb-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{sel?.label} — gameweeks</p>
@@ -177,11 +182,10 @@ function MonthlyPane({ competitionId, months, userId }) {
 export default function Leaderboards() {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
-  const [comp, setComp] = useState(null)
+  const [comp, setComp] = useSelectedCompetition(competitions)
   const [mode, setMode] = useState('weekly')
   const [gameweeks, setGameweeks] = useState([])
   const [months, setMonths] = useState([])
-  useEffect(() => { if(competitions.length&&!comp) setComp(competitions[0]?.id) }, [competitions])
   useEffect(() => { if(comp) loadMeta(comp) }, [comp])
 
   async function loadMeta(id) {

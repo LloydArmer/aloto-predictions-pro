@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
+import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
 import { recalculateGameweek, resolveBracketRound } from '../../../lib/scoring'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
@@ -19,9 +20,7 @@ export default function Admin() {
   const { user, profile, isAdmin } = useAuth()
   const { competitions, loading: compsLoading, createCompetition, refetch: refetchComps } = useCompetitions()
   const [tab, setTab] = useState('competitions')
-  const [selectedComp, setSelectedComp] = useState(null)
-
-  useEffect(() => { if (competitions.length && !selectedComp) setSelectedComp(competitions[0].id) }, [competitions])
+  const [selectedComp, setSelectedComp] = useSelectedCompetition(competitions)
 
   if (!isAdmin) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">

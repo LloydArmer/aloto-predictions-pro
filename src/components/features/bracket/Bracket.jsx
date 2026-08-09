@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
+import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
 import { Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
@@ -35,16 +36,10 @@ function MatchCard({ match, userId }) {
 export default function Bracket() {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
-  const [comp, setComp] = useState(null)
+  const [comp, setComp] = useSelectedCompetition(competitions)
   const [rounds, setRounds] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    if (competitions.length && !comp) {
-      const ko = competitions.find(c => c.format === 'knockout' || c.format === 'group_knockout')
-      setComp(ko?.id || competitions[0]?.id)
-    }
-  }, [competitions])
   useEffect(() => { if (comp) load(); else setLoading(false) }, [comp])
 
   async function load() {

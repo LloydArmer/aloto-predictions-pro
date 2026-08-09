@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
+import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
@@ -184,9 +185,9 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
         {fixtures.length === 0
           ? <p className="text-xs" style={{ color:'var(--txt-muted)' }}>No fixtures this gameweek</p>
           : fixtures.map(f => (
-              <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0 gap-3" style={{ borderColor:'var(--border)' }}>
-                <span className="text-sm" style={{ color:'var(--txt-primary)', minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.home_team} vs {f.away_team}</span>
-                <span className="text-sm font-bold" style={{ color: f.home_score !== null ? 'var(--green)' : 'var(--txt-muted)', minWidth: 66, textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+              <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor:'var(--border)' }}>
+                <span className="text-sm" style={{ color:'var(--txt-primary)' }}>{f.home_team} vs {f.away_team}</span>
+                <span className="text-sm font-bold" style={{ color: f.home_score !== null ? 'var(--green)' : 'var(--txt-muted)' }}>
                   {f.home_score !== null ? `${f.home_score} – ${f.away_score}` : format(new Date(f.kickoff_time), 'HH:mm')}
                 </span>
               </div>
@@ -196,7 +197,7 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
 
       {participants.length > 0 && fixtures.length > 0 && (
         <Card className="overflow-hidden p-0">
-          <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & Points</p>
+          <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & points</p>
           <div className="overflow-x-auto">
             <table className="data-table w-full" style={{ minWidth: 120 + fixtures.length * 100 }}>
               <thead><tr>
@@ -232,7 +233,7 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
 export default function Predict() {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
-  const [comp, setComp] = useState(null)
+  const [comp, setComp] = useSelectedCompetition(competitions)
   const [gameweeks, setGameweeks] = useState([])
   const [selectedGW, setSelectedGW] = useState(null)
   const [rules, setRules] = useState(null)
@@ -241,7 +242,6 @@ export default function Predict() {
   const { fixtures, loading: lf } = useFixtures(selectedGW?.id)
   const { predictions, loading: lp, savePrediction } = usePredictions(selectedGW?.id, user?.id)
 
-  useEffect(() => { if (competitions.length && !comp) setComp(competitions[0]?.id) }, [competitions])
   useEffect(() => { if (comp) { loadGWs(); loadRules() } }, [comp])
   useEffect(() => { if (selectedGW) loadCounts() }, [selectedGW])
 

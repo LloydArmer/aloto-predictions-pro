@@ -1,6 +1,7 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
+import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
 import { Card, Spinner, EmptyState } from '../../ui'
@@ -14,11 +15,10 @@ function Pos({ n }) {
 export default function Table() {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
-  const [comp, setComp] = useState(null)
+  const [comp, setComp] = useSelectedCompetition(competitions)
   const { overall, loading } = useLeaderboard(comp)
   const [rules, setRules] = useState(null)
   const [badgesByUser, setBadgesByUser] = useState({})
-  useEffect(() => { if (competitions.length && !comp) setComp(competitions[0]?.id) }, [competitions])
   useEffect(() => { if (comp) load(); else { setRules(null); setBadgesByUser({}) } }, [comp])
 
   async function load() {
