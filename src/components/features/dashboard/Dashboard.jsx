@@ -45,7 +45,7 @@ export default function Dashboard() {
   const ocfg = {
     exact:    { label: 'Exact score!',    variant: 'exact'    },
     result:   { label: 'Correct result',  variant: 'result'   },
-    miss:     { label: 'Missed',          variant: 'miss'     },
+    miss:     { label: 'No points',       variant: 'miss'     },
     upcoming: { label: 'Upcoming',        variant: 'upcoming' },
   }
   const medals = ['🥇','🥈','🥉']

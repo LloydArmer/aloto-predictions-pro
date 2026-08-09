@@ -184,9 +184,9 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
         {fixtures.length === 0
           ? <p className="text-xs" style={{ color:'var(--txt-muted)' }}>No fixtures this gameweek</p>
           : fixtures.map(f => (
-              <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor:'var(--border)' }}>
-                <span className="text-sm" style={{ color:'var(--txt-primary)' }}>{f.home_team} vs {f.away_team}</span>
-                <span className="text-sm font-bold" style={{ color: f.home_score !== null ? 'var(--green)' : 'var(--txt-muted)' }}>
+              <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0 gap-3" style={{ borderColor:'var(--border)' }}>
+                <span className="text-sm" style={{ color:'var(--txt-primary)', minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.home_team} vs {f.away_team}</span>
+                <span className="text-sm font-bold" style={{ color: f.home_score !== null ? 'var(--green)' : 'var(--txt-muted)', minWidth: 66, textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                   {f.home_score !== null ? `${f.home_score} – ${f.away_score}` : format(new Date(f.kickoff_time), 'HH:mm')}
                 </span>
               </div>
@@ -196,7 +196,7 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
 
       {participants.length > 0 && fixtures.length > 0 && (
         <Card className="overflow-hidden p-0">
-          <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & points</p>
+          <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & Points</p>
           <div className="overflow-x-auto">
             <table className="data-table w-full" style={{ minWidth: 120 + fixtures.length * 100 }}>
               <thead><tr>

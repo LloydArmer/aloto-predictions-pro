@@ -114,7 +114,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
               <Select value={format} onChange={e => changeFormat(e.target.value)} className="w-full">
                 <option value="league">League</option>
                 <option value="knockout">Knockout</option>
-                <option value="group_knockout">Group + knockout</option>
+                <option value="group_knockout">Group + Knockout</option>
               </Select>
             </div>
             <div style={{ width: 90 }}>
@@ -296,10 +296,9 @@ function GameweeksTab({ competitionId }) {
                   {gw.status !== 'active' && <Button size="sm" onClick={() => setActive(gw)}>Set as current gameweek</Button>}
                   {gw.status === 'active' && <Button size="sm" onClick={() => updateGw(gw.id, { status: 'completed' })}>Mark completed</Button>}
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Month (for monthly leaderboard):</span>
-                    <Input placeholder="2025-08" value={gw.month_key || ''} style={{ width: 90 }}
-                      onChange={e => setGws(prev => prev.map(g => g.id === gw.id ? { ...g, month_key: e.target.value } : g))}
-                      onBlur={e => updateGw(gw.id, { month_key: e.target.value })} />
+                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Month:</span>
+                    <input type="month" value={gw.month_key || ''} style={{ width: 140, background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }}
+                      onChange={e => { setGws(prev => prev.map(g => g.id === gw.id ? { ...g, month_key: e.target.value } : g)); updateGw(gw.id, { month_key: e.target.value }) }} />
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -366,7 +365,17 @@ function FixturesPanel({ gameweekId }) {
     if (!s || s.home === '' || s.away === '') { toast.error('Enter both scores'); return }
     const { error } = await supabase.from('fixtures').update({ home_score: Number(s.home), away_score: Number(s.away), status: 'completed' }).eq('id', fx.id)
     if (error) { toast.error('Could not save result'); return }
-    toast.success('Result saved')
+    // Recalculate immediately — scoring should never depend on remembering
+    // to click a separate button afterwards.
+    try {
+      const { data: gw } = await supabase.from('gameweeks').select('competition_id').eq('id', gameweekId).single()
+      const { data: r } = await supabase.from('point_rules').select('*').eq('competition_id', gw.competition_id).single()
+      await recalculateGameweek(supabase, gameweekId, r)
+      toast.success('Result saved and scores updated!')
+    } catch {
+      toast.success('Result saved')
+      toast.error('Could not auto-recalculate — use "Recalculate GW" below')
+    }
     load()
   }
 
@@ -614,7 +623,7 @@ function BracketTab({ competitionId, competitions }) {
 
   if (!competitionId) return <EmptyState icon="ti-tournament" title="Create a competition first" />
   if (comp && comp.format === 'league') {
-    return <EmptyState icon="ti-tournament" title="This competition is League format" description="The bracket only applies to Knockout or Group + knockout competitions." />
+    return <EmptyState icon="ti-tournament" title="This competition is League format" description="The bracket only applies to Knockout or Group + Knockout competitions." />
   }
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
 
