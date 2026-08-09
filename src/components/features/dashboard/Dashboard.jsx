@@ -121,7 +121,7 @@ export default function Dashboard() {
                             : hasResult ? 'No prediction' : format(new Date(f.kickoff_time),'EEE HH:mm')}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap justify-end" style={{ flexShrink: 0 }}>
+                      <div className="flex items-center gap-2 flex-wrap justify-end" style={{ flexShrink: 0, marginLeft: 'auto' }}>
                         <Badge variant={cfg.variant}>{cfg.label}</Badge>
                         {f.outcome && f.outcome !== 'upcoming' && (
                           <span className="text-xs font-medium" style={{ color: f.outcome==='exact'?'var(--green)':f.outcome==='miss'?'var(--red)':'var(--accent)' }}>
