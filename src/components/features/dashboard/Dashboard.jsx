@@ -41,6 +41,7 @@ export default function Dashboard() {
   }
 
   const myRank = overall.findIndex(p => p.user_id === user?.id) + 1
+  const pendingCount = results.filter(f => !f.myPrediction && f.home_score === null && new Date(f.kickoff_time) > new Date()).length
   const ocfg = {
     exact:    { label: 'Exact score!',    variant: 'exact'    },
     result:   { label: 'Correct result',  variant: 'result'   },
@@ -86,6 +87,20 @@ export default function Dashboard() {
             <StatCard label="Exact scores"    value={stats?.exact ?? 0}  sub="bonus pts earned"/>
             <StatCard label="Correct results" value={stats?.correct ?? 0} sub="correct predictions"/>
           </div>
+
+          {pendingCount > 0 && (
+            <Link to="/predict" className="block mb-4">
+              <Card className="p-3.5 flex items-center justify-between gap-3 flex-wrap" style={{ background: 'var(--amber-dim)', borderColor: 'rgba(245,166,35,0.35)' }}>
+                <div className="flex items-center gap-2.5">
+                  <i className="ti ti-clock-exclamation text-lg" style={{ color: 'var(--amber)' }} aria-hidden="true"/>
+                  <span className="text-sm font-medium" style={{ color: 'var(--amber)' }}>
+                    {pendingCount} prediction{pendingCount !== 1 ? 's' : ''} waiting {gw ? `for ${gw.number}` : ''}
+                  </span>
+                </div>
+                <span className="text-xs font-medium px-3 py-1.5 rounded-md" style={{ background: 'var(--amber)', color: 'var(--bg-base)' }}>Predict now</span>
+              </Card>
+            </Link>
+          )}
 
           <Card className="p-4 mb-4">
             <SectionLabel className="mb-3">{gw ? `${gw.number} — your predictions` : 'Recent predictions'}</SectionLabel>

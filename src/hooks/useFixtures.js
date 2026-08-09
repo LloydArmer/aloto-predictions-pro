@@ -55,6 +55,17 @@ export function usePredictions(gameweekId, userId) {
     } else {
       const { data, error } = await supabase.from('predictions').insert({ fixture_id: fixtureId, gameweek_id: gwId, user_id: uid, predicted_home: home, predicted_away: away }).select().single()
       if (error) throw error; result = data
+      // First-ever prediction from this user in this competition — make sure
+      // they actually show up in the admin's Participants list. Predicting
+      // was never gated on being a participant, so without this a player
+      // could sign up and predict without ever appearing there.
+      const { data: gw } = await supabase.from('gameweeks').select('competition_id').eq('id', gwId).single()
+      if (gw) {
+        // Ignore the error here on purpose — a duplicate just means they're
+        // already a participant (the normal case after their first ever
+        // prediction), which isn't a real problem.
+        await supabase.from('participants').insert({ competition_id: gw.competition_id, user_id: uid, role: 'player' })
+      }
     }
     setPredictions(prev => ({ ...prev, [fixtureId]: result }))
     return result
