@@ -293,11 +293,14 @@ function GameweeksTab({ competitionId, competitions }) {
   }
 
   async function toggleLink(gwId, otherCompId, currentlyLinked) {
+    let error
     if (currentlyLinked) {
-      await supabase.from('competition_gameweeks').delete().eq('competition_id', otherCompId).eq('gameweek_id', gwId)
+      ;({ error } = await supabase.from('competition_gameweeks').delete().eq('competition_id', otherCompId).eq('gameweek_id', gwId))
     } else {
-      await supabase.from('competition_gameweeks').insert({ competition_id: otherCompId, gameweek_id: gwId })
+      ;({ error } = await supabase.from('competition_gameweeks').insert({ competition_id: otherCompId, gameweek_id: gwId }))
     }
+    if (error) { toast.error(`Could not update: ${error.message}`); return }
+    toast.success(currentlyLinked ? 'Removed from that competition' : 'Now used in that competition too')
     load()
   }
 
@@ -591,12 +594,14 @@ function GroupStageTab({ competitionId, competitions }) {
   }
 
   async function assignRoundGameweek(roundNumber, gwId) {
-    await supabase.from('group_fixtures').update({ gameweek_id: gwId || null }).eq('competition_id', competitionId).eq('round_number', roundNumber)
+    const { error } = await supabase.from('group_fixtures').update({ gameweek_id: gwId || null }).eq('competition_id', competitionId).eq('round_number', roundNumber)
+    if (error) { toast.error(`Could not assign gameweek: ${error.message}`); return }
     load()
   }
 
   async function assignFixtureGameweek(fxId, gwId) {
-    await supabase.from('group_fixtures').update({ gameweek_id: gwId || null }).eq('id', fxId)
+    const { error } = await supabase.from('group_fixtures').update({ gameweek_id: gwId || null }).eq('id', fxId)
+    if (error) { toast.error(`Could not assign gameweek: ${error.message}`); return }
     load()
   }
 
