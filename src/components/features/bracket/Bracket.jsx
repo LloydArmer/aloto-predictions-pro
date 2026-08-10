@@ -33,6 +33,57 @@ function MatchCard({ match, userId }) {
   )
 }
 
+function GroupTable({ competitionId, userId }) {
+  const [standings, setStandings] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!competitionId) { setLoading(false); return }
+    supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', competitionId)
+      .then(({ data }) => {
+        const sorted = [...(data || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
+        setStandings(sorted); setLoading(false)
+      })
+  }, [competitionId])
+
+  if (loading) return <div className="flex justify-center py-6"><Spinner /></div>
+  if (!standings.length) return null
+
+  return (
+    <Card className="overflow-hidden p-0 mb-5">
+      <p className="text-sm font-semibold p-4 pb-3" style={{ color: 'var(--txt-primary)' }}>Group table</p>
+      <div className="overflow-x-auto">
+        <table className="data-table w-full" style={{ minWidth: 420 }}>
+          <thead><tr>
+            <th style={{ paddingLeft: 14 }}>Participant</th>
+            <th style={{ textAlign: 'right' }}>P</th>
+            <th style={{ textAlign: 'right' }}>PF</th>
+            <th style={{ textAlign: 'right' }}>PA</th>
+            <th style={{ textAlign: 'right' }}>Diff</th>
+            <th style={{ textAlign: 'right', paddingRight: 14 }}>Pts</th>
+          </tr></thead>
+          <tbody>
+            {standings.map((s,i) => (
+              <tr key={s.user_id} className={s.user_id === userId ? 'highlight' : ''}>
+                <td style={{ paddingLeft: 14 }}>
+                  <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>
+                    {i+1}. {s.profiles?.display_name}{s.user_id === userId && <span className="ml-1 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
+                  </span>
+                </td>
+                <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.played}</td>
+                <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.points_for}</td>
+                <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.points_against}</td>
+                <td className="text-xs text-right" style={{ color: s.points_diff >= 0 ? 'var(--green)' : 'var(--red)' }}>{s.points_diff > 0 ? '+' : ''}{s.points_diff}</td>
+                <td style={{ textAlign: 'right', paddingRight: 14 }}><span className="text-sm font-medium" style={{ color: 'var(--accent)' }}>{s.league_points}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
 export default function Bracket() {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
@@ -56,6 +107,7 @@ export default function Bracket() {
   return (
     <div>
       <CompetitionSelector value={comp} onChange={setComp} />
+      <GroupTable competitionId={comp} userId={user?.id} />
       {loading ? <div className="flex justify-center py-20"><Spinner size="lg" /></div>
         : rounds.length === 0 ? <EmptyState icon="ti-tournament" title="No bracket yet" description="The admin will set up bracket matches when the knockout stage begins" />
         : <>

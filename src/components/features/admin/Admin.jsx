@@ -4,6 +4,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
 import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound } from '../../../lib/scoring'
+import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
 import toast from 'react-hot-toast'
@@ -12,6 +13,7 @@ const TABS = [
   { key: 'competitions', label: 'Competitions', icon: 'ti-trophy' },
   { key: 'rules',        label: 'Points rules', icon: 'ti-star' },
   { key: 'gameweeks',    label: 'Gameweeks & fixtures', icon: 'ti-calendar' },
+  { key: 'group',        label: 'Group Stage', icon: 'ti-tournament' },
   { key: 'bracket',      label: 'Bracket', icon: 'ti-tournament' },
   { key: 'participants', label: 'Participants', icon: 'ti-users' },
 ]
@@ -61,6 +63,7 @@ export default function Admin() {
       )}
       {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
+      {tab === 'group' && <GroupStageTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'bracket' && <BracketTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
     </div>
@@ -522,6 +525,258 @@ const ROUND_FOR_SIZE = { 64: 'r64', 32: 'r32', 16: 'r16', 8: 'qf', 4: 'sf', 2: '
 const ALL_ROUND_TABS = [{ value: 'playoff', label: 'Playoff' }, ...ROUND_OPTIONS]
 function roundLabel(v) { return ALL_ROUND_TABS.find(r => r.value === v)?.label || v }
 
+// ───────────────────────── Group Stage ─────────────────────────
+function GroupStageTab({ competitionId, competitions }) {
+  const comp = competitions.find(c => c.id === competitionId)
+  const [participants, setParticipants] = useState([])
+  const [fixtures, setFixtures] = useState([])
+  const [standings, setStandings] = useState([])
+  const [gameweeks, setGameweeks] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [timesEachPair, setTimesEachPair] = useState('1')
+  const [openRound, setOpenRound] = useState(null)
+  const [resolving, setResolving] = useState(null)
+  const [autoQualify, setAutoQualify] = useState(comp?.group_auto_qualify_count || '')
+  const [eliminated, setEliminated] = useState(comp?.group_eliminated_count || '')
+  const [targetRound, setTargetRound] = useState(comp?.group_target_round || 'qf')
+  const [generatingPlayoff, setGeneratingPlayoff] = useState(false)
+
+  useEffect(() => { if (competitionId) load(); else { setParticipants([]); setFixtures([]); setStandings([]) } }, [competitionId])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const [{ data: parts }, { data: fx }, { data: st }, { data: links }] = await Promise.all([
+        supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
+        supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name)').eq('competition_id', competitionId).order('round_number'),
+        supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', competitionId),
+        supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', competitionId),
+      ])
+      setParticipants(parts || [])
+      setFixtures(fx || [])
+      const sorted = [...(st || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
+      setStandings(sorted)
+      const gwIds = (links || []).map(l => l.gameweek_id)
+      const { data: gws } = gwIds.length ? await supabase.from('gameweeks').select('*').in('id', gwIds).order('number') : { data: [] }
+      setGameweeks(gws || [])
+    } finally { setLoading(false) }
+  }
+
+  async function generate() {
+    if (fixtures.length > 0) {
+      const confirmed = window.confirm('Fixtures already exist for this group stage. Generating again will add a fresh full round-robin on top of what\'s there — it won\'t remove existing fixtures. Continue?')
+      if (!confirmed) return
+    }
+    const n = Number(timesEachPair)
+    if (!n || n < 1) { toast.error('Enter how many times each pair plays'); return }
+    if (participants.length < 3) { toast.error('Need at least 3 participants for a group stage'); return }
+    const generated = generateRoundRobinFixtures(participants.map(p => p.user_id), n)
+    const { error } = await supabase.from('group_fixtures').insert(generated.map(f => ({ competition_id: competitionId, ...f })))
+    if (error) { toast.error('Could not generate fixtures'); return }
+    toast.success(`${generated.length} fixtures generated across ${Math.max(...generated.map(f=>f.round_number))} rounds`)
+    load()
+  }
+
+  async function assignRoundGameweek(roundNumber, gwId) {
+    await supabase.from('group_fixtures').update({ gameweek_id: gwId || null }).eq('competition_id', competitionId).eq('round_number', roundNumber)
+    load()
+  }
+
+  async function assignFixtureGameweek(fxId, gwId) {
+    await supabase.from('group_fixtures').update({ gameweek_id: gwId || null }).eq('id', fxId)
+    load()
+  }
+
+  async function resolveRound(roundNumber) {
+    setResolving(roundNumber)
+    try {
+      const { resolved, notReady } = await resolveGroupRound(supabase, competitionId, roundNumber)
+      if (notReady > 0) toast.error(`${resolved} resolved, ${notReady} not ready yet (gameweek not assigned or not completed)`)
+      else toast.success(`Round ${roundNumber} resolved — ${resolved} fixture${resolved !== 1 ? 's' : ''}`)
+    } catch { toast.error('Could not resolve round') }
+    finally { setResolving(null); load() }
+  }
+
+  async function generatePlayoff() {
+    const n1 = Number(autoQualify), n2 = Number(eliminated)
+    if (!n1 && n1 !== 0) { toast.error('Enter how many auto-qualify'); return }
+    if (!n2 && n2 !== 0) { toast.error('Enter how many are eliminated'); return }
+    const targetSize = SIZE_FOR_ROUND[targetRound]
+    const winnersNeeded = targetSize - n1
+    const poolSize = standings.length - n1 - n2
+    if (winnersNeeded < 0) { toast.error('Auto-qualify count is bigger than the target round'); return }
+    if (poolSize < winnersNeeded) { toast.error(`Not enough participants left for a playoff pool — need at least ${winnersNeeded}, have ${poolSize}`); return }
+    if (winnersNeeded > 0 && poolSize !== winnersNeeded * 2) {
+      toast.error(`Playoff pool (${poolSize}) needs to be exactly double the spots needed (${winnersNeeded}) — adjust auto-qualify/eliminated counts`)
+      return
+    }
+
+    const confirmed = window.confirm(`Generate the knockout draw? Top ${n1} qualify directly to ${roundLabel(targetRound)}, bottom ${n2} are eliminated, the remaining ${poolSize} play a random-draw playoff for the last ${winnersNeeded} spot${winnersNeeded !== 1 ? 's' : ''}. This creates real bracket matches. Are you sure?`)
+    if (!confirmed) return
+
+    setGeneratingPlayoff(true)
+    try {
+      await supabase.from('competitions').update({ group_auto_qualify_count: n1, group_eliminated_count: n2, group_target_round: targetRound }).eq('id', competitionId)
+
+      const qualifiers = standings.slice(0, n1).map(s => s.user_id)
+      const playoffPool = standings.slice(n1, n1 + poolSize).map(s => s.user_id)
+      const targetIndex = ROUND_OPTIONS.findIndex(r => r.value === targetRound)
+
+      const targetShells = []
+      for (let i = 0; i < targetSize / 2; i++) targetShells.push({ competition_id: competitionId, round: targetRound, round_order: targetIndex })
+      const { data: created, error } = await supabase.from('bracket_matches').insert(targetShells).select()
+      if (error || !created) { toast.error('Could not create knockout draw'); return }
+
+      for (let i = 0; i < qualifiers.length; i++) {
+        const matchIndex = Math.floor(i / 2)
+        const side = i % 2 === 0 ? 'home_user_id' : 'away_user_id'
+        await supabase.from('bracket_matches').update({ [side]: qualifiers[i] }).eq('id', created[matchIndex].id)
+      }
+
+      if (winnersNeeded > 0) {
+        const shuffled = [...playoffPool].sort(() => Math.random() - 0.5)
+        const playoffInserts = []
+        for (let k = 0; k < winnersNeeded; k++) {
+          const slotIndex = qualifiers.length + k
+          const matchIndex = Math.floor(slotIndex / 2)
+          const side = slotIndex % 2 === 0 ? 'home' : 'away'
+          playoffInserts.push({
+            competition_id: competitionId, round: 'playoff', round_order: targetIndex - 1,
+            home_user_id: shuffled[k * 2], away_user_id: shuffled[k * 2 + 1],
+            feeds_into_match_id: created[matchIndex].id, feeds_into_side: side,
+          })
+        }
+        await supabase.from('bracket_matches').insert(playoffInserts)
+      }
+
+      toast.success('Knockout draw generated — check the Bracket tab')
+    } catch { toast.error('Could not generate knockout draw') }
+    finally { setGeneratingPlayoff(false) }
+  }
+
+  if (!competitionId) return <EmptyState icon="ti-tournament" title="Create a competition first" />
+  if (comp && comp.format !== 'group_knockout') {
+    return <EmptyState icon="ti-tournament" title="Not a Group + Knockout competition" description="The group stage only applies to competitions using the Group + Knockout format." />
+  }
+  if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
+
+  const rounds = [...new Set(fixtures.map(f => f.round_number))].sort((a,b) => a-b)
+
+  return (
+    <div>
+      {fixtures.length === 0 && (
+        <Card className="p-4 mb-4">
+          <SectionLabel className="mb-2">Generate group fixtures</SectionLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Creates a fair round-robin schedule for all {participants.length} participants, alternating home/away, grouped into rounds you can assign gameweeks to.</p>
+          <div className="flex items-end gap-2">
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Times each pair plays</p>
+              <Input type="number" min="1" value={timesEachPair} onChange={e => setTimesEachPair(e.target.value)} style={{ width: 80 }} />
+            </div>
+            <Button variant="primary" size="sm" onClick={generate}>Generate fixtures</Button>
+          </div>
+        </Card>
+      )}
+
+      {standings.length > 0 && (
+        <Card className="overflow-hidden p-0 mb-4">
+          <p className="text-sm font-semibold p-4 pb-3" style={{ color: 'var(--txt-primary)' }}>Group table</p>
+          <div className="overflow-x-auto">
+            <table className="data-table w-full" style={{ minWidth: 420 }}>
+              <thead><tr>
+                <th style={{ paddingLeft: 14 }}>Participant</th>
+                <th style={{ textAlign: 'right' }}>P</th>
+                <th style={{ textAlign: 'right' }}>PF</th>
+                <th style={{ textAlign: 'right' }}>PA</th>
+                <th style={{ textAlign: 'right' }}>Diff</th>
+                <th style={{ textAlign: 'right', paddingRight: 14 }}>Pts</th>
+              </tr></thead>
+              <tbody>
+                {standings.map((s,i) => (
+                  <tr key={s.user_id}>
+                    <td style={{ paddingLeft: 14 }}><span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{i+1}. {s.profiles?.display_name}</span></td>
+                    <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.played}</td>
+                    <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.points_for}</td>
+                    <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.points_against}</td>
+                    <td className="text-xs text-right" style={{ color: s.points_diff >= 0 ? 'var(--green)' : 'var(--red)' }}>{s.points_diff > 0 ? '+' : ''}{s.points_diff}</td>
+                    <td style={{ textAlign: 'right', paddingRight: 14 }}><span className="text-sm font-medium" style={{ color: 'var(--accent)' }}>{s.league_points}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {rounds.map(rn => {
+        const roundFixtures = fixtures.filter(f => f.round_number === rn)
+        const roundGw = roundFixtures[0]?.gameweek_id || ''
+        const allSameGw = roundFixtures.every(f => f.gameweek_id === roundGw)
+        return (
+          <Card key={rn} className="p-3 mb-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>Round {rn}</span>
+                <Select value={allSameGw ? roundGw : ''} onChange={e => assignRoundGameweek(rn, e.target.value)} style={{ width: 130 }}>
+                  <option value="">Set GW for round…</option>
+                  {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                </Select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" onClick={() => setOpenRound(openRound === rn ? null : rn)}>{openRound === rn ? 'Hide' : 'Show'} fixtures ({roundFixtures.length})</Button>
+                <Button size="sm" variant="primary" onClick={() => resolveRound(rn)} disabled={resolving === rn}>{resolving === rn ? 'Resolving…' : 'Resolve round'}</Button>
+              </div>
+            </div>
+            {openRound === rn && (
+              <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+                {roundFixtures.map(fx => (
+                  <div key={fx.id} className="flex items-center justify-between py-1.5 flex-wrap gap-2">
+                    <span className="text-xs" style={{ color: 'var(--txt-primary)' }}>{fx.home?.display_name} vs {fx.away?.display_name}</span>
+                    {fx.status === 'completed'
+                      ? <Badge variant="result">{fx.home_points}–{fx.away_points} ({fx.result === 'draw' ? 'draw' : fx.result === 'home' ? fx.home?.display_name : fx.away?.display_name})</Badge>
+                      : <Select value={fx.gameweek_id || ''} onChange={e => assignFixtureGameweek(fx.id, e.target.value)} style={{ width: 110 }}>
+                          <option value="">Set GW…</option>
+                          {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                        </Select>
+                    }
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )
+      })}
+
+      {standings.length > 0 && (
+        <Card className="p-4 mt-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
+          <SectionLabel className="mb-2">Progress to knockout</SectionLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>Once the group table is where you want it, set who qualifies directly, who's eliminated, and which round the rest play into.</p>
+          <div className="flex flex-wrap gap-2 items-end mb-3">
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Top N auto-qualify</p>
+              <Input type="number" min="0" value={autoQualify} onChange={e => setAutoQualify(e.target.value)} style={{ width: 70 }} />
+            </div>
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Bottom N eliminated</p>
+              <Input type="number" min="0" value={eliminated} onChange={e => setEliminated(e.target.value)} style={{ width: 70 }} />
+            </div>
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Playoff winners join…</p>
+              <Select value={targetRound} onChange={e => setTargetRound(e.target.value)} style={{ width: 140 }}>
+                {ROUND_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </Select>
+            </div>
+          </div>
+          <Button variant="primary" size="sm" onClick={generatePlayoff} disabled={generatingPlayoff}>
+            {generatingPlayoff ? 'Generating…' : 'Generate playoff & knockout draw'}
+          </Button>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+// ───────────────────────── Bracket ─────────────────────────
 function BracketTab({ competitionId, competitions }) {
   const comp = competitions.find(c => c.id === competitionId)
   const [matches, setMatches] = useState([])
