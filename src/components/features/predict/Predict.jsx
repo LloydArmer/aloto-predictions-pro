@@ -370,7 +370,7 @@ export default function Predict() {
         <div className="mb-4 p-3 rounded-md text-xs" style={{ background:'var(--bg-surface)', border:'0.5px solid var(--border)' }}>
           <span style={{ color:'var(--txt-second)' }}>
             Correct result = <strong style={{ color:'var(--accent)' }}>{rules.correct_result_points}pts</strong> &nbsp;·&nbsp;
-            Exact score = <strong style={{ color:'var(--green)' }}>{rules.exact_score_points}pts</strong>
+            Exact score bonus = <strong style={{ color:'var(--green)' }}>+{rules.exact_score_points}pts</strong> extra
             {rules.full_house_results_bonus > 0 && <> &nbsp;·&nbsp; <strong style={{ color:'var(--amber)' }}>+{rules.full_house_results_bonus}pts</strong> bonus (all results)</>}
             {rules.full_house_scores_bonus > 0 && <> &nbsp;·&nbsp; <strong style={{ color:'var(--gold)' }}>+{rules.full_house_scores_bonus}pts</strong> bonus (all scores)</>}
           </span>

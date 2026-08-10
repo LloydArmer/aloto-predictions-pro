@@ -11,12 +11,17 @@ export function scoreOnePrediction(prediction, fixture, rules) {
   const isExact         = ph === ah && pa === aa
   const isCorrectResult = getResult(ph, pa) === getResult(ah, aa)
 
-  if (isExact) {
-    points += rules.exact_score_points
-    breakdown.push({ label: 'Exact score', pts: rules.exact_score_points })
-  } else if (isCorrectResult) {
+  // Correct result and exact score are additive: every correct result earns
+  // its base points, and an exact score earns an ADDITIONAL bonus on top —
+  // not a replacement total. (An exact score is always also a correct
+  // result, so isCorrectResult is true whenever isExact is.)
+  if (isCorrectResult) {
     points += rules.correct_result_points
     breakdown.push({ label: 'Correct result', pts: rules.correct_result_points })
+  }
+  if (isExact) {
+    points += rules.exact_score_points
+    breakdown.push({ label: 'Exact score bonus', pts: rules.exact_score_points })
   }
   return { points, breakdown, isExact, isCorrectResult }
 }

@@ -206,7 +206,7 @@ function RulesTab({ competitionId, competitions }) {
   if (loading || !rules) return <div className="flex justify-center py-10"><Spinner /></div>
 
   const fields = [
-    { key: 'exact_score_points',      label: 'Exact score' },
+    { key: 'exact_score_points',      label: 'Exact score bonus (on top of correct result)' },
     { key: 'correct_result_points',   label: 'Correct result (W/D/L)' },
     { key: 'full_house_results_bonus', label: 'Full house — all results correct in a GW' },
     { key: 'full_house_scores_bonus',  label: 'Full house — all scores exact in a GW' },
