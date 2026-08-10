@@ -21,24 +21,24 @@ export function useLeaderboard(competitionId) {
   return { overall, loading, refetch: () => load(competitionId) }
 }
 
-export function useWeeklyLeaderboard(gameweekId) {
+export function useWeeklyLeaderboard(competitionId, gameweekId) {
   const [weekly,  setWeekly]  = useState([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (gameweekId) load(gameweekId)
+    if (competitionId && gameweekId) load(competitionId, gameweekId)
     else { setWeekly([]); setLoading(false) }
-  }, [gameweekId])
+  }, [competitionId, gameweekId])
 
-  async function load(gwId) {
+  async function load(compId, gwId) {
     setLoading(true)
     try {
-      const { data } = await supabase.from('gameweek_scores').select('*, profiles(display_name, avatar_initials)').eq('gameweek_id', gwId).order('points', { ascending: false })
+      const { data } = await supabase.from('gameweek_scores').select('*, profiles(display_name, avatar_initials)').eq('competition_id', compId).eq('gameweek_id', gwId).order('points', { ascending: false })
       setWeekly(data || [])
     } finally { setLoading(false) }
   }
 
-  return { weekly, loading, refetch: () => load(gameweekId) }
+  return { weekly, loading, refetch: () => load(competitionId, gameweekId) }
 }
 
 export function useMonthlyLeaderboard(competitionId, monthKey) {
@@ -54,11 +54,19 @@ export function useMonthlyLeaderboard(competitionId, monthKey) {
   async function load(compId, mKey) {
     setLoading(true)
     try {
-      const { data: gws } = await supabase.from('gameweeks').select('*').eq('competition_id', compId).eq('month_key', mKey).order('number')
+      // Gameweeks linked to this competition (whether created here or
+      // linked in from another competition) via the join table — not just
+      // ones originally created under this competition_id.
+      const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', compId)
+      const gwIds = (links || []).map(l => l.gameweek_id)
+      if (!gwIds.length) { setGameweeksInMonth([]); setMonthly([]); return }
+
+      const { data: gws } = await supabase.from('gameweeks').select('*').in('id', gwIds).eq('month_key', mKey).order('number')
       setGameweeksInMonth(gws || [])
       if (!gws?.length) { setMonthly([]); return }
 
-      const { data: scores } = await supabase.from('gameweek_scores').select('*, profiles(display_name, avatar_initials)').in('gameweek_id', gws.map(g => g.id))
+      const { data: scores } = await supabase.from('gameweek_scores').select('*, profiles(display_name, avatar_initials)')
+        .eq('competition_id', compId).in('gameweek_id', gws.map(g => g.id))
 
       const map = {}
       ;(scores||[]).forEach(s => {

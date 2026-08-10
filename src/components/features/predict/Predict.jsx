@@ -185,9 +185,9 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
         {fixtures.length === 0
           ? <p className="text-xs" style={{ color:'var(--txt-muted)' }}>No fixtures this gameweek</p>
           : fixtures.map(f => (
-              <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor:'var(--border)' }}>
-                <span className="text-sm" style={{ color:'var(--txt-primary)' }}>{f.home_team} vs {f.away_team}</span>
-                <span className="text-sm font-bold" style={{ color: f.home_score !== null ? 'var(--green)' : 'var(--txt-muted)' }}>
+              <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0 gap-3" style={{ borderColor:'var(--border)' }}>
+                <span className="text-sm" style={{ color:'var(--txt-primary)', minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.home_team} vs {f.away_team}</span>
+                <span className="text-sm font-bold" style={{ color: f.home_score !== null ? 'var(--green)' : 'var(--txt-muted)', minWidth: 66, textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                   {f.home_score !== null ? `${f.home_score} – ${f.away_score}` : format(new Date(f.kickoff_time), 'HH:mm')}
                 </span>
               </div>
@@ -197,7 +197,7 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
 
       {participants.length > 0 && fixtures.length > 0 && (
         <Card className="overflow-hidden p-0">
-          <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & points</p>
+          <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & Points</p>
           <div className="overflow-x-auto">
             <table className="data-table w-full" style={{ minWidth: 120 + fixtures.length * 100 }}>
               <thead><tr>
@@ -230,6 +230,82 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules }) {
   )
 }
 
+// Which half-season a gameweek falls into: 'first' must be used on-or-before
+// 31 Dec, 'second' from 1 Jan through end of season. Determined from the
+// gameweek's assigned month, or its earliest fixture's date if no month
+// has been set yet.
+function gameweekHalf(gw, fixtures) {
+  let ym = gw?.month_key
+  if (!ym && fixtures?.length) {
+    const earliest = [...fixtures].sort((a,b) => new Date(a.kickoff_time) - new Date(b.kickoff_time))[0]
+    if (earliest) ym = new Date(earliest.kickoff_time).toISOString().slice(0,7)
+  }
+  if (!ym) return null
+  const month = Number(ym.split('-')[1])
+  return (month >= 8 && month <= 12) ? 'first' : 'second'
+}
+
+function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, userId }) {
+  const [plays, setPlays] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [activating, setActivating] = useState(false)
+
+  const comp = competitions.find(c => c.id === competitionId)
+  const isLeague = comp?.format === 'league'
+
+  useEffect(() => {
+    if (!competitionId || !userId || !isLeague) { setLoading(false); return }
+    supabase.from('triple_points_plays').select('*').eq('competition_id', competitionId).eq('user_id', userId)
+      .then(({ data }) => { setPlays(data || []); setLoading(false) })
+  }, [competitionId, userId, isLeague])
+
+  if (!isLeague || !gameweek || loading) return null
+
+  const half = gameweekHalf(gameweek, fixtures)
+  if (!half) return null
+
+  const activeThisGw = plays.some(p => p.gameweek_id === gameweek.id)
+  const usedThisHalf  = plays.find(p => p.half === half)
+  const isBlocked     = gameweek.triple_points_blocked
+  const hasKickedOff  = fixtures.some(f => new Date(f.kickoff_time) <= new Date())
+  const halfLabel = half === 'first' ? 'first half (by 31 Dec)' : 'second half (Jan–end of season)'
+
+  async function activate() {
+    const confirmed = window.confirm(`Play Triple Points on ${gameweek.number}? This triples every point you earn this gameweek, including bonuses — and uses up your ${halfLabel} chip for the season. This can't be undone. Are you sure?`)
+    if (!confirmed) return
+    setActivating(true)
+    const { error } = await supabase.from('triple_points_plays').insert({ competition_id: competitionId, gameweek_id: gameweek.id, user_id: userId, half })
+    setActivating(false)
+    if (error) { toast.error(error.code === '23505' ? `You've already used your ${halfLabel} chip` : 'Could not activate Triple Points'); return }
+    setPlays(prev => [...prev, { competition_id: competitionId, gameweek_id: gameweek.id, user_id: userId, half }])
+    toast.success('⚡ Triple Points active for this gameweek!')
+  }
+
+  return (
+    <Card className="p-3.5 mb-4" style={{ background: activeThisGw ? 'var(--gold-dim)' : 'var(--bg-surface)', borderColor: activeThisGw ? 'rgba(245,200,66,0.4)' : undefined }}>
+      {activeThisGw ? (
+        <div className="flex items-center gap-2">
+          <i className="ti ti-bolt text-base" style={{ color: 'var(--gold)' }} aria-hidden="true"/>
+          <span className="text-sm font-medium" style={{ color: 'var(--gold)' }}>⚡ Triple Points active for {gameweek.number} — every point this week is ×3</span>
+        </div>
+      ) : usedThisHalf ? (
+        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Your {halfLabel} Triple Points chip was already used on GW {usedThisHalf.gameweek_id === gameweek.id ? 'this one' : ''}. Your other chip is for the other half of the season.</p>
+      ) : isBlocked ? (
+        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Triple Points is blocked by the admin for {gameweek.number}.</p>
+      ) : hasKickedOff ? (
+        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Too late to activate Triple Points for {gameweek.number} — the first kickoff has passed.</p>
+      ) : (
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <p className="text-xs" style={{ color: 'var(--txt-second)' }}>You have a Triple Points chip available for this {halfLabel === 'first half (by 31 Dec)' ? 'first half of the season' : 'second half of the season'}.</p>
+          <Button variant="primary" size="sm" onClick={activate} disabled={activating}>
+            <i className="ti ti-bolt text-xs"/>{activating ? 'Activating…' : 'Play Triple Points'}
+          </Button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function Predict() {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
@@ -246,7 +322,13 @@ export default function Predict() {
   useEffect(() => { if (selectedGW) loadCounts() }, [selectedGW])
 
   async function loadGWs() {
-    const { data } = await supabase.from('gameweeks').select('*').eq('competition_id', comp).order('number')
+    // Gameweeks linked to this competition — whether created here or linked
+    // in from another competition — via the join table.
+    const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', comp)
+    const gwIds = (links || []).map(l => l.gameweek_id)
+    const { data } = gwIds.length
+      ? await supabase.from('gameweeks').select('*').in('id', gwIds).order('number')
+      : { data: [] }
     setGameweeks(data||[])
     const active = data?.find(g=>g.status==='active') || data?.[data.length-1]
     setSelectedGW(active||null)
@@ -294,6 +376,8 @@ export default function Predict() {
           </span>
         </div>
       )}
+
+      {tab === 'mine' && <TriplePointsCard competitionId={comp} competitions={competitions} gameweek={selectedGW} fixtures={fixtures} userId={user?.id} />}
 
       {tab === 'mine' ? (
         lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg"/></div>

@@ -26,7 +26,11 @@ export default function Dashboard() {
   async function load() {
     setLoading(true)
     try {
-      const { data: gws } = await supabase.from('gameweeks').select('*').eq('competition_id', comp).in('status',['active','completed']).order('number',{ascending:false}).limit(1)
+      const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', comp)
+      const linkedGwIds = (links || []).map(l => l.gameweek_id)
+      const { data: gws } = linkedGwIds.length
+        ? await supabase.from('gameweeks').select('*').in('id', linkedGwIds).in('status',['active','completed']).order('number',{ascending:false}).limit(1)
+        : { data: [] }
       const latestGW = gws?.[0]; setGW(latestGW)
       if (latestGW) {
         const { data: fx }    = await supabase.from('fixtures').select('*').eq('gameweek_id', latestGW.id).order('kickoff_time')
@@ -34,8 +38,10 @@ export default function Dashboard() {
         const pm = {}; (preds||[]).forEach(p => { pm[p.fixture_id] = p })
         setResults((fx||[]).map(f => ({ ...f, myPrediction: pm[f.id]||null, outcome: pm[f.id] ? outcomeLabel(pm[f.id], f) : null })))
       }
-      const { data: gwIds }  = await supabase.from('gameweeks').select('id').eq('competition_id', comp)
-      const { data: scores } = await supabase.from('gameweek_scores').select('*').eq('user_id', user.id).in('gameweek_id', (gwIds||[]).map(g=>g.id))
+      // gameweek_scores is now scoped per-competition directly, so filter
+      // by competition_id rather than by a gameweek_id list — this also
+      // correctly separates a shared gameweek's scores per competition.
+      const { data: scores } = await supabase.from('gameweek_scores').select('*').eq('user_id', user.id).eq('competition_id', comp)
       if (scores?.length) setStats({ total: scores.reduce((a,b)=>a+(b.points||0),0), exact: scores.reduce((a,b)=>a+(b.exact_scores||0),0), correct: scores.reduce((a,b)=>a+(b.correct_results||0),0) })
     } finally { setLoading(false) }
   }

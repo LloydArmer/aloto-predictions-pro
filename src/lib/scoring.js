@@ -34,10 +34,13 @@ export function defaultRules() {
   return { exact_score_points: 5, correct_result_points: 2, full_house_results_bonus: 0, full_house_scores_bonus: 0 }
 }
 
-export async function recalculateGameweek(supabase, gameweekId, rules) {
+export async function recalculateGameweek(supabase, competitionId, gameweekId, rules) {
   const { data: fixtures } = await supabase.from('fixtures').select('*').eq('gameweek_id', gameweekId)
   const completedFixtures = (fixtures || []).filter(f => f.status === 'completed')
   const { data: predictions } = await supabase.from('predictions').select('*').eq('gameweek_id', gameweekId)
+  const { data: tpPlays } = await supabase.from('triple_points_plays').select('user_id').eq('competition_id', competitionId).eq('gameweek_id', gameweekId)
+  const tripleUsers = new Set((tpPlays || []).map(t => t.user_id))
+
   const fxMap = {}; completedFixtures.forEach(f => { fxMap[f.id] = f })
   const scores = {}
   const byUser = {}
@@ -52,6 +55,11 @@ export async function recalculateGameweek(supabase, gameweekId, rules) {
     scores[uid].points         += points
     if (isExact)         scores[uid].exact_scores++
     if (isCorrectResult) scores[uid].correct_results++
+    // Note: predictions.points_earned is shared across every competition a
+    // gameweek is linked to, so if competitions have different point rules
+    // this will reflect whichever competition was recalculated most
+    // recently — a known limitation for shared gameweeks with differing
+    // rules, not relevant for the common single-competition case.
     await supabase.from('predictions').update({ points_earned: points }).eq('id', pred.id)
   }
 
@@ -76,10 +84,34 @@ export async function recalculateGameweek(supabase, gameweekId, rules) {
     }
   }
 
+  // Triple Points — multiplies everything this user earned this gameweek in
+  // THIS competition (including full house bonuses), only ever set for
+  // League-format competitions (enforced when the play was recorded).
   for (const s of Object.values(scores)) {
-    await supabase.from('gameweek_scores').upsert({ gameweek_id: gameweekId, ...s }, { onConflict: 'gameweek_id,user_id' })
+    if (tripleUsers.has(s.user_id)) {
+      s.points *= 3
+      s.triple_points = true
+    }
+  }
+
+  for (const s of Object.values(scores)) {
+    await supabase.from('gameweek_scores').upsert({ competition_id: competitionId, gameweek_id: gameweekId, ...s }, { onConflict: 'competition_id,gameweek_id,user_id' })
   }
   return scores
+}
+
+// A gameweek's fixtures/predictions are shared across every competition
+// it's linked to (via competition_gameweeks), but each competition scores
+// them separately with its own rules — so whenever a result changes, every
+// linked competition needs its own recalculation, not just one.
+export async function recalculateGameweekForAllLinkedCompetitions(supabase, gameweekId) {
+  const { data: links } = await supabase.from('competition_gameweeks').select('competition_id').eq('gameweek_id', gameweekId)
+  const competitionIds = [...new Set((links || []).map(l => l.competition_id))]
+  for (const competitionId of competitionIds) {
+    const { data: rules } = await supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle()
+    if (rules) await recalculateGameweek(supabase, competitionId, gameweekId, rules)
+  }
+  return competitionIds
 }
 
 // Bracket scoring — participant vs participant.
@@ -124,7 +156,7 @@ export async function resolveBracketRound(supabase, competitionId, round) {
     if (!m.home_user_id || !m.away_user_id || !gwIds.length) continue
 
     const { data: scores } = await supabase.from('gameweek_scores').select('user_id,points,exact_scores,correct_results')
-      .in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
+      .eq('competition_id', competitionId).in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
 
     const totals = { [m.home_user_id]: { points: 0, exact: 0, correct: 0 }, [m.away_user_id]: { points: 0, exact: 0, correct: 0 } }
     for (const s of (scores || [])) {

@@ -4,7 +4,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useWeeklyLeaderboard, useMonthlyLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
-import { Card, SectionLabel, StatCard, Spinner, EmptyState, Badge } from '../../ui'
+import { Card, SectionLabel, StatCard, Spinner, EmptyState, Badge, Select } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import { buildWeeklyMessage, buildMonthlyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import { format } from 'date-fns'
@@ -47,18 +47,16 @@ function WinnerBanner({ player, label }) {
   )
 }
 
-function WeeklyPane({ gameweeks, userId }) {
+function WeeklyPane({ competitionId, gameweeks, userId }) {
   const [sel, setSel] = useState(gameweeks[gameweeks.length-1]||null)
-  const { weekly, loading } = useWeeklyLeaderboard(sel?.id)
+  const { weekly, loading } = useWeeklyLeaderboard(competitionId, sel?.id)
   useEffect(() => { if(gameweeks.length) setSel(gameweeks[gameweeks.length-1]) }, [gameweeks])
   const winner = weekly[0]
   return (
     <div>
-      <div className="flex gap-1.5 flex-wrap mb-4 overflow-x-auto pb-1">
-        {[...gameweeks].reverse().slice(0,10).map(gw=>(
-          <button key={gw.id} className={`pill ${sel?.id===gw.id?'active':''}`} onClick={()=>setSel(gw)}>{gw.number}</button>
-        ))}
-      </div>
+      <Select value={sel?.id || ''} onChange={e => setSel(gameweeks.find(g => g.id === e.target.value) || null)} className="mb-4" style={{ maxWidth: 200 }}>
+        {[...gameweeks].reverse().map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+      </Select>
       {loading ? <div className="flex justify-center py-16"><Spinner size="lg"/></div>
         : weekly.length===0 ? <EmptyState icon="ti-medal" title="No scores yet" description="Scores appear after each gameweek is completed"/>
         : <>
@@ -110,11 +108,9 @@ function MonthlyPane({ competitionId, months, userId }) {
   const upcomingGWs=gameweeksInMonth.filter(g=>g.status==='upcoming')
   return (
     <div>
-      <div className="flex gap-1.5 flex-wrap mb-4 overflow-x-auto pb-1">
-        {[...months].reverse().map(m=>(
-          <button key={m.key} className={`pill ${sel?.key===m.key?'active':''}`} onClick={()=>setSel(m)}>{m.label}</button>
-        ))}
-      </div>
+      <Select value={sel?.key || ''} onChange={e => setSel(months.find(m => m.key === e.target.value) || null)} className="mb-4" style={{ maxWidth: 200 }}>
+        {[...months].reverse().map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+      </Select>
       <Card raised className="p-4 mb-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{sel?.label} — gameweeks</p>
@@ -189,7 +185,14 @@ export default function Leaderboards() {
   useEffect(() => { if(comp) loadMeta(comp) }, [comp])
 
   async function loadMeta(id) {
-    const { data: gws } = await supabase.from('gameweeks').select('*').eq('competition_id',id).in('status',['completed','active']).order('number')
+    // Gameweeks linked to this competition — whether created here or linked
+    // in from another competition — via the join table, not just ones
+    // originally created under this competition_id.
+    const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', id)
+    const gwIds = (links || []).map(l => l.gameweek_id)
+    const { data: gws } = gwIds.length
+      ? await supabase.from('gameweeks').select('*').in('id', gwIds).in('status',['completed','active']).order('number')
+      : { data: [] }
     setGameweeks(gws||[])
     const keys = [...new Set((gws||[]).map(g=>g.month_key).filter(Boolean))]
     setMonths(keys.map(k=>({ key:k, label:format(new Date(k+'-01'),'MMM yyyy') })))
@@ -206,7 +209,7 @@ export default function Leaderboards() {
           <i className="ti ti-calendar-month text-sm mr-1" aria-hidden="true"/>Monthly top scores
         </button>
       </div>
-      {mode==='weekly'&&comp&&<WeeklyPane gameweeks={gameweeks} userId={user?.id}/>}
+      {mode==='weekly'&&comp&&<WeeklyPane competitionId={comp} gameweeks={gameweeks} userId={user?.id}/>}
       {mode==='monthly'&&comp&&<MonthlyPane competitionId={comp} months={months} userId={user?.id}/>}
     </div>
   )

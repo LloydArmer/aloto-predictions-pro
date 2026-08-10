@@ -3,7 +3,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
-import { recalculateGameweek, resolveBracketRound } from '../../../lib/scoring'
+import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound } from '../../../lib/scoring'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
 import toast from 'react-hot-toast'
@@ -228,10 +228,12 @@ function RulesTab({ competitionId, competitions }) {
 }
 
 // ───────────────────────── Gameweeks & fixtures ─────────────────────────
-function GameweeksTab({ competitionId }) {
+function GameweeksTab({ competitionId, competitions }) {
   const [gws, setGws] = useState([])
+  const [linksByGw, setLinksByGw] = useState({}) // { gameweek_id: [competition_id, ...] }
   const [loading, setLoading] = useState(false)
   const [openGw, setOpenGw] = useState(null)
+  const [openLinks, setOpenLinks] = useState(null)
   const [newNumber, setNewNumber] = useState('')
 
   useEffect(() => { if (competitionId) load(); else setGws([]) }, [competitionId])
@@ -245,8 +247,22 @@ function GameweeksTab({ competitionId }) {
   async function load() {
     setLoading(true)
     try {
-      const { data } = await supabase.from('gameweeks').select('*').eq('competition_id', competitionId).order('number')
+      // Gameweeks linked to this competition — whether created here or
+      // linked in from another competition — via the join table.
+      const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', competitionId)
+      const gwIds = (links || []).map(l => l.gameweek_id)
+      const { data } = gwIds.length
+        ? await supabase.from('gameweeks').select('*').in('id', gwIds).order('number')
+        : { data: [] }
       setGws(data || [])
+
+      // Which OTHER competitions is each of these gameweeks also linked to?
+      if (data?.length) {
+        const { data: allLinks } = await supabase.from('competition_gameweeks').select('gameweek_id, competition_id').in('gameweek_id', data.map(g => g.id))
+        const grouped = {}
+        ;(allLinks || []).forEach(l => { if (!grouped[l.gameweek_id]) grouped[l.gameweek_id] = []; grouped[l.gameweek_id].push(l.competition_id) })
+        setLinksByGw(grouped)
+      }
     } finally { setLoading(false) }
   }
 
@@ -255,9 +271,21 @@ function GameweeksTab({ competitionId }) {
     const num = newNumber.trim()
     if (!num) { toast.error('Enter a gameweek label'); return }
     if (gws.some(g => g.number === num)) { toast.error(`"${num}" already exists`); return }
-    const { error } = await supabase.from('gameweeks').insert({ competition_id: competitionId, number: num })
+    const { data: gw, error } = await supabase.from('gameweeks').insert({ competition_id: competitionId, number: num }).select().single()
     if (error) { toast.error('Could not add gameweek'); return }
+    // Link it to this competition immediately — creating a gameweek from
+    // within a competition should always make it usable there.
+    await supabase.from('competition_gameweeks').insert({ competition_id: competitionId, gameweek_id: gw.id })
     toast.success(`"${num}" added`)
+    load()
+  }
+
+  async function toggleLink(gwId, otherCompId, currentlyLinked) {
+    if (currentlyLinked) {
+      await supabase.from('competition_gameweeks').delete().eq('competition_id', otherCompId).eq('gameweek_id', gwId)
+    } else {
+      await supabase.from('competition_gameweeks').insert({ competition_id: otherCompId, gameweek_id: gwId })
+    }
     load()
   }
 
@@ -277,7 +305,7 @@ function GameweeksTab({ competitionId }) {
   }
 
   async function deleteGameweek(gw) {
-    const confirmed = window.confirm(`Delete "${gw.number}"? This permanently removes its fixtures, predictions, and scores — this cannot be undone. Are you sure you want to do this?`)
+    const confirmed = window.confirm(`Delete "${gw.number}"? This permanently removes its fixtures, predictions, and scores for every competition it's linked to — this cannot be undone. Are you sure you want to do this?`)
     if (!confirmed) return
     const { error } = await supabase.from('gameweeks').delete().eq('id', gw.id)
     if (error) { toast.error('Could not delete gameweek'); return }
@@ -303,7 +331,10 @@ function GameweeksTab({ competitionId }) {
 
       {loading ? <div className="flex justify-center py-10"><Spinner /></div>
         : gws.length === 0 ? <EmptyState icon="ti-calendar" title="No gameweeks yet" description="Add one above to start"/>
-        : gws.map(gw => (
+        : gws.map(gw => {
+            const otherComps = competitions.filter(c => c.id !== competitionId)
+            const linkedElsewhere = (linksByGw[gw.id] || []).filter(id => id !== competitionId)
+            return (
             <Card key={gw.id} className="p-3 mb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-3 flex-wrap">
@@ -316,8 +347,17 @@ function GameweeksTab({ competitionId }) {
                     <input type="month" value={gw.month_key || ''} style={{ width: 140, background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }}
                       onChange={e => { setGws(prev => prev.map(g => g.id === gw.id ? { ...g, month_key: e.target.value } : g)); updateGw(gw.id, { month_key: e.target.value }) }} />
                   </div>
+                  <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--txt-muted)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={gw.triple_points_blocked || false} onChange={e => updateGw(gw.id, { triple_points_blocked: e.target.checked })} />
+                    Block Triple Points this GW
+                  </label>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {otherComps.length > 0 && (
+                    <Button size="sm" onClick={() => setOpenLinks(openLinks === gw.id ? null : gw.id)}>
+                      {linkedElsewhere.length > 0 ? `Also in ${linkedElsewhere.length} other comp${linkedElsewhere.length !== 1 ? 's' : ''}` : 'Use in other competitions'}
+                    </Button>
+                  )}
                   <Button size="sm" onClick={() => setOpenGw(openGw === gw.id ? null : gw.id)}>
                     {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
                   </Button>
@@ -327,9 +367,27 @@ function GameweeksTab({ competitionId }) {
                   </button>
                 </div>
               </div>
+
+              {openLinks === gw.id && (
+                <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+                  <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>Which other competitions should also use {gw.number}'s fixtures? Predictions are shared — each competition scores them with its own rules.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {otherComps.map(c => {
+                      const linked = linkedElsewhere.includes(c.id)
+                      return (
+                        <label key={c.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={linked} onChange={() => toggleLink(gw.id, c.id, linked)} />
+                          {c.emoji} {c.name}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {openGw === gw.id && <FixturesPanel gameweekId={gw.id} />}
             </Card>
-          ))
+          )})
       }
     </div>
   )
@@ -381,13 +439,12 @@ function FixturesPanel({ gameweekId }) {
     if (!s || s.home === '' || s.away === '') { toast.error('Enter both scores'); return }
     const { error } = await supabase.from('fixtures').update({ home_score: Number(s.home), away_score: Number(s.away), status: 'completed' }).eq('id', fx.id)
     if (error) { toast.error('Could not save result'); return }
-    // Recalculate immediately — scoring should never depend on remembering
-    // to click a separate button afterwards.
+    // Recalculate immediately, for every competition this gameweek is
+    // linked to — not just one — since the same fixtures can feed
+    // multiple competitions with different rules.
     try {
-      const { data: gw } = await supabase.from('gameweeks').select('competition_id').eq('id', gameweekId).single()
-      const { data: r } = await supabase.from('point_rules').select('*').eq('competition_id', gw.competition_id).single()
-      await recalculateGameweek(supabase, gameweekId, r)
-      toast.success('Result saved and scores updated!')
+      const compIds = await recalculateGameweekForAllLinkedCompetitions(supabase, gameweekId)
+      toast.success(`Result saved and scores updated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
     } catch {
       toast.success('Result saved')
       toast.error('Could not auto-recalculate — use "Recalculate GW" below')
@@ -398,10 +455,8 @@ function FixturesPanel({ gameweekId }) {
   async function recalc() {
     setRecalculating(true)
     try {
-      const { data: gw } = await supabase.from('gameweeks').select('competition_id').eq('id', gameweekId).single()
-      const { data: r } = await supabase.from('point_rules').select('*').eq('competition_id', gw.competition_id).single()
-      await recalculateGameweek(supabase, gameweekId, r)
-      toast.success('Gameweek recalculated!')
+      const compIds = await recalculateGameweekForAllLinkedCompetitions(supabase, gameweekId)
+      toast.success(`Gameweek recalculated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
     } catch { toast.error('Could not recalculate') }
     finally { setRecalculating(false) }
   }
