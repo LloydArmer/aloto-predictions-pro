@@ -115,14 +115,13 @@ function GroupFixturesList({ competitionId, userId }) {
             {openRound === rn && roundFixtures.map(fx => {
               const isMe = fx.home_user_id === userId || fx.away_user_id === userId
               return (
-                <div key={fx.id} className="flex items-center justify-between py-1.5 pl-4 flex-wrap gap-2">
-                  <span className="text-xs" style={{ color: 'var(--txt-primary)', fontWeight: isMe ? 600 : 400 }}>
+                <div key={fx.id} className="flex items-center justify-between py-2.5 pl-4 border-b last:border-0 gap-3" style={{ borderColor: 'var(--border)' }}>
+                  <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isMe ? 600 : 400, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {fx.home?.display_name} vs {fx.away?.display_name}
                   </span>
-                  {fx.status === 'completed'
-                    ? <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>{fx.home_points}–{fx.away_points} ({fx.result === 'draw' ? 'draw' : fx.result === 'home' ? fx.home?.display_name : fx.away?.display_name})</span>
-                    : <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>{fx.gameweeks?.number || 'GW not set'} · upcoming</span>
-                  }
+                  <span className="text-sm font-bold" style={{ color: fx.status === 'completed' ? 'var(--green)' : 'var(--txt-muted)', minWidth: 66, textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                    {fx.status === 'completed' ? `${fx.home_points} – ${fx.away_points}` : (fx.gameweeks?.number || 'GW not set')}
+                  </span>
                 </div>
               )
             })}

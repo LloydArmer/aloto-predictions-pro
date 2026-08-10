@@ -756,10 +756,10 @@ function GroupStageTab({ competitionId, competitions }) {
             {openRound === rn && (
               <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
                 {roundFixtures.map(fx => (
-                  <div key={fx.id} className="flex items-center justify-between py-1.5 flex-wrap gap-2">
-                    <span className="text-xs" style={{ color: 'var(--txt-primary)' }}>{fx.home?.display_name} vs {fx.away?.display_name}</span>
+                  <div key={fx.id} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{fx.home?.display_name} vs {fx.away?.display_name}</span>
                     {fx.status === 'completed'
-                      ? <Badge variant="result">{fx.home_points}–{fx.away_points} ({fx.result === 'draw' ? 'draw' : fx.result === 'home' ? fx.home?.display_name : fx.away?.display_name})</Badge>
+                      ? <span className="text-sm font-bold" style={{ color: 'var(--green)', fontVariantNumeric: 'tabular-nums' }}>{fx.home_points} – {fx.away_points}</span>
                       : <Select value={fx.gameweek_id || ''} onChange={e => assignFixtureGameweek(fx.id, e.target.value)} style={{ width: 110 }}>
                           <option value="">Set GW for Fixture…</option>
                           {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
