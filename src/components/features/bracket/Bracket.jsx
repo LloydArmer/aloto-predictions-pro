@@ -84,6 +84,55 @@ function GroupTable({ competitionId, userId }) {
   )
 }
 
+function GroupFixturesList({ competitionId, userId }) {
+  const [fixtures, setFixtures] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [openRound, setOpenRound] = useState(null)
+
+  useEffect(() => {
+    if (!competitionId) { setLoading(false); return }
+    supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name), gameweeks(number)')
+      .eq('competition_id', competitionId).order('round_number')
+      .then(({ data }) => { setFixtures(data || []); setLoading(false) })
+  }, [competitionId])
+
+  if (loading) return <div className="flex justify-center py-6"><Spinner /></div>
+  if (!fixtures.length) return null
+
+  const rounds = [...new Set(fixtures.map(f => f.round_number))].sort((a,b) => a-b)
+
+  return (
+    <Card className="p-4 mb-5">
+      <SectionLabel className="mb-3">Group fixtures</SectionLabel>
+      {rounds.map(rn => {
+        const roundFixtures = fixtures.filter(f => f.round_number === rn)
+        return (
+          <div key={rn} className="mb-1">
+            <button onClick={() => setOpenRound(openRound === rn ? null : rn)} className="text-xs flex items-center gap-1 py-1.5" style={{ color: 'var(--accent)' }}>
+              <i className={`ti ti-chevron-${openRound === rn ? 'up' : 'down'} text-xs`} aria-hidden="true"/>
+              Round {rn}{roundFixtures[0]?.gameweeks?.number && ` — ${roundFixtures[0].gameweeks.number}`}
+            </button>
+            {openRound === rn && roundFixtures.map(fx => {
+              const isMe = fx.home_user_id === userId || fx.away_user_id === userId
+              return (
+                <div key={fx.id} className="flex items-center justify-between py-1.5 pl-4 flex-wrap gap-2">
+                  <span className="text-xs" style={{ color: 'var(--txt-primary)', fontWeight: isMe ? 600 : 400 }}>
+                    {fx.home?.display_name} vs {fx.away?.display_name}
+                  </span>
+                  {fx.status === 'completed'
+                    ? <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>{fx.home_points}–{fx.away_points} ({fx.result === 'draw' ? 'draw' : fx.result === 'home' ? fx.home?.display_name : fx.away?.display_name})</span>
+                    : <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>{fx.gameweeks?.number || 'GW not set'} · upcoming</span>
+                  }
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+    </Card>
+  )
+}
+
 export default function Bracket() {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
@@ -108,6 +157,7 @@ export default function Bracket() {
     <div>
       <CompetitionSelector value={comp} onChange={setComp} />
       <GroupTable competitionId={comp} userId={user?.id} />
+      <GroupFixturesList competitionId={comp} userId={user?.id} />
       {loading ? <div className="flex justify-center py-20"><Spinner size="lg" /></div>
         : rounds.length === 0 ? <EmptyState icon="ti-tournament" title="No bracket yet" description="The admin will set up bracket matches when the knockout stage begins" />
         : <>

@@ -562,20 +562,26 @@ function GroupStageTab({ competitionId, competitions }) {
   async function load() {
     setLoading(true)
     try {
-      const [{ data: parts }, { data: fx }, { data: st }, { data: links }] = await Promise.all([
+      const [{ data: parts }, { data: fx }, { data: st }] = await Promise.all([
         supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
         supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name)').eq('competition_id', competitionId).order('round_number'),
         supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', competitionId),
-        supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', competitionId),
       ])
       setParticipants(parts || [])
       setFixtures(fx || [])
       const sorted = [...(st || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
       setStandings(sorted)
-      const gwIds = (links || []).map(l => l.gameweek_id)
-      const { data: gws } = gwIds.length ? await supabase.from('gameweeks').select('*').in('id', gwIds).order('number') : { data: [] }
+      // Show every gameweek that exists, not just ones already linked to
+      // this competition — the whole point of shared gameweeks is picking
+      // from real-world ones created anywhere, and assigning one here
+      // links it automatically (see assignRoundGameweek/assignFixtureGameweek).
+      const { data: gws } = await supabase.from('gameweeks').select('*, competition_gameweeks(competition_id)').order('number')
       setGameweeks(gws || [])
     } finally { setLoading(false) }
+  }
+
+  async function ensureLinked(gwId) {
+    await supabase.from('competition_gameweeks').insert({ competition_id: competitionId, gameweek_id: gwId }).select().maybeSingle()
   }
 
   async function generate() {
@@ -594,12 +600,14 @@ function GroupStageTab({ competitionId, competitions }) {
   }
 
   async function assignRoundGameweek(roundNumber, gwId) {
+    if (gwId) await ensureLinked(gwId)
     const { error } = await supabase.from('group_fixtures').update({ gameweek_id: gwId || null }).eq('competition_id', competitionId).eq('round_number', roundNumber)
     if (error) { toast.error(`Could not assign gameweek: ${error.message}`); return }
     load()
   }
 
   async function assignFixtureGameweek(fxId, gwId) {
+    if (gwId) await ensureLinked(gwId)
     const { error } = await supabase.from('group_fixtures').update({ gameweek_id: gwId || null }).eq('id', fxId)
     if (error) { toast.error(`Could not assign gameweek: ${error.message}`); return }
     load()
@@ -753,7 +761,7 @@ function GroupStageTab({ competitionId, competitions }) {
                     {fx.status === 'completed'
                       ? <Badge variant="result">{fx.home_points}–{fx.away_points} ({fx.result === 'draw' ? 'draw' : fx.result === 'home' ? fx.home?.display_name : fx.away?.display_name})</Badge>
                       : <Select value={fx.gameweek_id || ''} onChange={e => assignFixtureGameweek(fx.id, e.target.value)} style={{ width: 110 }}>
-                          <option value="">Set GW…</option>
+                          <option value="">Set GW for Fixture…</option>
                           {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
                         </Select>
                     }
