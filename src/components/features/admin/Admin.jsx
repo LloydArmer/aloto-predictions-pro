@@ -231,7 +231,16 @@ function RulesTab({ competitionId, competitions }) {
 }
 
 // ───────────────────────── Gameweeks & fixtures ─────────────────────────
+// Opens the admin's own WhatsApp with a message announcing a gameweek is
+// open for predictions, for them to send to their group chat.
+function gameweekShareLink(gw, competitionName) {
+  const site = window.location.origin
+  const text = `🎯 ${gw.number} predictions are open${competitionName ? ` for "${competitionName}"` : ''}! Get your predictions in: ${site}/predict`
+  return `https://wa.me/?text=${encodeURIComponent(text)}`
+}
+
 function GameweeksTab({ competitionId, competitions }) {
+  const comp = competitions.find(c => c.id === competitionId)
   const [gws, setGws] = useState([])
   const [linksByGw, setLinksByGw] = useState({}) // { gameweek_id: [competition_id, ...] }
   const [loading, setLoading] = useState(false)
@@ -361,6 +370,10 @@ function GameweeksTab({ competitionId, competitions }) {
                       {linkedElsewhere.length > 0 ? `Also in ${linkedElsewhere.length} other comp${linkedElsewhere.length !== 1 ? 's' : ''}` : 'Use in other competitions'}
                     </Button>
                   )}
+                  <a href={gameweekShareLink(gw, comp?.name)} target="_blank" rel="noreferrer"
+                    className="text-xs px-2 py-1.5 rounded flex items-center gap-1" style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '0.5px solid rgba(52,208,122,0.3)' }}>
+                    <i className="ti ti-brand-whatsapp text-xs" aria-hidden="true"/>Share
+                  </a>
                   <Button size="sm" onClick={() => setOpenGw(openGw === gw.id ? null : gw.id)}>
                     {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
                   </Button>
@@ -572,7 +585,7 @@ function GroupStageTab({ competitionId, competitions }) {
     if (participants.length < 3) { toast.error('Need at least 3 participants for a group stage'); return }
     const generated = generateRoundRobinFixtures(participants.map(p => p.user_id), n)
     const { error } = await supabase.from('group_fixtures').insert(generated.map(f => ({ competition_id: competitionId, ...f })))
-    if (error) { toast.error('Could not generate fixtures'); return }
+    if (error) { toast.error(`Could not generate fixtures: ${error.message}`); return }
     toast.success(`${generated.length} fixtures generated across ${Math.max(...generated.map(f=>f.round_number))} rounds`)
     load()
   }

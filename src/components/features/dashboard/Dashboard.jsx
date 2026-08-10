@@ -19,9 +19,23 @@ export default function Dashboard() {
   const [gw,      setGW]      = useState(null)
   const [stats,   setStats]   = useState(null)
   const [loading, setLoading] = useState(false)
+  const [groupStanding, setGroupStanding] = useState(null)
   const { overall } = useLeaderboard(comp)
+  const compObj = competitions.find(c => c.id === comp)
 
   useEffect(() => { if (comp && user) load(); else setLoading(false) }, [comp, user])
+  useEffect(() => {
+    if (comp && user && compObj?.format === 'group_knockout') loadGroupStanding()
+    else setGroupStanding(null)
+  }, [comp, user, compObj?.format])
+
+  async function loadGroupStanding() {
+    const { data } = await supabase.from('group_standings').select('*').eq('competition_id', comp)
+    const sorted = [...(data || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
+    const myIndex = sorted.findIndex(s => s.user_id === user.id)
+    const mine = sorted[myIndex]
+    setGroupStanding(mine ? { rank: myIndex + 1, total: sorted.length, points: mine.league_points, wins: mine.wins, pointsFor: mine.points_for } : null)
+  }
 
   async function load() {
     setLoading(true)
@@ -93,6 +107,18 @@ export default function Dashboard() {
             <StatCard label="Exact scores"    value={stats?.exact ?? 0}  sub="bonus pts earned"/>
             <StatCard label="Correct results" value={stats?.correct ?? 0} sub="correct predictions"/>
           </div>
+
+          {groupStanding && (
+            <div className="mb-5">
+              <SectionLabel className="mb-2">Group stage</SectionLabel>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <StatCard label="Group rank"   value={`#${groupStanding.rank}`} sub={`of ${groupStanding.total} in group`}/>
+                <StatCard label="Group points" value={groupStanding.points} sub="league points"/>
+                <StatCard label="Games won"    value={groupStanding.wins} sub="in the group"/>
+                <StatCard label="Points for"   value={groupStanding.pointsFor} sub="cumulative"/>
+              </div>
+            </div>
+          )}
 
           {pendingCount > 0 && (
             <Link to="/predict" className="block mb-4">
