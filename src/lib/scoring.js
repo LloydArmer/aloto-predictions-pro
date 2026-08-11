@@ -40,6 +40,13 @@ export function defaultRules() {
 }
 
 export async function recalculateGameweek(supabase, competitionId, gameweekId, rules) {
+  // Nothing is scored until the WHOLE gameweek is marked completed — not
+  // as individual results trickle in. Partial scoring during the week
+  // would let players see live, incomplete standings, which isn't the
+  // intended behaviour.
+  const { data: gw } = await supabase.from('gameweeks').select('status').eq('id', gameweekId).single()
+  if (gw?.status !== 'completed') return { skipped: true, reason: 'Gameweek not marked completed yet' }
+
   const { data: fixtures } = await supabase.from('fixtures').select('*').eq('gameweek_id', gameweekId)
   const completedFixtures = (fixtures || []).filter(f => f.status === 'completed')
   const { data: predictions } = await supabase.from('predictions').select('*').eq('gameweek_id', gameweekId)

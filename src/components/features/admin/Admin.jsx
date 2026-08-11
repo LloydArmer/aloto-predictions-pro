@@ -306,6 +306,16 @@ function GameweeksTab({ competitionId, competitions }) {
     const { error } = await supabase.from('gameweeks').update(updates).eq('id', id)
     if (error) { toast.error('Could not update gameweek'); return }
     setGws(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g))
+    // Scoring only ever happens once a gameweek is marked completed — this
+    // is the one place that transition happens, whether from the explicit
+    // "Mark completed" button or the automatic completion of the previous
+    // gameweek when a new one is set active.
+    if (updates.status === 'completed') {
+      try {
+        const compIds = await recalculateGameweekForAllLinkedCompetitions(supabase, id)
+        toast.success(`Gameweek completed — scores calculated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
+      } catch { toast.error('Marked completed, but could not calculate scores — use "Recalculate GW" below') }
+    }
   }
 
   // Setting a gameweek active automatically marks whichever gameweek was
@@ -456,22 +466,21 @@ function FixturesPanel({ gameweekId }) {
     if (!s || s.home === '' || s.away === '') { toast.error('Enter both scores'); return }
     const { error } = await supabase.from('fixtures').update({ home_score: Number(s.home), away_score: Number(s.away), status: 'completed' }).eq('id', fx.id)
     if (error) { toast.error('Could not save result'); return }
-    // Recalculate immediately, for every competition this gameweek is
-    // linked to — not just one — since the same fixtures can feed
-    // multiple competitions with different rules.
-    try {
-      const compIds = await recalculateGameweekForAllLinkedCompetitions(supabase, gameweekId)
-      toast.success(`Result saved and scores updated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
-    } catch {
-      toast.success('Result saved')
-      toast.error('Could not auto-recalculate — use "Recalculate GW" below')
-    }
+    // Scores aren't calculated per-fixture — only once the whole gameweek
+    // is marked completed (see "Mark completed" below), so players never
+    // see partial, mid-week standings.
+    toast.success('Result saved')
     load()
   }
 
   async function recalc() {
     setRecalculating(true)
     try {
+      const { data: gw } = await supabase.from('gameweeks').select('status').eq('id', gameweekId).single()
+      if (gw?.status !== 'completed') {
+        toast.error('Scores only calculate once this gameweek is marked completed — nothing to recalculate yet')
+        return
+      }
       const compIds = await recalculateGameweekForAllLinkedCompetitions(supabase, gameweekId)
       toast.success(`Gameweek recalculated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
     } catch { toast.error('Could not recalculate') }
@@ -555,7 +564,7 @@ function ConfigTab({ competitionId, competitions }) {
           <div className="my-6" style={{ borderTop: '0.5px solid var(--border)' }} />
         </>
       )}
-      <SectionLabel className="mb-3">Knockout bracket</SectionLabel>
+      <SectionLabel className="mb-3">Cup competition</SectionLabel>
       <BracketTab competitionId={competitionId} competitions={competitions} />
     </div>
   )

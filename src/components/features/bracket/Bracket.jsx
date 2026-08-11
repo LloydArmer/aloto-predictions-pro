@@ -158,7 +158,7 @@ export default function Bracket() {
       <GroupTable competitionId={comp} userId={user?.id} />
       <GroupFixturesList competitionId={comp} userId={user?.id} />
       {loading ? <div className="flex justify-center py-20"><Spinner size="lg" /></div>
-        : rounds.length === 0 ? <EmptyState icon="ti-tournament" title="No bracket yet" description="The admin will set up bracket matches when the knockout stage begins" />
+        : rounds.length === 0 ? <EmptyState icon="ti-tournament" title="No cup competition yet" description="The admin will set up the knockout draw when the cup stage begins" />
         : <>
           <div className="mb-4 p-3 rounded-md text-xs" style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)' }}>
             <span style={{ color: 'var(--txt-second)' }}>Matchups are decided automatically by prediction points earned in the gameweek(s) assigned to each round — no separate prediction needed here.</span>

@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
+import { SelectedCompetitionProvider } from './hooks/useSelectedCompetition'
 import AppLayout from './components/layout/AppLayout'
 import { Login, Signup } from './components/features/auth/Auth'
 import Dashboard      from './components/features/dashboard/Dashboard'
@@ -49,5 +50,5 @@ function AppRoutes() {
 }
 
 export default function App() {
-  return <AuthProvider><AppRoutes /></AuthProvider>
+  return <AuthProvider><SelectedCompetitionProvider><AppRoutes /></SelectedCompetitionProvider></AuthProvider>
 }

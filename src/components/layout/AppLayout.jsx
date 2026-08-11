@@ -9,7 +9,7 @@ const NAV_BASE = [
   { to: '/',             label: 'Dashboard',    icon: 'ti-layout-dashboard' },
   { to: '/predict',      label: 'Predict',      icon: 'ti-pencil' },
   { to: '/table',        label: 'Table',        icon: 'ti-list-numbers' },
-  { to: '/bracket',      label: 'Bracket',      icon: 'ti-tournament' },
+  { to: '/bracket',      label: 'Cup Competitions', icon: 'ti-tournament' },
   { to: '/settings',     label: 'Settings',     icon: 'ti-settings-2' },
 ]
 
