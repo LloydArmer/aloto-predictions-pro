@@ -3,6 +3,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
+import { scoreOnePrediction } from '../../../lib/scoring'
 import { Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 
@@ -97,13 +98,46 @@ function GroupFixturesList({ competitionId, userId }) {
   const [fixtures, setFixtures] = useState([])
   const [loading, setLoading] = useState(true)
   const [openRound, setOpenRound] = useState(null)
+  const [livePoints, setLivePoints] = useState({}) // { [gameweekId]: { [userId]: pointsSoFar } }
 
   useEffect(() => {
     if (!competitionId) { setLoading(false); return }
-    supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name), gameweeks(number)')
-      .eq('competition_id', competitionId).order('round_number')
-      .then(({ data }) => { setFixtures(data || []); setLoading(false) })
+    load()
   }, [competitionId])
+
+  async function load() {
+    const [{ data: fx }, { data: rules }] = await Promise.all([
+      supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name), gameweeks(number)')
+        .eq('competition_id', competitionId).order('round_number'),
+      supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle(),
+    ])
+    setFixtures(fx || [])
+    setLoading(false)
+
+    // Live "points so far" for any unresolved fixture — a running total
+    // from whichever real fixtures in that gameweek already have a
+    // result, purely for display. The official group result still only
+    // locks in once the whole gameweek is marked completed.
+    const liveGwIds = [...new Set((fx || []).filter(f => f.status !== 'completed' && f.gameweek_id).map(f => f.gameweek_id))]
+    if (liveGwIds.length && rules) {
+      const cache = {}
+      for (const gwId of liveGwIds) {
+        const [{ data: gwFixtures }, { data: preds }] = await Promise.all([
+          supabase.from('fixtures').select('*').eq('gameweek_id', gwId).eq('status', 'completed'),
+          supabase.from('predictions').select('*').eq('gameweek_id', gwId),
+        ])
+        const fxMap = {}; (gwFixtures || []).forEach(f => { fxMap[f.id] = f })
+        const totals = {}
+        for (const pred of (preds || [])) {
+          const realFx = fxMap[pred.fixture_id]; if (!realFx) continue
+          const { points } = scoreOnePrediction(pred, realFx, rules)
+          totals[pred.user_id] = (totals[pred.user_id] || 0) + points
+        }
+        cache[gwId] = totals
+      }
+      setLivePoints(cache)
+    }
+  }
 
   if (loading) return <div className="flex justify-center py-6"><Spinner /></div>
   if (!fixtures.length) return null
@@ -123,10 +157,13 @@ function GroupFixturesList({ competitionId, userId }) {
             </button>
             {openRound === rn && roundFixtures.map(fx => {
               const isMe = fx.home_user_id === userId || fx.away_user_id === userId
+              const live = fx.gameweek_id && livePoints[fx.gameweek_id]
               return (
                 <div key={fx.id} className="flex items-center justify-between py-2.5 pl-4 border-b last:border-0 gap-3" style={{ borderColor: 'var(--border)' }}>
                   <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isMe ? 600 : 400, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {fx.home?.display_name} vs {fx.away?.display_name}
+                    {fx.home?.display_name}{fx.status !== 'completed' && live && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}> ({live[fx.home_user_id]||0}pts so far)</span>}
+                    {' vs '}
+                    {fx.away?.display_name}{fx.status !== 'completed' && live && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}> ({live[fx.away_user_id]||0}pts so far)</span>}
                   </span>
                   <span className="text-sm font-bold" style={{ color: fx.status === 'completed' ? 'var(--green)' : 'var(--txt-muted)', minWidth: 66, textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                     {fx.status === 'completed' ? `${fx.home_points} – ${fx.away_points}` : (fx.gameweeks?.number || 'GW not set')}

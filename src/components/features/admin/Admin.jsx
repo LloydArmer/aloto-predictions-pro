@@ -3,7 +3,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
-import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound } from '../../../lib/scoring'
+import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound, scoreOnePrediction } from '../../../lib/scoring'
 import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
@@ -585,19 +585,23 @@ function GroupStageTab({ competitionId, competitions }) {
   const [eliminated, setEliminated] = useState(comp?.group_eliminated_count || '')
   const [targetRound, setTargetRound] = useState(comp?.group_target_round || 'qf')
   const [generatingPlayoff, setGeneratingPlayoff] = useState(false)
+  const [rules, setRules] = useState(null)
+  const [livePoints, setLivePoints] = useState({}) // { [gameweekId]: { [userId]: pointsSoFar } }
 
   useEffect(() => { if (competitionId) load(); else { setParticipants([]); setFixtures([]); setStandings([]) } }, [competitionId])
 
   async function load() {
     setLoading(true)
     try {
-      const [{ data: parts }, { data: fx }, { data: st }] = await Promise.all([
+      const [{ data: parts }, { data: fx }, { data: st }, { data: r }] = await Promise.all([
         supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
         supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name)').eq('competition_id', competitionId).order('round_number'),
         supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', competitionId),
+        supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle(),
       ])
       setParticipants(parts || [])
       setFixtures(fx || [])
+      setRules(r)
       const sorted = [...(st || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
       setStandings(sorted)
       // Show every gameweek that exists, not just ones already linked to
@@ -606,7 +610,33 @@ function GroupStageTab({ competitionId, competitions }) {
       // links it automatically (see assignRoundGameweek/assignFixtureGameweek).
       const { data: gws } = await supabase.from('gameweeks').select('*, competition_gameweeks(competition_id)').order('number')
       setGameweeks(gws || [])
+      // Live "points so far" for every gameweek currently in use by an
+      // unresolved fixture — this is a display-only running total from
+      // whichever real fixtures already have a result, separate from the
+      // official gameweek_scores table (which stays locked until the
+      // whole gameweek is marked completed).
+      const liveGwIds = [...new Set((fx || []).filter(f => f.status !== 'completed' && f.gameweek_id).map(f => f.gameweek_id))]
+      if (liveGwIds.length && r) {
+        const cache = {}
+        for (const gwId of liveGwIds) cache[gwId] = await computeLivePointsForGameweek(gwId, r)
+        setLivePoints(cache)
+      }
     } finally { setLoading(false) }
+  }
+
+  async function computeLivePointsForGameweek(gwId, r) {
+    const [{ data: gwFixtures }, { data: preds }] = await Promise.all([
+      supabase.from('fixtures').select('*').eq('gameweek_id', gwId).eq('status', 'completed'),
+      supabase.from('predictions').select('*').eq('gameweek_id', gwId),
+    ])
+    const fxMap = {}; (gwFixtures || []).forEach(f => { fxMap[f.id] = f })
+    const totals = {}
+    for (const pred of (preds || [])) {
+      const fx2 = fxMap[pred.fixture_id]; if (!fx2) continue
+      const { points } = scoreOnePrediction(pred, fx2, r)
+      totals[pred.user_id] = (totals[pred.user_id] || 0) + points
+    }
+    return totals
   }
 
   async function ensureLinked(gwId) {
@@ -786,7 +816,13 @@ function GroupStageTab({ competitionId, competitions }) {
               <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
                 {roundFixtures.map(fx => (
                   <div key={fx.id} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{fx.home?.display_name} vs {fx.away?.display_name}</span>
+                    <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>
+                      {fx.home?.display_name}
+                      {fx.status !== 'completed' && fx.gameweek_id && livePoints[fx.gameweek_id] && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}> ({livePoints[fx.gameweek_id][fx.home_user_id] || 0}pts so far)</span>}
+                      {' vs '}
+                      {fx.away?.display_name}
+                      {fx.status !== 'completed' && fx.gameweek_id && livePoints[fx.gameweek_id] && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}> ({livePoints[fx.gameweek_id][fx.away_user_id] || 0}pts so far)</span>}
+                    </span>
                     {fx.status === 'completed'
                       ? <span className="text-sm font-bold" style={{ color: 'var(--green)', fontVariantNumeric: 'tabular-nums' }}>{fx.home_points} – {fx.away_points}</span>
                       : <Select value={fx.gameweek_id || ''} onChange={e => assignFixtureGameweek(fx.id, e.target.value)} style={{ width: 110 }}>
