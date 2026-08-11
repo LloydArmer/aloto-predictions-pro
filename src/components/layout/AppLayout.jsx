@@ -1,21 +1,31 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { useCompetitions } from '../../hooks/useCompetitions'
+import { useSelectedCompetition } from '../../hooks/useSelectedCompetition'
 import toast from 'react-hot-toast'
 
-const NAV = [
+const NAV_BASE = [
   { to: '/',             label: 'Dashboard',    icon: 'ti-layout-dashboard' },
   { to: '/predict',      label: 'Predict',      icon: 'ti-pencil' },
   { to: '/table',        label: 'Table',        icon: 'ti-list-numbers' },
-  { to: '/leaderboards', label: 'Leaderboards', icon: 'ti-medal' },
   { to: '/bracket',      label: 'Bracket',      icon: 'ti-tournament' },
   { to: '/settings',     label: 'Settings',     icon: 'ti-settings-2' },
 ]
 
 export default function AppLayout({ children }) {
   const { profile, isAdmin, signOut } = useAuth()
+  const { competitions } = useCompetitions()
+  const [selectedComp] = useSelectedCompetition(competitions)
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+
+  // Bracket is only meaningful for Knockout / Group + Knockout competitions
+  // — for a League-format competition it's permanently empty, so hide it
+  // rather than clutter the nav with an irrelevant destination.
+  const compFormat = competitions.find(c => c.id === selectedComp)?.format
+  const showBracket = compFormat && compFormat !== 'league'
+  const NAV = showBracket ? NAV_BASE : NAV_BASE.filter(item => item.to !== '/bracket')
 
   async function handleSignOut() {
     try { await signOut(); navigate('/login') }

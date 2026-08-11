@@ -5,7 +5,6 @@ import { Login, Signup } from './components/features/auth/Auth'
 import Dashboard      from './components/features/dashboard/Dashboard'
 import Predict        from './components/features/predict/Predict'
 import Table          from './components/features/table/Table'
-import Leaderboards   from './components/features/leaderboards/Leaderboards'
 import Bracket        from './components/features/bracket/Bracket'
 import Admin          from './components/features/admin/Admin'
 import Settings       from './components/features/settings/Settings'
@@ -40,7 +39,7 @@ function AppRoutes() {
       <Route path="/"             element={wrap(Dashboard)} />
       <Route path="/predict"      element={wrap(Predict)} />
       <Route path="/table"        element={wrap(Table)} />
-      <Route path="/leaderboards" element={wrap(Leaderboards)} />
+      <Route path="/leaderboards" element={<Navigate to="/table" replace />} />
       <Route path="/bracket"      element={wrap(Bracket)} />
       <Route path="/admin"        element={wrap(Admin)} />
       <Route path="/settings"     element={wrap(Settings)} />

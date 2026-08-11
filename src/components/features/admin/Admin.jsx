@@ -13,8 +13,7 @@ const TABS = [
   { key: 'competitions', label: 'Competitions', icon: 'ti-trophy' },
   { key: 'rules',        label: 'Points rules', icon: 'ti-star' },
   { key: 'gameweeks',    label: 'Gameweeks & fixtures', icon: 'ti-calendar' },
-  { key: 'group',        label: 'Group Stage', icon: 'ti-tournament' },
-  { key: 'bracket',      label: 'Bracket', icon: 'ti-tournament' },
+  { key: 'config',       label: 'Config', icon: 'ti-settings' },
   { key: 'participants', label: 'Participants', icon: 'ti-users' },
 ]
 
@@ -63,8 +62,7 @@ export default function Admin() {
       )}
       {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
-      {tab === 'group' && <GroupStageTab competitionId={selectedComp} competitions={competitions} />}
-      {tab === 'bracket' && <BracketTab competitionId={selectedComp} competitions={competitions} />}
+      {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
     </div>
   )
@@ -540,6 +538,28 @@ const SIZE_FOR_ROUND = { r64: 64, r32: 32, r16: 16, qf: 8, sf: 4, f: 2 }
 const ROUND_FOR_SIZE = { 64: 'r64', 32: 'r32', 16: 'r16', 8: 'qf', 4: 'sf', 2: 'f' }
 const ALL_ROUND_TABS = [{ value: 'playoff', label: 'Playoff' }, ...ROUND_OPTIONS]
 function roundLabel(v) { return ALL_ROUND_TABS.find(r => r.value === v)?.label || v }
+
+// ───────────────────────── Config (Group Stage + Bracket combined) ─────────────────────────
+function ConfigTab({ competitionId, competitions }) {
+  const comp = competitions.find(c => c.id === competitionId)
+  if (!competitionId) return <EmptyState icon="ti-settings" title="Create a competition first" />
+  if (comp?.format === 'league') {
+    return <EmptyState icon="ti-settings" title="Not needed for League competitions" description="Config covers the group stage and knockout bracket, which only apply to Knockout or Group + Knockout competitions." />
+  }
+  return (
+    <div>
+      {comp?.format === 'group_knockout' && (
+        <>
+          <SectionLabel className="mb-3">Group stage</SectionLabel>
+          <GroupStageTab competitionId={competitionId} competitions={competitions} />
+          <div className="my-6" style={{ borderTop: '0.5px solid var(--border)' }} />
+        </>
+      )}
+      <SectionLabel className="mb-3">Knockout bracket</SectionLabel>
+      <BracketTab competitionId={competitionId} competitions={competitions} />
+    </div>
+  )
+}
 
 // ───────────────────────── Group Stage ─────────────────────────
 function GroupStageTab({ competitionId, competitions }) {
