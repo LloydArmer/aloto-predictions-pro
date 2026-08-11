@@ -273,6 +273,65 @@ function MonthlyPane({ competitionId, months, userId }) {
   )
 }
 
+function GroupStandingsPane({ competitionId, userId }) {
+  const [standings, setStandings] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!competitionId) { setLoading(false); return }
+    setLoading(true)
+    supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', competitionId)
+      .then(({ data }) => {
+        const sorted = [...(data || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
+        setStandings(sorted); setLoading(false)
+      })
+  }, [competitionId])
+
+  if (loading) return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
+  if (!standings.length) return <EmptyState icon="ti-list-numbers" title="No group games played yet" description="The table will populate once group fixtures have results"/>
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="overflow-x-auto">
+        <table className="data-table w-full" style={{ minWidth: 560 }}>
+          <thead><tr>
+            <th style={{ width: 32, paddingLeft: 14 }}>#</th>
+            <th>Participant</th>
+            <th style={{ width: 40, textAlign: 'right' }}>P</th>
+            <th style={{ width: 36, textAlign: 'right' }}>W</th>
+            <th style={{ width: 36, textAlign: 'right' }}>D</th>
+            <th style={{ width: 36, textAlign: 'right' }}>L</th>
+            <th style={{ width: 50, textAlign: 'right' }}>PF</th>
+            <th style={{ width: 50, textAlign: 'right' }}>PA</th>
+            <th style={{ width: 56, textAlign: 'right' }}>Diff</th>
+            <th style={{ width: 50, textAlign: 'right', paddingRight: 14 }}>Pts</th>
+          </tr></thead>
+          <tbody>
+            {standings.map((s,i) => (
+              <tr key={s.user_id} className={s.user_id === userId ? 'highlight' : ''}>
+                <td style={{ paddingLeft: 14 }}><Pos n={i+1}/></td>
+                <td>
+                  <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>
+                    {s.profiles?.display_name}{s.user_id === userId && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+                  </p>
+                </td>
+                <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.played}</td>
+                <td className="text-xs text-right" style={{ color:'var(--green)' }}>{s.wins}</td>
+                <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.draws}</td>
+                <td className="text-xs text-right" style={{ color:'var(--red)' }}>{s.losses}</td>
+                <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.points_for}</td>
+                <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.points_against}</td>
+                <td className="text-xs text-right" style={{ color: s.points_diff >= 0 ? 'var(--green)' : 'var(--red)' }}>{s.points_diff > 0 ? '+' : ''}{s.points_diff}</td>
+                <td style={{ textAlign:'right', paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{s.league_points}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
 export default function Table() {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
@@ -308,7 +367,11 @@ export default function Table() {
           <i className="ti ti-calendar-month text-sm mr-1" aria-hidden="true"/>Monthly
         </button>
       </div>
-      {tab==='overall'&&comp&&<OverallPane competitionId={comp} userId={user?.id}/>}
+      {tab==='overall'&&comp&&(
+        competitions.find(c=>c.id===comp)?.format === 'group_knockout'
+          ? <GroupStandingsPane competitionId={comp} userId={user?.id}/>
+          : <OverallPane competitionId={comp} userId={user?.id}/>
+      )}
       {tab==='weekly'&&comp&&<WeeklyPane competitionId={comp} gameweeks={gameweeks} userId={user?.id}/>}
       {tab==='monthly'&&comp&&<MonthlyPane competitionId={comp} months={months} userId={user?.id}/>}
     </div>

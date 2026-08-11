@@ -1,7 +1,8 @@
 import { useCompetitions } from '../../hooks/useCompetitions'
 
-export default function CompetitionSelector({ value, onChange }) {
+export default function CompetitionSelector({ value, onChange, excludeFormats = [] }) {
   const { competitions, loading } = useCompetitions()
+  const visible = excludeFormats.length ? competitions.filter(c => !excludeFormats.includes(c.format)) : competitions
 
   if (loading) return (
     <div className="flex gap-2 mb-4">
@@ -11,7 +12,7 @@ export default function CompetitionSelector({ value, onChange }) {
 
   return (
     <div className="flex gap-1.5 flex-wrap mb-5">
-      {competitions.map(c => (
+      {visible.map(c => (
         <button key={c.id} className={`pill ${value === c.id ? 'active' : ''}`} onClick={() => onChange(c.id)}>
           {c.emoji || '⚽'} {c.name}
         </button>

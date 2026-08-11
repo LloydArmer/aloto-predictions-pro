@@ -163,7 +163,7 @@ export default function Bracket() {
 
   return (
     <div>
-      <CompetitionSelector value={comp} onChange={setComp} />
+      <CompetitionSelector value={comp} onChange={setComp} excludeFormats={['league']} />
       <GroupTable competitionId={comp} userId={user?.id} />
       <GroupFixturesList competitionId={comp} userId={user?.id} />
       {loading ? <div className="flex justify-center py-20"><Spinner size="lg" /></div>
