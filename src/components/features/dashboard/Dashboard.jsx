@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [stats,   setStats]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [groupStanding, setGroupStanding] = useState(null)
+  const [groupTop3, setGroupTop3] = useState([])
   const { overall } = useLeaderboard(comp)
   const compObj = competitions.find(c => c.id === comp)
 
@@ -30,11 +31,12 @@ export default function Dashboard() {
   }, [comp, user, compObj?.format])
 
   async function loadGroupStanding() {
-    const { data } = await supabase.from('group_standings').select('*').eq('competition_id', comp)
+    const { data } = await supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', comp)
     const sorted = [...(data || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
     const myIndex = sorted.findIndex(s => s.user_id === user.id)
     const mine = sorted[myIndex]
     setGroupStanding(mine ? { rank: myIndex + 1, total: sorted.length, points: mine.league_points, wins: mine.wins, pointsFor: mine.points_for } : null)
+    setGroupTop3(sorted.slice(0,3))
   }
 
   async function load() {
@@ -169,7 +171,25 @@ export default function Dashboard() {
 
           <Card className="p-4 mb-4">
             <SectionLabel className="mb-3">Current top 3</SectionLabel>
-            {overall.slice(0,3).map((p,i) => (
+            {compObj?.format === 'group_knockout' ? (
+              groupTop3.length === 0
+                ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No group games completed yet — points appear once a gameweek is marked completed and its group fixtures are resolved.</p>
+                : groupTop3.map((p,i) => (
+                    <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+                      <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
+                        <span className="text-lg">{medals[i]}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+                            {p.profiles?.display_name}
+                            {p.user_id === user?.id && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
+                          </p>
+                          <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.wins||0}W {p.draws||0}D {p.losses||0}L · {p.points_for||0} pts for</p>
+                        </div>
+                      </div>
+                      <span className="text-base font-medium" style={{ color: ptColors[i] }}>{p.league_points} pts</span>
+                    </div>
+                  ))
+            ) : overall.slice(0,3).map((p,i) => (
               <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
                   <span className="text-lg">{medals[i]}</span>
