@@ -140,10 +140,10 @@ export async function recalculateGameweekForAllLinkedCompetitions(supabase, game
 // with that participant as the winner, no points comparison needed.
 export async function resolveBracketRound(supabase, competitionId, round) {
   const { data: roundGws } = await supabase.from('bracket_round_gameweeks').select('gameweek_id').eq('competition_id', competitionId).eq('round', round)
-  const gwIds = (roundGws || []).map(r => r.gameweek_id)
+  const roundGwIds = (roundGws || []).map(r => r.gameweek_id)
 
   const { data: matches } = await supabase.from('bracket_matches').select('*').eq('competition_id', competitionId).eq('round', round)
-  const results = { resolved: 0, tied: [] }
+  const results = { resolved: 0, replaysScheduled: 0 }
 
   async function advance(match, winnerId) {
     if (match.feeds_into_match_id && match.feeds_into_side) {
@@ -165,33 +165,40 @@ export async function resolveBracketRound(supabase, competitionId, round) {
       await advance(m, m.away_user_id)
       results.resolved++; continue
     }
+    // A match assigned its own gameweek (e.g. a replay) uses that one
+    // specifically; otherwise it falls back to the round's shared mapping.
+    const gwIds = m.gameweek_id ? [m.gameweek_id] : roundGwIds
     if (!m.home_user_id || !m.away_user_id || !gwIds.length) continue
 
-    const { data: scores } = await supabase.from('gameweek_scores').select('user_id,points,exact_scores,correct_results')
+    const { data: scores } = await supabase.from('gameweek_scores').select('user_id,points')
       .eq('competition_id', competitionId).in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
 
-    const totals = { [m.home_user_id]: { points: 0, exact: 0, correct: 0 }, [m.away_user_id]: { points: 0, exact: 0, correct: 0 } }
-    for (const s of (scores || [])) {
-      totals[s.user_id].points  += s.points || 0
-      totals[s.user_id].exact   += s.exact_scores || 0
-      totals[s.user_id].correct += s.correct_results || 0
-    }
+    const totals = { [m.home_user_id]: 0, [m.away_user_id]: 0 }
+    for (const s of (scores || [])) totals[s.user_id] += s.points || 0
     const h = totals[m.home_user_id], a = totals[m.away_user_id]
 
-    let winner = null
-    if (h.points !== a.points) winner = h.points > a.points ? m.home_user_id : m.away_user_id
-    else if (h.exact !== a.exact) winner = h.exact > a.exact ? m.home_user_id : m.away_user_id
-    else if (h.correct !== a.correct) winner = h.correct > a.correct ? m.home_user_id : m.away_user_id
-
-    if (winner) {
+    if (h !== a) {
+      const winner = h > a ? m.home_user_id : m.away_user_id
       await supabase.from('bracket_matches').update({
-        winner_user_id: winner, home_points: h.points, away_points: a.points, status: 'completed',
+        winner_user_id: winner, home_points: h, away_points: a, status: 'completed',
       }).eq('id', m.id)
       await advance(m, winner)
       results.resolved++
     } else {
-      await supabase.from('bracket_matches').update({ home_points: h.points, away_points: a.points }).eq('id', m.id)
-      results.tied.push(m.id)
+      // A genuine draw — automatically schedule a replay between the same
+      // two participants, rather than requiring a manual winner pick. The
+      // replay inherits this match's forward link (it's now the one that
+      // decides who advances); the original match no longer carries one.
+      await supabase.from('bracket_matches').update({
+        home_points: h, away_points: a, status: 'replay_scheduled', feeds_into_match_id: null, feeds_into_side: null,
+      }).eq('id', m.id)
+      await supabase.from('bracket_matches').insert({
+        competition_id: competitionId, round: m.round, round_order: m.round_order,
+        home_user_id: m.home_user_id, away_user_id: m.away_user_id,
+        feeds_into_match_id: m.feeds_into_match_id, feeds_into_side: m.feeds_into_side,
+        is_replay: true,
+      })
+      results.replaysScheduled++
     }
   }
 

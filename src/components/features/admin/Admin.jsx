@@ -980,14 +980,9 @@ function BracketTab({ competitionId, competitions }) {
     load()
   }
 
-  async function setWinnerManually(matchId, winnerUserId) {
-    const { error } = await supabase.from('bracket_matches').update({ winner_user_id: winnerUserId, status: 'completed' }).eq('id', matchId)
-    if (error) { toast.error('Could not set winner'); return }
-    const match = matches.find(m => m.id === matchId)
-    if (match?.feeds_into_match_id && match?.feeds_into_side) {
-      await supabase.from('bracket_matches').update({ [match.feeds_into_side + '_user_id']: winnerUserId }).eq('id', match.feeds_into_match_id)
-    }
-    toast.success('Winner set')
+  async function assignMatchGameweek(matchId, gwId) {
+    const { error } = await supabase.from('bracket_matches').update({ gameweek_id: gwId || null }).eq('id', matchId)
+    if (error) { toast.error(`Could not assign gameweek: ${error.message}`); return }
     load()
   }
 
@@ -995,7 +990,7 @@ function BracketTab({ competitionId, competitions }) {
     setResolving(true)
     try {
       const result = await resolveBracketRound(supabase, competitionId, round)
-      if (result.tied.length) toast.error(`${result.resolved} resolved, ${result.tied.length} still tied — pick winner manually below`)
+      if (result.replaysScheduled) toast.success(`${result.resolved} resolved, ${result.replaysScheduled} drawn — replay${result.replaysScheduled !== 1 ? 's' : ''} scheduled automatically`)
       else toast.success(`${result.resolved} match${result.resolved !== 1 ? 'es' : ''} resolved`)
       load()
     } catch { toast.error('Could not resolve round') }
@@ -1083,6 +1078,7 @@ function BracketTab({ competitionId, competitions }) {
             <Card key={m.id} className="p-3 mb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--txt-primary)' }}>
+                  {m.is_replay && <Badge variant="upcoming">Replay</Badge>}
                   <span style={{ fontWeight: m.winner_user_id === m.home_user_id ? 600 : 400 }}>{m.home?.display_name || 'TBD'}</span>
                   {m.home_points != null && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>({m.home_points}pts)</span>}
                   <span style={{ color: 'var(--txt-muted)' }}>vs</span>
@@ -1094,11 +1090,12 @@ function BracketTab({ competitionId, competitions }) {
                 </div>
                 {m.status === 'completed'
                   ? <Badge variant="result">{m.winner?.display_name} advances</Badge>
+                  : m.status === 'replay_scheduled'
+                  ? <Badge variant="miss">Drawn — replay scheduled below</Badge>
                   : m.home_user_id && m.away_user_id && (
-                    <Select style={{ width: 160 }} onChange={e => e.target.value && setWinnerManually(m.id, e.target.value)} defaultValue="">
-                      <option value="" disabled>Pick winner manually…</option>
-                      <option value={m.home_user_id}>{m.home?.display_name}</option>
-                      <option value={m.away_user_id}>{m.away?.display_name}</option>
+                    <Select value={m.gameweek_id || ''} onChange={e => assignMatchGameweek(m.id, e.target.value)} style={{ width: 130 }}>
+                      <option value="">Set GW for match…</option>
+                      {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
                     </Select>
                   )
                 }

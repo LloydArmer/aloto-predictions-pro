@@ -10,12 +10,16 @@ const ROUND_LABELS = { playoff:'Playoff', r64:'Round of 64', r32:'Round of 32', 
 
 function MatchCard({ match, userId }) {
   const isCompleted = match.status === 'completed'
+  const isReplayScheduled = match.status === 'replay_scheduled'
   const rows = [
     { name: match.home?.display_name, uid: match.home_user_id, pts: match.home_points },
     { name: match.away_user_id ? match.away?.display_name : null, uid: match.away_user_id, pts: match.away_points },
   ]
   return (
     <div className="rounded-md overflow-hidden mb-2" style={{ border: '0.5px solid var(--border-med)', background: 'var(--bg-surface)' }}>
+      {match.is_replay && (
+        <div className="px-3 pt-2"><span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: 'var(--amber-dim)', color: 'var(--amber)' }}>Replay</span></div>
+      )}
       {rows.map((r, i) => !r.uid && i === 1
         ? <div key={i} className="flex items-center px-3 py-2.5" style={{ opacity: 0.4 }}><span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Bye</span></div>
         : <div key={i} className="flex items-center justify-between px-3 py-2.5 gap-2"
@@ -28,6 +32,11 @@ function MatchCard({ match, userId }) {
               {match.winner_user_id === r.uid && <i className="ti ti-star text-xs" style={{ color: 'var(--gold)' }} />}
             </div>
           </div>
+      )}
+      {isReplayScheduled && (
+        <div className="px-3 py-2" style={{ background: 'var(--amber-dim)' }}>
+          <span className="text-xs" style={{ color: 'var(--amber)' }}>Drawn — a replay has been scheduled</span>
+        </div>
       )}
     </div>
   )
