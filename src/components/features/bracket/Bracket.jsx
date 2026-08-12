@@ -49,12 +49,21 @@ function GroupTable({ competitionId, userId }) {
 
   useEffect(() => {
     if (!competitionId) { setLoading(false); return }
-    supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', competitionId)
-      .then(({ data }) => {
-        const sorted = [...(data || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
-        setStandings(sorted); setLoading(false)
-      })
+    load()
   }, [competitionId])
+
+  async function load() {
+    // group_standings is a database VIEW, not a table — PostgREST's
+    // automatic foreign-key embedding isn't reliable against views, so
+    // fetch and merge the names separately instead.
+    const { data: rows } = await supabase.from('group_standings').select('*').eq('competition_id', competitionId)
+    const userIds = [...new Set((rows || []).map(r => r.user_id))]
+    const { data: profs } = userIds.length ? await supabase.from('profiles').select('id, display_name').in('id', userIds) : { data: [] }
+    const nameMap = {}; (profs || []).forEach(p => { nameMap[p.id] = p.display_name })
+    const merged = (rows || []).map(r => ({ ...r, profiles: { display_name: nameMap[r.user_id] || 'Unknown' } }))
+    const sorted = merged.sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
+    setStandings(sorted); setLoading(false)
+  }
 
   if (loading) return <div className="flex justify-center py-6"><Spinner /></div>
   if (!standings.length) return null

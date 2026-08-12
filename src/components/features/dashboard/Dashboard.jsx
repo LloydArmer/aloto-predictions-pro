@@ -31,8 +31,15 @@ export default function Dashboard() {
   }, [comp, user, compObj?.format])
 
   async function loadGroupStanding() {
-    const { data } = await supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', comp)
-    const sorted = [...(data || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
+    // group_standings is a database VIEW, not a table — PostgREST's
+    // automatic foreign-key embedding isn't reliable against views, so
+    // fetch and merge the names separately instead.
+    const { data: rows } = await supabase.from('group_standings').select('*').eq('competition_id', comp)
+    const userIds = [...new Set((rows || []).map(r => r.user_id))]
+    const { data: profs } = userIds.length ? await supabase.from('profiles').select('id, display_name').in('id', userIds) : { data: [] }
+    const nameMap = {}; (profs || []).forEach(p => { nameMap[p.id] = p.display_name })
+    const merged = (rows || []).map(r => ({ ...r, profiles: { display_name: nameMap[r.user_id] || 'Unknown' } }))
+    const sorted = merged.sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
     const myIndex = sorted.findIndex(s => s.user_id === user.id)
     const mine = sorted[myIndex]
     setGroupStanding(mine ? { rank: myIndex + 1, total: sorted.length, points: mine.league_points, wins: mine.wins, pointsFor: mine.points_for } : null)

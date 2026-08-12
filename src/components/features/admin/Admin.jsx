@@ -245,6 +245,7 @@ function GameweeksTab({ competitionId, competitions }) {
   const [openGw, setOpenGw] = useState(null)
   const [openLinks, setOpenLinks] = useState(null)
   const [newNumber, setNewNumber] = useState('')
+  const [closedMonths, setClosedMonths] = useState([])
 
   useEffect(() => { if (competitionId) load(); else setGws([]) }, [competitionId])
   useEffect(() => {
@@ -273,7 +274,23 @@ function GameweeksTab({ competitionId, competitions }) {
         ;(allLinks || []).forEach(l => { if (!grouped[l.gameweek_id]) grouped[l.gameweek_id] = []; grouped[l.gameweek_id].push(l.competition_id) })
         setLinksByGw(grouped)
       }
+
+      const { data: closed } = await supabase.from('closed_months').select('month_key').eq('competition_id', competitionId)
+      setClosedMonths((closed || []).map(c => c.month_key))
     } finally { setLoading(false) }
+  }
+
+  async function toggleMonthClosed(monthKey, isClosed) {
+    if (isClosed) {
+      const { error } = await supabase.from('closed_months').delete().eq('competition_id', competitionId).eq('month_key', monthKey)
+      if (error) { toast.error(`Could not reopen month: ${error.message}`); return }
+      toast.success(`${monthKey} reopened`)
+    } else {
+      const { error } = await supabase.from('closed_months').insert({ competition_id: competitionId, month_key: monthKey })
+      if (error) { toast.error(`Could not close month: ${error.message}`); return }
+      toast.success(`${monthKey} marked closed — a winner can now be shown`)
+    }
+    load()
   }
 
   async function addGameweek(e) {
@@ -416,6 +433,25 @@ function GameweeksTab({ competitionId, competitions }) {
             </Card>
           )})
       }
+
+      {[...new Set(gws.map(g => g.month_key).filter(Boolean))].length > 0 && (
+        <Card className="p-4 mt-4">
+          <SectionLabel className="mb-2">Monthly closure</SectionLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Close a month once every gameweek that belongs to it is done — this is what lets the Table page's Monthly tab safely declare a winner.</p>
+          {[...new Set(gws.map(g => g.month_key).filter(Boolean))].sort().map(monthKey => {
+            const isClosed = closedMonths.includes(monthKey)
+            return (
+              <div key={monthKey} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
+                <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{monthKey}</span>
+                <div className="flex items-center gap-2">
+                  <Badge variant={isClosed ? 'result' : 'upcoming'}>{isClosed ? 'Closed' : 'Open'}</Badge>
+                  <Button size="sm" onClick={() => toggleMonthClosed(monthKey, isClosed)}>{isClosed ? 'Reopen' : 'Close month'}</Button>
+                </div>
+              </div>
+            )
+          })}
+        </Card>
+      )}
     </div>
   )
 }
@@ -593,16 +629,21 @@ function GroupStageTab({ competitionId, competitions }) {
   async function load() {
     setLoading(true)
     try {
-      const [{ data: parts }, { data: fx }, { data: st }, { data: r }] = await Promise.all([
+      const [{ data: parts }, { data: fx }, { data: stRows }, { data: r }] = await Promise.all([
         supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
         supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name)').eq('competition_id', competitionId).order('round_number'),
-        supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', competitionId),
+        supabase.from('group_standings').select('*').eq('competition_id', competitionId),
         supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle(),
       ])
       setParticipants(parts || [])
       setFixtures(fx || [])
       setRules(r)
-      const sorted = [...(st || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
+      // group_standings is a database VIEW, not a table — PostgREST's
+      // automatic foreign-key embedding isn't reliable against views, so
+      // names are merged in from the participants fetch above instead.
+      const nameMap = {}; (parts || []).forEach(p => { nameMap[p.user_id] = p.profiles?.display_name })
+      const st = (stRows || []).map(s => ({ ...s, profiles: { display_name: nameMap[s.user_id] || 'Unknown' } }))
+      const sorted = [...st].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
       setStandings(sorted)
       // Show every gameweek that exists, not just ones already linked to
       // this competition — the whole point of shared gameweeks is picking

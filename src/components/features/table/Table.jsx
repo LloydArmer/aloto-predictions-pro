@@ -158,7 +158,7 @@ function WeeklyPane({ competitionId, gameweeks, userId }) {
       {loading ? <div className="flex justify-center py-16"><Spinner size="lg"/></div>
         : weekly.length===0 ? <EmptyState icon="ti-medal" title="No scores yet" description="Scores appear after each gameweek is completed"/>
         : <>
-          <WinnerBanner player={{...winner, display_name:winner.profiles?.display_name}} label={`${sel?.number}`}/>
+          {sel?.status === 'completed' && <WinnerBanner player={{...winner, display_name:winner.profiles?.display_name}} label={`${sel?.number}`}/>}
           <div className="grid grid-cols-3 gap-2.5 mb-4">
             <StatCard label="Highest score" value={weekly[0]?.points||0} sub={weekly[0]?.profiles?.display_name}/>
             <StatCard label="Avg score" value={Math.round(weekly.reduce((a,b)=>a+(b.points||0),0)/weekly.length)} sub={`${weekly.length} players`}/>
@@ -200,8 +200,15 @@ function WeeklyPane({ competitionId, gameweeks, userId }) {
 function MonthlyPane({ competitionId, months, userId }) {
   const [sel, setSel] = useState(months[months.length-1]||null)
   const { monthly, gameweeksInMonth, loading } = useMonthlyLeaderboard(competitionId, sel?.key)
+  const [closedMonths, setClosedMonths] = useState([])
   useEffect(() => { if(months.length) setSel(months[months.length-1]) }, [months])
+  useEffect(() => {
+    if (!competitionId) { setClosedMonths([]); return }
+    supabase.from('closed_months').select('month_key').eq('competition_id', competitionId)
+      .then(({ data }) => setClosedMonths((data || []).map(c => c.month_key)))
+  }, [competitionId])
   const winner=monthly[0]
+  const isMonthClosed = sel && closedMonths.includes(sel.key)
   const completedGWs=gameweeksInMonth.filter(g=>g.status==='completed')
   const upcomingGWs=gameweeksInMonth.filter(g=>g.status==='upcoming')
   return (
@@ -235,7 +242,12 @@ function MonthlyPane({ competitionId, months, userId }) {
       {loading ? <div className="flex justify-center py-16"><Spinner size="lg"/></div>
         : monthly.length===0 ? <EmptyState icon="ti-calendar" title="No scores yet" description="Monthly scores accumulate as gameweeks complete"/>
         : <>
-          <WinnerBanner player={winner} label={sel?.label}/>
+          {isMonthClosed
+            ? <WinnerBanner player={winner} label={sel?.label}/>
+            : <div className="mb-4 p-3 rounded-md text-xs" style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)', color: 'var(--txt-muted)' }}>
+                {sel?.label} is still open — a winner will show once the admin closes this month.
+              </div>
+          }
           <div className="grid grid-cols-3 gap-2.5 mb-4">
             <StatCard label="Current leader" value={winner?.display_name?.split(' ')[0]||'—'} sub={`${winner?.total_points||0} pts`}/>
             <StatCard label="Your position" value={`#${monthly.findIndex(p=>p.user_id===userId)+1||'—'}`} sub={`${monthly.find(p=>p.user_id===userId)?.total_points||0} pts`}/>
@@ -280,12 +292,23 @@ function GroupStandingsPane({ competitionId, userId }) {
   useEffect(() => {
     if (!competitionId) { setLoading(false); return }
     setLoading(true)
-    supabase.from('group_standings').select('*, profiles(display_name)').eq('competition_id', competitionId)
-      .then(({ data }) => {
-        const sorted = [...(data || [])].sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
-        setStandings(sorted); setLoading(false)
-      })
+    load()
   }, [competitionId])
+
+  async function load() {
+    // group_standings is a database VIEW, not a table — PostgREST's
+    // automatic foreign-key embedding (profiles(display_name)) isn't
+    // reliable against views, since they don't carry the same FK
+    // metadata as base tables. Fetching separately and merging here
+    // avoids that silently-failing join entirely.
+    const { data: rows } = await supabase.from('group_standings').select('*').eq('competition_id', competitionId)
+    const userIds = [...new Set((rows || []).map(r => r.user_id))]
+    const { data: profs } = userIds.length ? await supabase.from('profiles').select('id, display_name').in('id', userIds) : { data: [] }
+    const nameMap = {}; (profs || []).forEach(p => { nameMap[p.id] = p.display_name })
+    const merged = (rows || []).map(r => ({ ...r, profiles: { display_name: nameMap[r.user_id] || 'Unknown' } }))
+    const sorted = merged.sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
+    setStandings(sorted); setLoading(false)
+  }
 
   if (loading) return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
   if (!standings.length) return <EmptyState icon="ti-list-numbers" title="No group games played yet" description="The table will populate once group fixtures have results"/>

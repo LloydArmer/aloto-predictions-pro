@@ -193,15 +193,21 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat })
   if (isGroup) {
     return (
       <Card className="p-4 mb-4">
-        <p className="text-sm font-semibold mb-3" style={{ color:'var(--txt-primary)' }}>Group results</p>
+        <p className="text-sm font-semibold mb-3" style={{ color:'var(--txt-primary)' }}>Group Results</p>
         {groupFixtures.length === 0
           ? <p className="text-xs" style={{ color:'var(--txt-muted)' }}>No group fixtures assigned to {gwLabel} yet — check Cup Competitions for this round.</p>
           : groupFixtures.map(fx => (
               <div key={fx.id} className="flex items-center justify-between py-2.5 border-b last:border-0 gap-3" style={{ borderColor:'var(--border)' }}>
                 <span className="text-sm" style={{ color:'var(--txt-primary)', minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fx.home?.display_name} vs {fx.away?.display_name}</span>
-                <span className="text-sm font-bold" style={{ color: fx.status === 'completed' ? 'var(--green)' : 'var(--txt-muted)', minWidth: 66, textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                  {fx.status === 'completed' ? `${fx.home_points} – ${fx.away_points}` : 'Pending'}
-                </span>
+                {fx.status === 'completed' ? (
+                  <div className="flex items-center" style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                    <span className="text-sm font-bold" style={{ color: 'var(--green)', width: 30, textAlign: 'right' }}>{fx.home_points}</span>
+                    <span className="text-sm font-bold" style={{ color: 'var(--green)', width: 16, textAlign: 'center' }}>–</span>
+                    <span className="text-sm font-bold" style={{ color: 'var(--green)', width: 30, textAlign: 'left' }}>{fx.away_points}</span>
+                  </div>
+                ) : (
+                  <span className="text-sm font-bold" style={{ color: 'var(--txt-muted)', flexShrink: 0 }}>Pending</span>
+                )}
               </div>
             ))
         }
