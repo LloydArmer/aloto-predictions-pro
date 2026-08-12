@@ -71,7 +71,6 @@ export default function Dashboard() {
     no_prediction: { label: 'No prediction entered', variant: 'miss' },
     upcoming:      { label: 'Upcoming',           variant: 'upcoming' },
   }
-  const medals = ['🥇','🥈','🥉']
   const ptColors = ['var(--gold)','#b4b2a9','#f0997b']
 
   // Still checking whether the account belongs to any competition at all
@@ -179,7 +178,7 @@ export default function Dashboard() {
                 : groupTop3.map((p,i) => (
                     <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
                       <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
-                        <span className="text-lg">{medals[i]}</span>
+                        <span className="text-sm font-semibold flex items-center justify-center" style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--bg-elevated)', color: ptColors[i] }}>{i+1}</span>
                         <div style={{ minWidth: 0 }}>
                           <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
                             {p.profiles?.display_name}
@@ -194,7 +193,7 @@ export default function Dashboard() {
             ) : overall.slice(0,3).map((p,i) => (
               <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
-                  <span className="text-lg">{medals[i]}</span>
+                  <span className="text-sm font-semibold flex items-center justify-center" style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--bg-elevated)', color: ptColors[i] }}>{i+1}</span>
                   <div style={{ minWidth: 0 }}>
                     <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
                       {p.display_name}
