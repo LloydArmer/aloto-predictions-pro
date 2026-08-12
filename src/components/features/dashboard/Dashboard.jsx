@@ -110,12 +110,14 @@ export default function Dashboard() {
         <div className="flex justify-center py-20"><Spinner size="lg"/></div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5">
-            <StatCard label="Your rank"       value={myRank ? `#${myRank}` : '—'} sub={`of ${overall.length} players`}/>
-            <StatCard label="Total points"    value={stats?.total ?? 0}  sub="this season"/>
-            <StatCard label="Exact scores"    value={stats?.exact ?? 0}  sub="bonus pts earned"/>
-            <StatCard label="Correct results" value={stats?.correct ?? 0} sub="correct predictions"/>
-          </div>
+          {compObj?.format === 'league' && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5">
+              <StatCard label="Your rank"       value={myRank ? `#${myRank}` : '—'} sub={`of ${overall.length} players`}/>
+              <StatCard label="Total points"    value={stats?.total ?? 0}  sub="this season"/>
+              <StatCard label="Exact scores"    value={stats?.exact ?? 0}  sub="bonus pts earned"/>
+              <StatCard label="Correct results" value={stats?.correct ?? 0} sub="correct predictions"/>
+            </div>
+          )}
 
           {groupStanding && (
             <div className="mb-5">
@@ -177,9 +179,10 @@ export default function Dashboard() {
             }
           </Card>
 
-          <Card className="p-4 mb-4">
-            <SectionLabel className="mb-3">Current top 3</SectionLabel>
-            {compObj?.format === 'group_knockout' ? (
+          {compObj?.format !== 'knockout' && (
+            <Card className="p-4 mb-4">
+              <SectionLabel className="mb-3">{compObj?.format === 'group_knockout' ? 'Current top 3' : 'Current top 3 (season overall)'}</SectionLabel>
+              {compObj?.format === 'group_knockout' ? (
               groupTop3.length === 0
                 ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No group games completed yet — points appear once a gameweek is marked completed and its group fixtures are resolved.</p>
                 : groupTop3.map((p,i) => (
@@ -212,14 +215,17 @@ export default function Dashboard() {
                 <span className="text-base font-medium" style={{ color: ptColors[i] }}>{p.total_points} pts</span>
               </div>
             ))}
-          </Card>
+            </Card>
+          )}
 
-          <button className="wa-btn" onClick={() => {
-            if (gw && overall.length) openWhatsApp(buildWeeklyMessage(gw, overall.slice(0,3).map(p=>({ display_name: p.display_name, points: p.total_points })), window.location.origin))
-          }}>
-            <i className="ti ti-brand-whatsapp text-base" aria-hidden="true"/>
-            Share {gw ? gw.number : 'latest'} standings to WhatsApp
-          </button>
+          {compObj?.format === 'league' && (
+            <button className="wa-btn" onClick={() => {
+              if (gw && overall.length) openWhatsApp(buildWeeklyMessage(gw, overall.slice(0,3).map(p=>({ display_name: p.display_name, points: p.total_points })), window.location.origin))
+            }}>
+              <i className="ti ti-brand-whatsapp text-base" aria-hidden="true"/>
+              Share {gw ? gw.number : 'latest'} standings to WhatsApp
+            </button>
+          )}
         </>
       )}
     </div>

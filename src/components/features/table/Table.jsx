@@ -364,6 +364,13 @@ export default function Table() {
   const [months, setMonths] = useState([])
 
   useEffect(() => { if (comp) loadMeta(comp); else { setGameweeks([]); setMonths([]) } }, [comp])
+  useEffect(() => {
+    // Overall doesn't apply to pure Knockout competitions — if it was
+    // selected and the user switches to one, fall back to Weekly rather
+    // than land on a tab that's no longer shown.
+    const fmt = competitions.find(c => c.id === comp)?.format
+    if (fmt === 'knockout' && tab === 'overall') setTab('weekly')
+  }, [comp, competitions])
 
   async function loadMeta(id) {
     const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', id)
@@ -380,9 +387,11 @@ export default function Table() {
     <div>
       <CompetitionSelector value={comp} onChange={setComp}/>
       <div className="seg-control mb-5">
-        <button className={`seg-btn ${tab==='overall'?'active':''}`} onClick={()=>setTab('overall')}>
-          <i className="ti ti-list-numbers text-sm mr-1" aria-hidden="true"/>Overall
-        </button>
+        {competitions.find(c=>c.id===comp)?.format !== 'knockout' && (
+          <button className={`seg-btn ${tab==='overall'?'active':''}`} onClick={()=>setTab('overall')}>
+            <i className="ti ti-list-numbers text-sm mr-1" aria-hidden="true"/>Overall
+          </button>
+        )}
         <button className={`seg-btn ${tab==='weekly'?'active':''}`} onClick={()=>setTab('weekly')}>
           <i className="ti ti-calendar-week text-sm mr-1" aria-hidden="true"/>Weekly
         </button>
@@ -390,7 +399,7 @@ export default function Table() {
           <i className="ti ti-calendar-month text-sm mr-1" aria-hidden="true"/>Monthly
         </button>
       </div>
-      {tab==='overall'&&comp&&(
+      {tab==='overall'&&comp&&competitions.find(c=>c.id===comp)?.format !== 'knockout' &&(
         competitions.find(c=>c.id===comp)?.format === 'group_knockout'
           ? <GroupStandingsPane competitionId={comp} userId={user?.id}/>
           : <OverallPane competitionId={comp} userId={user?.id}/>
