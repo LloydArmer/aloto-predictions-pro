@@ -159,11 +159,9 @@ function GroupFixturesList({ competitionId, userId }) {
               const isMe = fx.home_user_id === userId || fx.away_user_id === userId
               const live = fx.gameweek_id && livePoints[fx.gameweek_id]
               const isCompleted = fx.status === 'completed'
-              const isReplayScheduled = fx.status === 'replay_scheduled'
               return (
                 <Card key={fx.id} className="p-4 mb-3" style={isMe ? { border: '1px solid var(--accent)' } : {}}>
-                  {fx.is_replay && <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: 'var(--amber-dim)', color: 'var(--amber)' }}>Replay</span>}
-                  <p className="text-base font-semibold mt-1" style={{ color:'var(--txt-primary)' }}>
+                  <p className="text-base font-semibold" style={{ color:'var(--txt-primary)' }}>
                     {fx.home?.display_name} <span style={{ color:'var(--txt-muted)', fontWeight:400 }}>vs</span> {fx.away?.display_name}
                   </p>
                   <p className="text-xs mb-3" style={{ color:'var(--txt-muted)' }}>{fx.gameweeks?.number ? `GW: ${fx.gameweeks.number}` : 'No gameweek set yet'}</p>
@@ -175,8 +173,6 @@ function GroupFixturesList({ competitionId, userId }) {
                         {fx.result === 'draw' ? 'Draw' : fx.result === 'home' ? `${fx.home?.display_name} wins` : `${fx.away?.display_name} wins`}
                       </span>
                     </div>
-                  ) : isReplayScheduled ? (
-                    <span className="text-xs font-medium px-2.5 py-1 rounded-md" style={{ background:'var(--amber-dim)', color:'var(--amber)' }}>Drawn — a replay has been scheduled</span>
                   ) : (
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="text-sm" style={{ color:'var(--txt-second)' }}>
