@@ -3,7 +3,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
-import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound, scoreOnePrediction } from '../../../lib/scoring'
+import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound, scoreOnePrediction, resolvePointRules } from '../../../lib/scoring'
 import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
@@ -174,7 +174,9 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
 
 // ───────────────────────── Points rules ─────────────────────────
 function RulesTab({ competitionId, competitions }) {
+  const comp = competitions.find(c => c.id === competitionId)
   const [rules, setRules] = useState(null)
+  const [sourceId, setSourceId] = useState(comp?.rules_source_competition_id || '')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -183,9 +185,25 @@ function RulesTab({ competitionId, competitions }) {
   async function load() {
     setLoading(true)
     try {
-      const { data } = await supabase.from('point_rules').select('*').eq('competition_id', competitionId).single()
-      setRules(data)
+      if (comp?.format !== 'league') {
+        // Knockout/Group+Knockout don't run their own separate rules —
+        // they borrow whichever League's rules the admin picks below.
+        setSourceId(comp?.rules_source_competition_id || '')
+        const resolved = await resolvePointRules(supabase, competitionId)
+        setRules(resolved)
+      } else {
+        const { data } = await supabase.from('point_rules').select('*').eq('competition_id', competitionId).single()
+        setRules(data)
+      }
     } finally { setLoading(false) }
+  }
+
+  async function saveSource(newSourceId) {
+    setSourceId(newSourceId)
+    const { error } = await supabase.from('competitions').update({ rules_source_competition_id: newSourceId || null }).eq('id', competitionId)
+    if (error) { toast.error('Could not save'); return }
+    toast.success(newSourceId ? 'Now using that league\'s points rules' : 'No rules source selected — scoring will use defaults until one is set')
+    load()
   }
 
   async function save() {
@@ -204,7 +222,7 @@ function RulesTab({ competitionId, competitions }) {
   }
 
   if (!competitionId) return <EmptyState icon="ti-star" title="Create a competition first" />
-  if (loading || !rules) return <div className="flex justify-center py-10"><Spinner /></div>
+  if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
 
   const fields = [
     { key: 'exact_score_points',      label: 'Exact score bonus (on top of correct result)' },
@@ -212,6 +230,38 @@ function RulesTab({ competitionId, competitions }) {
     { key: 'full_house_results_bonus', label: 'Full house — all results correct in a GW' },
     { key: 'full_house_scores_bonus',  label: 'Full house — all scores exact in a GW' },
   ]
+
+  if (comp?.format !== 'league') {
+    const leagueOptions = competitions.filter(c => c.format === 'league')
+    return (
+      <Card className="p-4">
+        <SectionLabel className="mb-2">Points & bonus rules</SectionLabel>
+        <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>{comp?.format === 'group_knockout' ? 'Group + Knockout' : 'Knockout'} competitions don't have their own rules — pick which League's rules govern scoring here.</p>
+        <div className="mb-4">
+          <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Use points rules from</p>
+          <Select value={sourceId} onChange={e => saveSource(e.target.value)} style={{ width: '100%', maxWidth: 260 }}>
+            <option value="">— Select a League competition —</option>
+            {leagueOptions.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+          </Select>
+          {leagueOptions.length === 0 && <p className="text-xs mt-1" style={{ color: 'var(--amber)' }}>No League-format competitions exist yet to borrow rules from.</p>}
+        </div>
+        {rules ? (
+          <div style={{ opacity: 0.75 }}>
+            {fields.map(f => (
+              <div key={f.key} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
+                <span className="text-sm" style={{ color: 'var(--txt-second)' }}>{f.label}</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>{rules[f.key]}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Select a League above to see its rules here.</p>
+        )}
+      </Card>
+    )
+  }
+
+  if (!rules) return <div className="flex justify-center py-10"><Spinner /></div>
 
   return (
     <Card className="p-4">
@@ -629,11 +679,11 @@ function GroupStageTab({ competitionId, competitions }) {
   async function load() {
     setLoading(true)
     try {
-      const [{ data: parts }, { data: fx }, { data: stRows }, { data: r }] = await Promise.all([
+      const [{ data: parts }, { data: fx }, { data: stRows }, r] = await Promise.all([
         supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
         supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name)').eq('competition_id', competitionId).order('round_number'),
         supabase.from('group_standings').select('*').eq('competition_id', competitionId),
-        supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle(),
+        resolvePointRules(supabase, competitionId),
       ])
       setParticipants(parts || [])
       setFixtures(fx || [])

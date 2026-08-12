@@ -3,7 +3,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
-import { scoreOnePrediction } from '../../../lib/scoring'
+import { scoreOnePrediction, resolvePointRules } from '../../../lib/scoring'
 import { Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 
@@ -115,10 +115,10 @@ function GroupFixturesList({ competitionId, userId }) {
   }, [competitionId])
 
   async function load() {
-    const [{ data: fx }, { data: rules }] = await Promise.all([
+    const [{ data: fx }, rules] = await Promise.all([
       supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name), gameweeks(number)')
         .eq('competition_id', competitionId).order('round_number'),
-      supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle(),
+      resolvePointRules(supabase, competitionId),
     ])
     setFixtures(fx || [])
     setLoading(false)

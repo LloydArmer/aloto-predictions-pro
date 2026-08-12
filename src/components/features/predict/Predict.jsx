@@ -4,6 +4,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
+import { resolvePointRules } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
@@ -372,7 +373,7 @@ export default function Predict() {
   }
 
   async function loadRules() {
-    const { data } = await supabase.from('point_rules').select('*').eq('competition_id', comp).maybeSingle()
+    const data = await resolvePointRules(supabase, comp)
     setRules(data)
   }
 

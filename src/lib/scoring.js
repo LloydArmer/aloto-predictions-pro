@@ -36,6 +36,18 @@ export function outcomeLabel(prediction, fixture) {
   return 'miss'
 }
 
+// A Knockout/Group+Knockout competition doesn't run its own separate
+// scoring rules — it borrows whichever League competition's rules the
+// admin has chosen, via competitions.rules_source_competition_id. This
+// resolves the actual rules to use for a given competition, following
+// that reference if one is set.
+export async function resolvePointRules(supabase, competitionId) {
+  const { data: comp } = await supabase.from('competitions').select('rules_source_competition_id').eq('id', competitionId).maybeSingle()
+  const sourceId = comp?.rules_source_competition_id || competitionId
+  const { data: rules } = await supabase.from('point_rules').select('*').eq('competition_id', sourceId).maybeSingle()
+  return rules
+}
+
 export function defaultRules() {
   return { exact_score_points: 5, correct_result_points: 2, full_house_results_bonus: 0, full_house_scores_bonus: 0 }
 }
@@ -121,7 +133,7 @@ export async function recalculateGameweekForAllLinkedCompetitions(supabase, game
   const { data: links } = await supabase.from('competition_gameweeks').select('competition_id').eq('gameweek_id', gameweekId)
   const competitionIds = [...new Set((links || []).map(l => l.competition_id))]
   for (const competitionId of competitionIds) {
-    const { data: rules } = await supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle()
+    const rules = await resolvePointRules(supabase, competitionId)
     if (rules) await recalculateGameweek(supabase, competitionId, gameweekId, rules)
   }
   return competitionIds

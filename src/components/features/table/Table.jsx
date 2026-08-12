@@ -4,6 +4,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard, useWeeklyLeaderboard, useMonthlyLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
+import { resolvePointRules } from '../../../lib/scoring'
 import { Card, SectionLabel, StatCard, Spinner, EmptyState, Select } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import { buildWeeklyMessage, buildMonthlyMessage, openWhatsApp } from '../../../lib/whatsapp'
@@ -58,7 +59,7 @@ function OverallPane({ competitionId, userId }) {
   useEffect(() => { if (competitionId) load(); else { setRules(null); setBadgesByUser({}) } }, [competitionId])
 
   async function load() {
-    const { data: r } = await supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle()
+    const r = await resolvePointRules(supabase, competitionId)
     setRules(r)
     const { data: rows } = await supabase.from('gameweek_scores')
       .select('user_id, full_house_results, full_house_scores, gameweeks!inner(number, competition_id)')
