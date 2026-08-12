@@ -4,27 +4,28 @@
 
 @layer base {
   :root {
-    --bg-base:     #0f1117;
-    --bg-surface:  #181c27;
-    --bg-raised:   #1f2436;
-    --bg-elevated: #252b3b;
-    --border:      rgba(255,255,255,0.08);
-    --border-med:  rgba(255,255,255,0.13);
-    --border-hi:   rgba(255,255,255,0.22);
-    --txt-primary: #f0f2f8;
-    --txt-second:  #8b93a8;
-    --txt-muted:   #535c72;
-    --accent:      #4f8ef7;
-    --accent-dim:  rgba(79,142,247,0.15);
+    /* Colors matched directly to the "A League of Their Own" reference app */
+    --bg-base:     #0d0f14;
+    --bg-surface:  #161a23;
+    --bg-raised:   #1c2130;
+    --bg-elevated: #1c2130;
+    --border:      #2a3044;
+    --border-med:  #3d4f72;
+    --border-hi:   #3d4f72;
+    --txt-primary: #f0f4ff;
+    --txt-second:  #7a8aaa;
+    --txt-muted:   #3d4f72;
+    --accent:      #4f9cf9;
+    --accent-dim:  #1e3a5f;
     --accent-txt:  #93beff;
     --gold:        #f5c842;
-    --gold-dim:    rgba(245,200,66,0.12);
-    --green:       #34d07a;
-    --green-dim:   rgba(52,208,122,0.12);
-    --red:         #f2564a;
-    --red-dim:     rgba(242,86,74,0.12);
-    --amber:       #f5a623;
-    --amber-dim:   rgba(245,166,35,0.12);
+    --gold-dim:    #3d300a;
+    --green:       #3ddc84;
+    --green-dim:   #0d2e1a;
+    --red:         #ff5f5f;
+    --red-dim:     #2e0f0f;
+    --amber:       #ffaa33;
+    --amber-dim:   #2e1e00;
   }
 
   *, *::before, *::after { box-sizing: border-box; }
@@ -131,7 +132,7 @@
 
   .stat-card { padding: 12px 13px; border-radius: 10px; background: var(--bg-surface); border: 0.5px solid var(--border); }
 
-  .wa-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; cursor: pointer; background: var(--green-dim); color: var(--green); border: 0.5px solid rgba(52,208,122,0.3); font-family: 'Inter', sans-serif; transition: background 0.15s; }
+  .wa-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; cursor: pointer; background: var(--green-dim); color: var(--green); border: 0.5px solid rgba(61,220,132,0.3); font-family: 'Inter', sans-serif; transition: background 0.15s; }
   .wa-btn:hover { background: rgba(52,208,122,0.2); }
 
   .winner-banner { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 14px; background: var(--gold-dim); border: 0.5px solid rgba(245,200,66,0.3); }

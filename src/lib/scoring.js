@@ -28,6 +28,7 @@ export function scoreOnePrediction(prediction, fixture, rules) {
 
 export function outcomeLabel(prediction, fixture) {
   if (!fixture || fixture.home_score === null) return 'upcoming'
+  if (!prediction) return 'no_prediction'
   const { predicted_home: ph, predicted_away: pa } = prediction
   const { home_score: ah, away_score: aa } = fixture
   if (ph === ah && pa === aa) return 'exact'

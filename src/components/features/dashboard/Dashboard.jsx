@@ -52,7 +52,7 @@ export default function Dashboard() {
         const { data: fx }    = await supabase.from('fixtures').select('*').eq('gameweek_id', latestGW.id).order('kickoff_time')
         const { data: preds } = await supabase.from('predictions').select('*').eq('gameweek_id', latestGW.id).eq('user_id', user.id)
         const pm = {}; (preds||[]).forEach(p => { pm[p.fixture_id] = p })
-        setResults((fx||[]).map(f => ({ ...f, myPrediction: pm[f.id]||null, outcome: pm[f.id] ? outcomeLabel(pm[f.id], f) : null })))
+        setResults((fx||[]).map(f => ({ ...f, myPrediction: pm[f.id]||null, outcome: outcomeLabel(pm[f.id], f) })))
       }
       // gameweek_scores is now scoped per-competition directly, so filter
       // by competition_id rather than by a gameweek_id list — this also
@@ -65,10 +65,11 @@ export default function Dashboard() {
   const myRank = overall.findIndex(p => p.user_id === user?.id) + 1
   const pendingCount = results.filter(f => !f.myPrediction && f.home_score === null && new Date(f.kickoff_time) > new Date()).length
   const ocfg = {
-    exact:    { label: 'Exact score!',    variant: 'exact'    },
-    result:   { label: 'Correct result',  variant: 'result'   },
-    miss:     { label: 'No points',       variant: 'miss'     },
-    upcoming: { label: 'Upcoming',        variant: 'upcoming' },
+    exact:         { label: 'Exact score!',       variant: 'exact'    },
+    result:        { label: 'Correct result',     variant: 'result'   },
+    miss:          { label: 'No points',          variant: 'miss'     },
+    no_prediction: { label: 'No prediction entered', variant: 'miss' },
+    upcoming:      { label: 'Upcoming',           variant: 'upcoming' },
   }
   const medals = ['🥇','🥈','🥉']
   const ptColors = ['var(--gold)','#b4b2a9','#f0997b']
@@ -144,26 +145,27 @@ export default function Dashboard() {
                   const cfg = ocfg[f.outcome || 'upcoming']
                   const hasResult = f.home_score !== null
                   return (
-                    <div key={f.id} className="py-2.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-                      <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
-                        {f.home_team} {hasResult ? `${f.home_score} – ${f.away_score}` : 'vs'} {f.away_team}
+                    <Card key={f.id} className="p-3.5 mb-2.5" style={{ background: 'var(--bg-elevated)' }}>
+                      <p className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>
+                        {f.home_team} <span style={{ color: 'var(--txt-muted)', fontWeight: 400 }}>vs</span> {f.away_team}
                       </p>
-                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                      {hasResult && <p className="text-xs font-bold mt-0.5" style={{ color: 'var(--green)' }}>Result: {f.home_score}–{f.away_score}</p>}
+                      <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
                         <p className="text-xs" style={{ color: 'var(--txt-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {f.myPrediction
                             ? `You predicted: ${f.myPrediction.predicted_home}–${f.myPrediction.predicted_away}`
-                            : hasResult ? 'No prediction' : format(new Date(f.kickoff_time),'EEE HH:mm')}
+                            : hasResult ? '' : format(new Date(f.kickoff_time),'EEE HH:mm')}
                         </p>
-                        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                        <div className="flex items-center gap-2" style={{ flexShrink: 0, marginLeft: 'auto' }}>
                           <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                          {f.outcome && f.outcome !== 'upcoming' && (
+                          {f.outcome && f.outcome !== 'upcoming' && f.outcome !== 'no_prediction' && (
                             <span className="text-xs font-medium" style={{ color: f.outcome==='exact'?'var(--green)':f.outcome==='miss'?'var(--red)':'var(--accent)' }}>
                               {f.outcome==='exact'?'+5':f.outcome==='result'?'+2':'0'} pts
                             </span>
                           )}
                         </div>
                       </div>
-                    </div>
+                    </Card>
                   )
                 })
             }
