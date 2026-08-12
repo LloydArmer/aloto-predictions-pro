@@ -48,9 +48,14 @@ export function generateRoundRobinFixtures(participantUserIds, timesEachPairPlay
 // prediction points for that gameweek (scoped to this competition, so
 // Triple Points from a League competition never leaks in): higher wins
 // 3 league points, 0 for the loser, 1 each if level.
+// Resolving a round always recomputes fresh from current gameweek_scores,
+// even for fixtures already marked completed — otherwise a fixture's
+// result would freeze permanently the first time it's resolved, and
+// never reflect a later change (e.g. switching which League's rules
+// this competition borrows, or a late correction to a real result).
 export async function resolveGroupRound(supabase, competitionId, roundNumber) {
   const { data: fixtures } = await supabase.from('group_fixtures').select('*')
-    .eq('competition_id', competitionId).eq('round_number', roundNumber).eq('status', 'upcoming')
+    .eq('competition_id', competitionId).eq('round_number', roundNumber)
 
   let resolved = 0, notReady = 0
   for (const fx of (fixtures || [])) {
