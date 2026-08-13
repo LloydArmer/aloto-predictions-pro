@@ -1031,7 +1031,11 @@ function BracketTab({ competitionId, competitions }) {
     try {
       const [{ data: m }, { data: gws }, { data: parts }, { data: rgws }] = await Promise.all([
         supabase.from('bracket_matches').select('*, home:home_user_id(display_name), away:away_user_id(display_name), winner:winner_user_id(display_name)').eq('competition_id', competitionId).order('round_order'),
-        supabase.from('gameweeks').select('*').eq('competition_id', competitionId).order('number'),
+        // Show every gameweek that exists, not just ones originally
+        // created under this competition — gameweeks are shared across
+        // competitions, so a Knockout competition relying entirely on
+        // another competition's gameweeks would otherwise see none at all.
+        supabase.from('gameweeks').select('*').order('number'),
         supabase.from('participants').select('user_id, profiles(display_name, email)').eq('competition_id', competitionId),
         supabase.from('bracket_round_gameweeks').select('*').eq('competition_id', competitionId),
       ])
@@ -1048,6 +1052,9 @@ function BracketTab({ competitionId, competitions }) {
     await supabase.from('bracket_round_gameweeks').delete().eq('competition_id', competitionId).eq('round', round)
     if (selectedGws.length) {
       await supabase.from('bracket_round_gameweeks').insert(selectedGws.map(gw_id => ({ competition_id: competitionId, round, gameweek_id: gw_id })))
+      // Selecting a gameweek here should make it usable in this
+      // competition immediately, not require a separate manual link step.
+      for (const gw_id of selectedGws) await supabase.from('competition_gameweeks').insert({ competition_id: competitionId, gameweek_id: gw_id })
     }
     setRoundGwMap(prev => ({ ...prev, [round]: selectedGws }))
     toast.success(`GW mapping saved for ${roundLabel(round)}`)
@@ -1160,6 +1167,11 @@ function BracketTab({ competitionId, competitions }) {
   }
 
   async function assignMatchGameweek(matchId, gwId) {
+    if (gwId) {
+      // Selecting a gameweek here should make it usable in this
+      // competition immediately, not require a separate manual link step.
+      await supabase.from('competition_gameweeks').insert({ competition_id: competitionId, gameweek_id: gwId })
+    }
     const { error } = await supabase.from('bracket_matches').update({ gameweek_id: gwId || null }).eq('id', matchId)
     if (error) { toast.error(`Could not assign gameweek: ${error.message}`); return }
     load()
