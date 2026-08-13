@@ -200,8 +200,13 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
 
   async function saveSource(newSourceId) {
     setSourceId(newSourceId)
-    const { error } = await supabase.from('competitions').update({ rules_source_competition_id: newSourceId || null }).eq('id', competitionId)
-    if (error) { toast.error('Could not save'); return }
+    // Chaining .select() is essential here, not cosmetic — without it,
+    // Supabase reports "success" even when RLS silently matches zero rows
+    // (a permission block that isn't a hard error), so there'd be no way
+    // to tell a real save from one that quietly did nothing.
+    const { data, error } = await supabase.from('competitions').update({ rules_source_competition_id: newSourceId || null }).eq('id', competitionId).select().maybeSingle()
+    if (error) { toast.error(`Could not save: ${error.message}`); return }
+    if (!data) { toast.error('Save did not go through — you may not have admin rights on this competition. Check Participants.'); return }
     toast.success(newSourceId ? 'Now using that league\'s points rules' : 'No rules source selected — scoring will use defaults until one is set')
     // Refresh the rules preview directly from the database — resolvePointRules
     // always queries fresh, so this doesn't depend on the parent's
@@ -681,6 +686,8 @@ function GroupStageTab({ competitionId, competitions }) {
   const [generatingPlayoff, setGeneratingPlayoff] = useState(false)
   const [rules, setRules] = useState(null)
   const [livePoints, setLivePoints] = useState({}) // { [gameweekId]: { [userId]: pointsSoFar } }
+  const [editingFx, setEditingFx] = useState(null) // fixture id currently being manually corrected
+  const [editValues, setEditValues] = useState({ home: '', away: '' })
 
   useEffect(() => { if (competitionId) load(); else { setParticipants([]); setFixtures([]); setStandings([]) } }, [competitionId])
 
@@ -779,6 +786,22 @@ function GroupStageTab({ competitionId, competitions }) {
       else toast.success(`Round ${roundNumber} resolved — ${resolved} fixture${resolved !== 1 ? 's' : ''}`)
     } catch { toast.error('Could not resolve round') }
     finally { setResolving(null); load() }
+  }
+
+  function startEdit(fx) {
+    setEditingFx(fx.id)
+    setEditValues({ home: fx.home_points ?? '', away: fx.away_points ?? '' })
+  }
+
+  async function saveManualCorrection(fx) {
+    const home = Number(editValues.home), away = Number(editValues.away)
+    if (editValues.home === '' || editValues.away === '') { toast.error('Enter both scores'); return }
+    const result = home > away ? 'home' : away > home ? 'away' : 'draw'
+    const { error } = await supabase.from('group_fixtures').update({ home_points: home, away_points: away, result, status: 'completed' }).eq('id', fx.id)
+    if (error) { toast.error(`Could not save correction: ${error.message}`); return }
+    toast.success('Result corrected')
+    setEditingFx(null)
+    load()
   }
 
   async function generatePlayoff() {
@@ -896,11 +919,16 @@ function GroupStageTab({ competitionId, competitions }) {
         const roundFixtures = fixtures.filter(f => f.round_number === rn)
         const roundGw = roundFixtures[0]?.gameweek_id || ''
         const allSameGw = roundFixtures.every(f => f.gameweek_id === roundGw)
+        const allResolved = roundFixtures.length > 0 && roundFixtures.every(f => f.status === 'completed')
+        const someResolved = roundFixtures.some(f => f.status === 'completed')
         return (
           <Card key={rn} className="p-3 mb-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>Round {rn}</span>
+                <Badge variant={allResolved ? 'result' : someResolved ? 'admin' : 'upcoming'}>
+                  {allResolved ? 'Resolved' : someResolved ? 'Partially resolved' : 'Not resolved'}
+                </Badge>
                 <Select value={allSameGw ? roundGw : ''} onChange={e => assignRoundGameweek(rn, e.target.value)} style={{ width: 130 }}>
                   <option value="">Set GW for round…</option>
                   {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
@@ -908,7 +936,7 @@ function GroupStageTab({ competitionId, competitions }) {
               </div>
               <div className="flex items-center gap-1.5">
                 <Button size="sm" onClick={() => setOpenRound(openRound === rn ? null : rn)}>{openRound === rn ? 'Hide' : 'Show'} fixtures ({roundFixtures.length})</Button>
-                <Button size="sm" variant="primary" onClick={() => resolveRound(rn)} disabled={resolving === rn}>{resolving === rn ? 'Resolving…' : 'Resolve round'}</Button>
+                <Button size="sm" variant="primary" onClick={() => resolveRound(rn)} disabled={resolving === rn}>{resolving === rn ? 'Resolving…' : allResolved ? 'Re-resolve round' : 'Resolve round'}</Button>
               </div>
             </div>
             {openRound === rn && (
@@ -922,13 +950,29 @@ function GroupStageTab({ competitionId, competitions }) {
                       {fx.away?.display_name}
                       {fx.status !== 'completed' && fx.gameweek_id && livePoints[fx.gameweek_id] && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}> ({livePoints[fx.gameweek_id][fx.away_user_id] || 0}pts so far)</span>}
                     </span>
-                    {fx.status === 'completed'
-                      ? <span className="text-sm font-bold" style={{ color: 'var(--green)', fontVariantNumeric: 'tabular-nums' }}>{fx.home_points} – {fx.away_points}</span>
-                      : <Select value={fx.gameweek_id || ''} onChange={e => assignFixtureGameweek(fx.id, e.target.value)} style={{ width: 110 }}>
-                          <option value="">Set GW for Fixture…</option>
-                          {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
-                        </Select>
-                    }
+                    {fx.status === 'completed' ? (
+                      editingFx === fx.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <Input type="number" value={editValues.home} onChange={e => setEditValues(v => ({ ...v, home: e.target.value }))} style={{ width: 50 }} />
+                          <span style={{ color: 'var(--txt-muted)' }}>–</span>
+                          <Input type="number" value={editValues.away} onChange={e => setEditValues(v => ({ ...v, away: e.target.value }))} style={{ width: 50 }} />
+                          <Button size="sm" variant="primary" onClick={() => saveManualCorrection(fx)}>Save</Button>
+                          <Button size="sm" onClick={() => setEditingFx(null)}>Cancel</Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold" style={{ color: 'var(--green)', fontVariantNumeric: 'tabular-nums' }}>{fx.home_points} – {fx.away_points}</span>
+                          <button onClick={() => startEdit(fx)} title="Manually correct this result" className="flex items-center justify-center" style={{ width: 22, height: 22, color: 'var(--txt-muted)' }}>
+                            <i className="ti ti-pencil text-xs" aria-hidden="true" />
+                          </button>
+                        </div>
+                      )
+                    ) : (
+                      <Select value={fx.gameweek_id || ''} onChange={e => assignFixtureGameweek(fx.id, e.target.value)} style={{ width: 110 }}>
+                        <option value="">Set GW for Fixture…</option>
+                        {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                      </Select>
+                    )}
                   </div>
                 ))}
               </div>
