@@ -12,32 +12,47 @@ const ROUND_LABELS = { playoff:'Playoff', r64:'Round of 64', r32:'Round of 32', 
 function MatchCard({ match, userId }) {
   const isCompleted = match.status === 'completed'
   const isReplayScheduled = match.status === 'replay_scheduled'
-  const rows = [
-    { name: match.home?.display_name, uid: match.home_user_id, pts: match.home_points },
-    { name: match.away_user_id ? match.away?.display_name : null, uid: match.away_user_id, pts: match.away_points },
-  ]
+  const replay = match.replay
+
+  function ParticipantRow({ name, uid, pts, isWinner, isMe }) {
+    return (
+      <div className="flex items-center justify-between px-3 py-2.5"
+        style={{ background: isCompleted && isWinner ? 'var(--accent-dim)' : isMe ? 'rgba(79,142,247,0.06)' : '' }}>
+        <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isWinner ? 600 : 400, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0 }}>
+          {name || 'TBD'}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+        </span>
+        {pts != null && <span className="text-sm font-bold ml-2" style={{ color: isWinner ? 'var(--green)' : 'var(--txt-second)', flexShrink:0 }}>{pts} pts</span>}
+      </div>
+    )
+  }
+
   return (
-    <div className="rounded-md overflow-hidden mb-2" style={{ border: '0.5px solid var(--border-med)', background: 'var(--bg-surface)' }}>
-      {match.is_replay && (
-        <div className="px-3 pt-2"><span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: 'var(--amber-dim)', color: 'var(--amber)' }}>Replay</span></div>
-      )}
-      {rows.map((r, i) => !r.uid && i === 1
-        ? <div key={i} className="flex items-center px-3 py-2.5" style={{ opacity: 0.4 }}><span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Bye</span></div>
-        : <div key={i} className="flex items-center justify-between px-3 py-2.5 gap-2"
-            style={{ borderBottom: i === 0 ? '0.5px solid var(--border)' : '', background: isCompleted && match.winner_user_id === r.uid ? 'var(--accent-dim)' : r.uid === userId ? 'rgba(79,142,247,0.06)' : '' }}>
-            <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: match.winner_user_id === r.uid ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-              {r.name || 'TBD'}{r.uid === userId && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
-            </span>
-            <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-              {r.pts != null && <span className="text-sm font-medium" style={{ color: 'var(--accent)' }}>{r.pts} pts</span>}
-              {match.winner_user_id === r.uid && <i className="ti ti-star text-xs" style={{ color: 'var(--gold)' }} />}
-            </div>
-          </div>
-      )}
+    <div className="rounded-md overflow-hidden mb-3" style={{ border: '0.5px solid var(--border-med)', background: 'var(--bg-surface)' }}>
+      <ParticipantRow name={match.home?.display_name} uid={match.home_user_id} pts={match.home_points} isWinner={isCompleted && match.winner_user_id === match.home_user_id} isMe={match.home_user_id === userId}/>
+      <div style={{ height: '0.5px', background: 'var(--border)' }}/>
+      {match.away_user_id
+        ? <ParticipantRow name={match.away?.display_name} uid={match.away_user_id} pts={match.away_points} isWinner={isCompleted && match.winner_user_id === match.away_user_id} isMe={match.away_user_id === userId}/>
+        : <div className="px-3 py-2.5"><span className="text-xs" style={{ color:'var(--txt-muted)' }}>Bye</span></div>
+      }
       {isReplayScheduled && (
-        <div className="px-3 py-2" style={{ background: 'var(--amber-dim)' }}>
-          <span className="text-xs" style={{ color: 'var(--amber)' }}>Drawn — a replay has been scheduled</span>
+        <div className="px-3 py-1.5" style={{ background:'var(--amber-dim)', borderTop:'0.5px solid var(--border)' }}>
+          <span className="text-xs" style={{ color:'var(--amber)' }}>Drawn — replay scheduled below</span>
         </div>
+      )}
+      {replay && (
+        <>
+          <div className="px-3 py-1" style={{ background:'var(--amber-dim)', borderTop:'0.5px solid var(--border)' }}>
+            <span className="text-xs font-medium" style={{ color:'var(--amber)' }}>Replay</span>
+          </div>
+          <ParticipantRow name={replay.home?.display_name} uid={replay.home_user_id} pts={replay.home_points} isWinner={replay.status==='completed' && replay.winner_user_id===replay.home_user_id} isMe={replay.home_user_id===userId}/>
+          <div style={{ height:'0.5px', background:'var(--border)' }}/>
+          <ParticipantRow name={replay.away?.display_name} uid={replay.away_user_id} pts={replay.away_points} isWinner={replay.status==='completed' && replay.winner_user_id===replay.away_user_id} isMe={replay.away_user_id===userId}/>
+          {replay.status==='replay_scheduled' && (
+            <div className="px-3 py-1.5" style={{ background:'var(--amber-dim)', borderTop:'0.5px solid var(--border)' }}>
+              <span className="text-xs" style={{ color:'var(--amber)' }}>Still drawn — another replay needed</span>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -217,8 +232,25 @@ export default function Bracket() {
       const { data: matches } = await supabase.from('bracket_matches')
         .select('*, home:home_user_id(display_name), away:away_user_id(display_name), winner:winner_user_id(display_name)')
         .eq('competition_id', comp).order('round_order')
-      const rm = {}; (matches || []).forEach(m => { if (!rm[m.round]) rm[m.round] = []; rm[m.round].push(m) })
-      setRounds(Object.entries(rm).map(([round, ms]) => ({ round, matches: ms })))
+
+      // Group matches by round, but exclude rounds where every match
+      // is still an empty shell (both participants TBD) — these are
+      // future rounds drawn in advance that shouldn't be visible yet.
+      const rm = {}
+      ;(matches || []).forEach(m => {
+        if (m.is_replay) return // replays are attached to their parent match below
+        if (!rm[m.round]) rm[m.round] = []
+        // Find any replay for this match
+        const replay = (matches || []).find(r => r.is_replay && r.home_user_id === m.home_user_id && r.away_user_id === m.away_user_id && r.round === m.round)
+        rm[m.round].push({ ...m, replay: replay || null })
+      })
+
+      // Only include a round if at least one match has both participants known
+      const visibleRounds = Object.entries(rm)
+        .filter(([, ms]) => ms.some(m => m.home_user_id && m.away_user_id))
+        .map(([round, ms]) => ({ round, matches: ms }))
+
+      setRounds(visibleRounds)
     } finally { setLoading(false) }
   }
 
