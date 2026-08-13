@@ -237,13 +237,16 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat })
         <Card className="overflow-hidden p-0">
           <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & Points</p>
           <div className="overflow-x-auto">
-            <table className="data-table w-full" style={{ minWidth: 120 + fixtures.length * 100 }}>
+            <table className="data-table w-full" style={{ minWidth: 190 + fixtures.length * 100 }}>
               <thead><tr>
                 <th style={{ width: 110, paddingLeft: 14 }}>Participant</th>
                 {fixtures.map(f => <th key={f.id} style={{ width: 100, textAlign:'center', fontSize: 10, lineHeight: 1.3 }}>{f.home_team}<br/>v<br/>{f.away_team}</th>)}
+                <th style={{ width: 70, textAlign:'center', fontSize: 10 }}>Total</th>
               </tr></thead>
               <tbody>
-                {participants.map(p => (
+                {participants.map(p => {
+                  const total = fixtures.reduce((sum, f) => sum + (predMap[p.user_id]?.[f.id]?.points_earned || 0), 0)
+                  return (
                   <tr key={p.user_id}>
                     <td style={{ paddingLeft: 14 }}><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.profiles?.display_name}</p></td>
                     {fixtures.map(f => {
@@ -257,8 +260,12 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat })
                         </td>
                       )
                     })}
+                    <td style={{ textAlign:'center', borderLeft: '0.5px solid var(--border)' }}>
+                      <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>{total}</span>
+                    </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
