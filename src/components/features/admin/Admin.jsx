@@ -60,7 +60,7 @@ export default function Admin() {
           createCompetition={createCompetition} refetchComps={refetchComps}
           selectedComp={selectedComp} setSelectedComp={setSelectedComp} />
       )}
-      {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} />}
+      {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
       {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
@@ -173,7 +173,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
 }
 
 // ───────────────────────── Points rules ─────────────────────────
-function RulesTab({ competitionId, competitions }) {
+function RulesTab({ competitionId, competitions, refetchComps }) {
   const comp = competitions.find(c => c.id === competitionId)
   const [rules, setRules] = useState(null)
   const [sourceId, setSourceId] = useState(comp?.rules_source_competition_id || '')
@@ -203,7 +203,15 @@ function RulesTab({ competitionId, competitions }) {
     const { error } = await supabase.from('competitions').update({ rules_source_competition_id: newSourceId || null }).eq('id', competitionId)
     if (error) { toast.error('Could not save'); return }
     toast.success(newSourceId ? 'Now using that league\'s points rules' : 'No rules source selected — scoring will use defaults until one is set')
-    load()
+    // Refresh the rules preview directly from the database — resolvePointRules
+    // always queries fresh, so this doesn't depend on the parent's
+    // `competitions` prop having updated yet (which happens on a later
+    // render, not synchronously within this same function call).
+    const resolved = await resolvePointRules(supabase, competitionId)
+    setRules(resolved)
+    // Also refresh the parent's list, so other tabs/components relying on
+    // `competitions` see the change too.
+    refetchComps()
   }
 
   async function save() {
