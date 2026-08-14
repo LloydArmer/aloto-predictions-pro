@@ -37,23 +37,51 @@ export default function Dashboard() {
   }, [comp, user, compObj?.format])
 
   async function loadBracketStatus() {
-    // Fetch all matches for this competition, find the latest active round
-    // the participant is involved in, plus their most recent result
+    if (compObj?.format === 'group_knockout') {
+      // For a Group + Knockout competition, the "cup" section shows the
+      // participant's next upcoming group fixture, not a bracket match.
+      const { data: gfx } = await supabase.from('group_fixtures')
+        .select('*, home:home_user_id(display_name), away:away_user_id(display_name)')
+        .eq('competition_id', comp)
+        .or(`home_user_id.eq.${user.id},away_user_id.eq.${user.id}`)
+        .order('round_number')
+
+      if (!gfx?.length) { setBracketStatus(null); return }
+
+      const lastCompleted = [...gfx].filter(f => f.status === 'completed').pop()
+      const nextMatch = gfx.find(f => f.status !== 'completed')
+
+      setBracketStatus({
+        isGroup: true,
+        lastCompleted: lastCompleted ? {
+          round: `Round ${lastCompleted.round_number}`,
+          oppName: lastCompleted.home_user_id === user.id ? lastCompleted.away?.display_name : lastCompleted.home?.display_name,
+          myPts: lastCompleted.home_user_id === user.id ? lastCompleted.home_points : lastCompleted.away_points,
+          oppPts: lastCompleted.home_user_id === user.id ? lastCompleted.away_points : lastCompleted.home_points,
+          won: (lastCompleted.home_user_id === user.id && lastCompleted.result === 'home') || (lastCompleted.away_user_id === user.id && lastCompleted.result === 'away'),
+          drawn: lastCompleted.result === 'draw',
+        } : null,
+        nextMatch: nextMatch ? {
+          round: `Round ${nextMatch.round_number}`,
+          oppName: nextMatch.home_user_id === user.id ? nextMatch.away?.display_name : nextMatch.home?.display_name,
+        } : null,
+      })
+      return
+    }
+
+    // Pure Knockout — use bracket_matches
     const { data: matches } = await supabase.from('bracket_matches')
       .select('*, home:home_user_id(display_name), away:away_user_id(display_name), winner:winner_user_id(display_name)')
       .eq('competition_id', comp).order('round_order')
     if (!matches?.length) { setBracketStatus(null); return }
 
-    // Find the participant's matches
     const myMatches = matches.filter(m => m.home_user_id === user.id || m.away_user_id === user.id)
     if (!myMatches.length) { setBracketStatus(null); return }
 
-    // Most recent completed match
     const lastCompleted = [...myMatches].filter(m => m.status === 'completed').pop()
-    // Next upcoming match (not yet completed)
     const nextMatch = myMatches.find(m => m.status !== 'completed')
 
-    setBracketStatus({ lastCompleted, nextMatch })
+    setBracketStatus({ isGroup: false, lastCompleted, nextMatch })
   }
 
   async function loadGroupStanding() {
@@ -176,32 +204,34 @@ export default function Dashboard() {
 
           {bracketStatus && (
             <Card className="p-4 mb-4">
-              <SectionLabel className="mb-3">Cup competition</SectionLabel>
+              <SectionLabel className="mb-3">{bracketStatus.isGroup ? 'Group stage' : 'Cup competition'}</SectionLabel>
               {bracketStatus.lastCompleted && (() => {
                 const m = bracketStatus.lastCompleted
-                const isHome = m.home_user_id === user.id
-                const myPts = isHome ? m.home_points : m.away_points
-                const oppPts = isHome ? m.away_points : m.home_points
-                const opp = isHome ? m.away?.display_name : m.home?.display_name
-                const won = m.winner_user_id === user.id
+                // Group and Knockout matches use different shapes — normalise here
+                const roundLabel = bracketStatus.isGroup ? m.round : (ROUND_LABELS[m.round] || m.round)
+                const opp = bracketStatus.isGroup ? m.oppName : (m.home_user_id === user.id ? m.away?.display_name : m.home?.display_name)
+                const myPts = bracketStatus.isGroup ? m.myPts : (m.home_user_id === user.id ? m.home_points : m.away_points)
+                const oppPts = bracketStatus.isGroup ? m.oppPts : (m.home_user_id === user.id ? m.away_points : m.home_points)
+                const won = bracketStatus.isGroup ? m.won : m.winner_user_id === user.id
+                const drawn = bracketStatus.isGroup ? m.drawn : false
                 return (
                   <div className="mb-3 pb-3" style={{ borderBottom: bracketStatus.nextMatch ? '0.5px solid var(--border)' : '' }}>
-                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Last result · {ROUND_LABELS[m.round] || m.round}</p>
+                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Last result · {roundLabel}</p>
                     <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp}</p>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-base font-bold" style={{ color: won ? 'var(--green)' : 'var(--red)' }}>{myPts} – {oppPts}</span>
-                      <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: won ? 'var(--green-dim)' : 'var(--red-dim)', color: won ? 'var(--green)' : 'var(--red)' }}>{won ? 'Won' : myPts === oppPts ? 'Replay' : 'Lost'}</span>
+                      <span className="text-base font-bold" style={{ color: won ? 'var(--green)' : drawn ? 'var(--amber)' : 'var(--red)' }}>{myPts} – {oppPts}</span>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: won ? 'var(--green-dim)' : drawn ? 'var(--amber-dim)' : 'var(--red-dim)', color: won ? 'var(--green)' : drawn ? 'var(--amber)' : 'var(--red)' }}>{won ? 'Won' : drawn ? 'Draw' : 'Lost'}</span>
                     </div>
                   </div>
                 )
               })()}
               {bracketStatus.nextMatch && (() => {
                 const m = bracketStatus.nextMatch
-                const isHome = m.home_user_id === user.id
-                const opp = isHome ? m.away?.display_name : m.home?.display_name
+                const roundLabel = bracketStatus.isGroup ? m.round : (ROUND_LABELS[m.round] || m.round)
+                const opp = bracketStatus.isGroup ? m.oppName : (m.home_user_id === user.id ? m.away?.display_name : m.home?.display_name)
                 return (
                   <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Next up · {ROUND_LABELS[m.round] || m.round}{m.is_replay ? ' (Replay)' : ''}</p>
+                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Next up · {roundLabel}{!bracketStatus.isGroup && m.is_replay ? ' (Replay)' : ''}</p>
                     <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp || 'To be defined'}</p>
                   </div>
                 )
