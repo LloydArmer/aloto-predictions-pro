@@ -19,8 +19,17 @@ function pointsStyle(points, rules) {
 }
 
 function ScoreInput({ value, onChange, disabled }) {
-  return <input type="number" min="0" max="20" value={value}
-    onChange={e => onChange(Math.max(0, Math.min(20, parseInt(e.target.value)||0)))}
+  // Keep the raw string during editing so the browser never shows a
+  // leading zero — only parse to a number when the input is actually
+  // submitted (onSave), not on every keystroke.
+  return <input type="number" min="0" max="20"
+    value={value === '' ? '' : value}
+    onChange={e => {
+      const raw = e.target.value
+      if (raw === '') { onChange(''); return }
+      const n = parseInt(raw, 10)
+      if (!isNaN(n)) onChange(Math.max(0, Math.min(20, n)))
+    }}
     disabled={disabled} className="score-box"
     style={disabled ? { opacity:0.45, cursor:'not-allowed' } : {}}/>
 }
