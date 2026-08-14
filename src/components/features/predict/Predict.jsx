@@ -311,6 +311,7 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
 
   const comp = competitions.find(c => c.id === competitionId)
   const isLeague = comp?.format === 'league'
+  const isCompBlocked = comp?.triple_points_blocked === true
 
   useEffect(() => {
     if (!competitionId || !userId || !isLeague) { setLoading(false); return }
@@ -325,7 +326,7 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
 
   const activeThisGw = plays.some(p => p.gameweek_id === gameweek.id)
   const usedThisHalf  = plays.find(p => p.half === half)
-  const isBlocked     = gameweek.triple_points_blocked
+  const isBlocked = gameweek.triple_points_blocked || isCompBlocked
   const hasKickedOff  = fixtures.some(f => new Date(f.kickoff_time) <= new Date())
   const halfLabel = half === 'first' ? 'first half (by 31 Dec)' : 'second half (Jan–end of season)'
 
@@ -350,7 +351,7 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
       ) : usedThisHalf ? (
         <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Your {halfLabel} Triple Points chip was already used on GW {usedThisHalf.gameweek_id === gameweek.id ? 'this one' : ''}. Your other chip is for the other half of the season.</p>
       ) : isBlocked ? (
-        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Triple Points is blocked by the admin for {gameweek.number}.</p>
+        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Triple Points is blocked for this {isCompBlocked ? 'competition' : `gameweek (${gameweek.number})`}.</p>
       ) : hasKickedOff ? (
         <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Too late to activate Triple Points for {gameweek.number} — the first kickoff has passed.</p>
       ) : (

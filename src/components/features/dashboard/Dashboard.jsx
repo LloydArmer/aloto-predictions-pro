@@ -22,6 +22,7 @@ export default function Dashboard() {
   const [groupStanding, setGroupStanding] = useState(null)
   const [groupTop3, setGroupTop3] = useState([])
   const [bracketStatus, setBracketStatus] = useState(null)
+  const [pendingOverride, setPendingOverride] = useState(null)
   const { overall } = useLeaderboard(comp)
   const compObj = competitions.find(c => c.id === comp)
 
@@ -76,26 +77,43 @@ export default function Dashboard() {
     try {
       const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', comp)
       const linkedGwIds = (links || []).map(l => l.gameweek_id)
-      const { data: gws } = linkedGwIds.length
-        ? await supabase.from('gameweeks').select('*').in('id', linkedGwIds).in('status',['active','completed']).order('number',{ascending:false}).limit(1)
+      const { data: allGws } = linkedGwIds.length
+        ? await supabase.from('gameweeks').select('*').in('id', linkedGwIds).in('status',['active','completed']).order('number',{ascending:false})
         : { data: [] }
-      const latestGW = gws?.[0]; setGW(latestGW)
+
+      // Show the most recently active GW's fixtures as the "current" snapshot
+      const latestGW = allGws?.[0]; setGW(latestGW)
       if (latestGW) {
         const { data: fx }    = await supabase.from('fixtures').select('*').eq('gameweek_id', latestGW.id).order('kickoff_time')
         const { data: preds } = await supabase.from('predictions').select('*').eq('gameweek_id', latestGW.id).eq('user_id', user.id)
         const pm = {}; (preds||[]).forEach(p => { pm[p.fixture_id] = p })
         setResults((fx||[]).map(f => ({ ...f, myPrediction: pm[f.id]||null, outcome: outcomeLabel(pm[f.id], f) })))
       }
-      // gameweek_scores is now scoped per-competition directly, so filter
-      // by competition_id rather than by a gameweek_id list — this also
-      // correctly separates a shared gameweek's scores per competition.
+
+      // Pending predictions — sum across ALL currently active GWs so
+      // participants are notified whenever any open GW needs predictions,
+      // not just the most recent one.
+      const activeGwIds = (allGws || []).filter(g => g.status === 'active').map(g => g.id)
+      if (activeGwIds.length > 1) {
+        let totalPending = 0
+        for (const gwId of activeGwIds) {
+          const { data: fx }    = await supabase.from('fixtures').select('id,kickoff_time,home_score').eq('gameweek_id', gwId)
+          const { data: preds } = await supabase.from('predictions').select('fixture_id').eq('gameweek_id', gwId).eq('user_id', user.id)
+          const predSet = new Set((preds||[]).map(p => p.fixture_id))
+          totalPending += (fx||[]).filter(f => !predSet.has(f.id) && f.home_score === null && new Date(f.kickoff_time) > new Date()).length
+        }
+        setPendingOverride(totalPending)
+      } else {
+        setPendingOverride(null)
+      }
+
       const { data: scores } = await supabase.from('gameweek_scores').select('*').eq('user_id', user.id).eq('competition_id', comp)
       if (scores?.length) setStats({ total: scores.reduce((a,b)=>a+(b.points||0),0), exact: scores.reduce((a,b)=>a+(b.exact_scores||0),0), correct: scores.reduce((a,b)=>a+(b.correct_results||0),0) })
     } finally { setLoading(false) }
   }
 
   const myRank = overall.findIndex(p => p.user_id === user?.id) + 1
-  const pendingCount = results.filter(f => !f.myPrediction && f.home_score === null && new Date(f.kickoff_time) > new Date()).length
+  const pendingCount = pendingOverride ?? results.filter(f => !f.myPrediction && f.home_score === null && new Date(f.kickoff_time) > new Date()).length
   const ocfg = {
     exact:         { label: 'Exact score!',       variant: 'exact'    },
     result:        { label: 'Correct result',     variant: 'result'   },
@@ -197,7 +215,7 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2.5">
                   <i className="ti ti-clock-exclamation text-lg" style={{ color: 'var(--amber)' }} aria-hidden="true"/>
                   <span className="text-sm font-medium" style={{ color: 'var(--amber)' }}>
-                    {pendingCount} prediction{pendingCount !== 1 ? 's' : ''} waiting {gw ? `for ${gw.number}` : ''}
+                    {pendingCount} prediction{pendingCount !== 1 ? 's' : ''} waiting {pendingOverride !== null ? 'across open gameweeks' : gw ? `for ${gw.number}` : ''}
                   </span>
                 </div>
                 <span className="text-xs font-medium px-3 py-1.5 rounded-md" style={{ background: 'var(--amber)', color: 'var(--bg-base)' }}>Predict now</span>

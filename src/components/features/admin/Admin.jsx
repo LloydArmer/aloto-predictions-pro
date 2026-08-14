@@ -177,6 +177,7 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
   const comp = competitions.find(c => c.id === competitionId)
   const [rules, setRules] = useState(null)
   const [sourceId, setSourceId] = useState(comp?.rules_source_competition_id || '')
+  const [tpBlocked, setTpBlocked] = useState(comp?.triple_points_blocked || false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -196,6 +197,14 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
         setRules(data)
       }
     } finally { setLoading(false) }
+  }
+
+  async function saveTpBlock(blocked) {
+    setTpBlocked(blocked)
+    const { data, error } = await supabase.from('competitions').update({ triple_points_blocked: blocked }).eq('id', competitionId).select().maybeSingle()
+    if (error || !data) { toast.error('Could not save — check admin rights on this competition'); setTpBlocked(!blocked); return }
+    toast.success(blocked ? 'Triple Points blocked for this competition' : 'Triple Points unblocked')
+    refetchComps()
   }
 
   async function saveSource(newSourceId) {
@@ -257,6 +266,14 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
             {leagueOptions.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
           </Select>
           {leagueOptions.length === 0 && <p className="text-xs mt-1" style={{ color: 'var(--amber)' }}>No League-format competitions exist yet to borrow rules from.</p>}
+        </div>
+        <div className="mt-4 pt-4" style={{ borderTop: '0.5px solid var(--border)' }}>
+          <SectionLabel className="mb-2">Triple Points</SectionLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Triple Points only applies in League competitions. If participants are also in a League that uses Triple Points, you can block it from affecting their scores in this competition.</p>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={tpBlocked} onChange={e => saveTpBlock(e.target.checked)} />
+            <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>Block Triple Points from applying to this competition</span>
+          </label>
         </div>
         {rules ? (
           <div style={{ opacity: 0.75 }}>
@@ -402,8 +419,8 @@ function GameweeksTab({ competitionId, competitions }) {
   // previously active (if any) as completed — this is the single value
   // Dashboard/Predict use to know "what's the current gameweek".
   async function setActive(gw) {
-    const prevActive = gws.find(g => g.status === 'active' && g.id !== gw.id)
-    if (prevActive) await updateGw(prevActive.id, { status: 'completed' })
+    // Multiple GWs can be active simultaneously — e.g. when fixtures from
+    // two different rounds overlap. Don't auto-complete any other active GW.
     await updateGw(gw.id, { status: 'active' })
   }
 
