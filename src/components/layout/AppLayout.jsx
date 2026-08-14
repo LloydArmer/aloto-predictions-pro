@@ -25,7 +25,10 @@ export default function AppLayout({ children }) {
   // rather than clutter the nav with an irrelevant destination.
   const compFormat = competitions.find(c => c.id === selectedComp)?.format
   const showBracket = compFormat && compFormat !== 'league'
-  const NAV = showBracket ? NAV_BASE : NAV_BASE.filter(item => item.to !== '/bracket')
+  const showTable   = compFormat !== 'knockout'
+  const NAV = NAV_BASE
+    .filter(item => item.to !== '/bracket' || showBracket)
+    .filter(item => item.to !== '/table'   || showTable)
 
   async function handleSignOut() {
     try { await signOut(); navigate('/login') }

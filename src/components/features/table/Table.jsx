@@ -2,12 +2,12 @@ import { useState, useEffect, Fragment } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
-import { useLeaderboard, useWeeklyLeaderboard, useMonthlyLeaderboard } from '../../../hooks/useLeaderboard'
+import { useLeaderboard, useMonthlyLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
 import { resolvePointRules } from '../../../lib/scoring'
 import { Card, SectionLabel, StatCard, Spinner, EmptyState, Select } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
-import { buildWeeklyMessage, buildMonthlyMessage, openWhatsApp } from '../../../lib/whatsapp'
+import { buildMonthlyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import { format } from 'date-fns'
 
 function Pos({ n }) {
@@ -142,58 +142,6 @@ function OverallPane({ competitionId, userId }) {
           </Card>
       }
       {overall.length > 0 && <p className="text-xs text-center mt-3" style={{ color:'var(--txt-muted)' }}>Your row highlighted in blue</p>}
-    </div>
-  )
-}
-
-function WeeklyPane({ competitionId, gameweeks, userId }) {
-  const [sel, setSel] = useState(gameweeks[gameweeks.length-1]||null)
-  const { weekly, loading } = useWeeklyLeaderboard(competitionId, sel?.id)
-  useEffect(() => { if(gameweeks.length) setSel(gameweeks[gameweeks.length-1]) }, [gameweeks])
-  const winner = weekly[0]
-  return (
-    <div>
-      <Select value={sel?.id || ''} onChange={e => setSel(gameweeks.find(g => g.id === e.target.value) || null)} className="mb-4" style={{ maxWidth: 200 }}>
-        {[...gameweeks].reverse().map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
-      </Select>
-      {loading ? <div className="flex justify-center py-16"><Spinner size="lg"/></div>
-        : weekly.length===0 ? <EmptyState icon="ti-medal" title="No scores yet" description="Scores appear after each gameweek is completed"/>
-        : <>
-          {sel?.status === 'completed' && <WinnerBanner player={{...winner, display_name:winner.profiles?.display_name}} label={`${sel?.number}`}/>}
-          <div className="grid grid-cols-3 gap-2.5 mb-4">
-            <StatCard label="Highest score" value={weekly[0]?.points||0} sub={weekly[0]?.profiles?.display_name}/>
-            <StatCard label="Avg score" value={Math.round(weekly.reduce((a,b)=>a+(b.points||0),0)/weekly.length)} sub={`${weekly.length} players`}/>
-            <StatCard label="Exact scores" value={weekly.reduce((a,b)=>a+(b.exact_scores||0),0)} sub="total this GW"/>
-          </div>
-          <SectionLabel className="mb-2">{sel?.number} rankings</SectionLabel>
-          <Card className="overflow-hidden p-0 mb-4">
-            <div className="overflow-x-auto">
-            <table className="data-table w-full" style={{ minWidth:400 }}>
-              <thead><tr>
-                <th style={{ width:36,paddingLeft:14 }}>#</th><th>Player</th>
-                <th style={{ width:52,textAlign:'right' }}>Exact</th>
-                <th style={{ width:56,textAlign:'right' }}>Result</th>
-                <th style={{ width:54,textAlign:'right',paddingRight:14 }}>Pts</th>
-              </tr></thead>
-              <tbody>
-                {weekly.map((p,i)=>(
-                  <tr key={p.user_id} className={p.user_id===userId?'highlight':''}>
-                    <td style={{ paddingLeft:14 }}><span style={{ fontSize:12,fontWeight:500,color:i===0?'var(--gold)':i===1?'#b4b2a9':i===2?'#f0997b':'var(--txt-muted)' }}>{i+1}</span></td>
-                    <td><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.profiles?.display_name||'Player'}{p.user_id===userId&&<span className="ml-1 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}</p></td>
-                    <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.exact_scores||0}</td>
-                    <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.correct_results||0}</td>
-                    <td style={{ textAlign:'right',paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.points}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          </Card>
-          <button className="wa-btn" onClick={()=>openWhatsApp(buildWeeklyMessage(sel,weekly.map(w=>({display_name:w.profiles?.display_name||'Player',points:w.points})),window.location.origin))}>
-            <i className="ti ti-brand-whatsapp text-base" aria-hidden="true"/>Share {sel?.number} results to WhatsApp
-          </button>
-        </>
-      }
     </div>
   )
 }
@@ -363,15 +311,13 @@ export default function Table() {
   const [tab, setTab] = useState('overall')
   const [gameweeks, setGameweeks] = useState([])
   const [months, setMonths] = useState([])
+  const compFmt = competitions.find(c => c.id === comp)?.format
 
   useEffect(() => { if (comp) loadMeta(comp); else { setGameweeks([]); setMonths([]) } }, [comp])
   useEffect(() => {
-    // Overall doesn't apply to pure Knockout competitions — if it was
-    // selected and the user switches to one, fall back to Weekly rather
-    // than land on a tab that's no longer shown.
-    const fmt = competitions.find(c => c.id === comp)?.format
-    if (fmt === 'knockout' && tab === 'overall') setTab('weekly')
-  }, [comp, competitions])
+    // If the current tab no longer applies when switching competition, fall back safely
+    if (compFmt === 'knockout') setTab('monthly')
+  }, [comp, compFmt])
 
   async function loadMeta(id) {
     const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', id)
@@ -384,28 +330,30 @@ export default function Table() {
     setMonths(keys.map(k=>({ key:k, label:format(new Date(k+'-01'),'MMM yyyy') })))
   }
 
+  // Pure Knockout — no table concept applies
+  if (compFmt === 'knockout') return (
+    <div>
+      <CompetitionSelector value={comp} onChange={setComp}/>
+      <EmptyState icon="ti-list-numbers" title="No table for Knockout competitions" description="Head to Cup Competitions to see the bracket and results"/>
+    </div>
+  )
+
   return (
     <div>
       <CompetitionSelector value={comp} onChange={setComp}/>
       <div className="seg-control mb-5">
-        {competitions.find(c=>c.id===comp)?.format !== 'knockout' && (
-          <button className={`seg-btn ${tab==='overall'?'active':''}`} onClick={()=>setTab('overall')}>
-            <i className="ti ti-list-numbers text-sm mr-1" aria-hidden="true"/>Overall
-          </button>
-        )}
-        <button className={`seg-btn ${tab==='weekly'?'active':''}`} onClick={()=>setTab('weekly')}>
-          <i className="ti ti-calendar-week text-sm mr-1" aria-hidden="true"/>Weekly
+        <button className={`seg-btn ${tab==='overall'?'active':''}`} onClick={()=>setTab('overall')}>
+          <i className="ti ti-list-numbers text-sm mr-1" aria-hidden="true"/>Overall
         </button>
         <button className={`seg-btn ${tab==='monthly'?'active':''}`} onClick={()=>setTab('monthly')}>
           <i className="ti ti-calendar-month text-sm mr-1" aria-hidden="true"/>Monthly
         </button>
       </div>
-      {tab==='overall'&&comp&&competitions.find(c=>c.id===comp)?.format !== 'knockout' &&(
-        competitions.find(c=>c.id===comp)?.format === 'group_knockout'
+      {tab==='overall'&&comp&&(
+        compFmt === 'group_knockout'
           ? <GroupStandingsPane competitionId={comp} userId={user?.id}/>
           : <OverallPane competitionId={comp} userId={user?.id}/>
       )}
-      {tab==='weekly'&&comp&&<WeeklyPane competitionId={comp} gameweeks={gameweeks} userId={user?.id}/>}
       {tab==='monthly'&&comp&&<MonthlyPane competitionId={comp} months={months} userId={user?.id}/>}
     </div>
   )

@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [groupStanding, setGroupStanding] = useState(null)
   const [groupTop3, setGroupTop3] = useState([])
+  const [bracketStatus, setBracketStatus] = useState(null)
   const { overall } = useLeaderboard(comp)
   const compObj = competitions.find(c => c.id === comp)
 
@@ -29,6 +30,30 @@ export default function Dashboard() {
     if (comp && user && compObj?.format === 'group_knockout') loadGroupStanding()
     else setGroupStanding(null)
   }, [comp, user, compObj?.format])
+  useEffect(() => {
+    if (comp && user && (compObj?.format === 'knockout' || compObj?.format === 'group_knockout')) loadBracketStatus()
+    else setBracketStatus(null)
+  }, [comp, user, compObj?.format])
+
+  async function loadBracketStatus() {
+    // Fetch all matches for this competition, find the latest active round
+    // the participant is involved in, plus their most recent result
+    const { data: matches } = await supabase.from('bracket_matches')
+      .select('*, home:home_user_id(display_name), away:away_user_id(display_name), winner:winner_user_id(display_name)')
+      .eq('competition_id', comp).order('round_order')
+    if (!matches?.length) { setBracketStatus(null); return }
+
+    // Find the participant's matches
+    const myMatches = matches.filter(m => m.home_user_id === user.id || m.away_user_id === user.id)
+    if (!myMatches.length) { setBracketStatus(null); return }
+
+    // Most recent completed match
+    const lastCompleted = [...myMatches].filter(m => m.status === 'completed').pop()
+    // Next upcoming match (not yet completed)
+    const nextMatch = myMatches.find(m => m.status !== 'completed')
+
+    setBracketStatus({ lastCompleted, nextMatch })
+  }
 
   async function loadGroupStanding() {
     // group_standings is a database VIEW, not a table — PostgREST's
@@ -79,6 +104,7 @@ export default function Dashboard() {
     upcoming:      { label: 'Upcoming',           variant: 'upcoming' },
   }
   const ptColors = ['var(--gold)','#b4b2a9','#f0997b']
+  const ROUND_LABELS = { playoff:'Playoff', r64:'Round of 64', r32:'Round of 32', r16:'Round of 16', qf:'Quarter-finals', sf:'Semi-finals', f:'Final' }
 
   // Still checking whether the account belongs to any competition at all
   if (compsLoading) {
@@ -126,9 +152,43 @@ export default function Dashboard() {
                 <StatCard label="Group rank"   value={`#${groupStanding.rank}`} sub={`of ${groupStanding.total} in group`}/>
                 <StatCard label="Group points" value={groupStanding.points} sub="league points"/>
                 <StatCard label="Games won"    value={groupStanding.wins} sub="in the group"/>
-                <StatCard label="Points for"   value={groupStanding.pointsFor} sub="cumulative"/>
               </div>
             </div>
+          )}
+
+          {bracketStatus && (
+            <Card className="p-4 mb-4">
+              <SectionLabel className="mb-3">Cup competition</SectionLabel>
+              {bracketStatus.lastCompleted && (() => {
+                const m = bracketStatus.lastCompleted
+                const isHome = m.home_user_id === user.id
+                const myPts = isHome ? m.home_points : m.away_points
+                const oppPts = isHome ? m.away_points : m.home_points
+                const opp = isHome ? m.away?.display_name : m.home?.display_name
+                const won = m.winner_user_id === user.id
+                return (
+                  <div className="mb-3 pb-3" style={{ borderBottom: bracketStatus.nextMatch ? '0.5px solid var(--border)' : '' }}>
+                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Last result · {ROUND_LABELS[m.round] || m.round}</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-base font-bold" style={{ color: won ? 'var(--green)' : 'var(--red)' }}>{myPts} – {oppPts}</span>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: won ? 'var(--green-dim)' : 'var(--red-dim)', color: won ? 'var(--green)' : 'var(--red)' }}>{won ? 'Won' : myPts === oppPts ? 'Replay' : 'Lost'}</span>
+                    </div>
+                  </div>
+                )
+              })()}
+              {bracketStatus.nextMatch && (() => {
+                const m = bracketStatus.nextMatch
+                const isHome = m.home_user_id === user.id
+                const opp = isHome ? m.away?.display_name : m.home?.display_name
+                return (
+                  <div>
+                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Next up · {ROUND_LABELS[m.round] || m.round}{m.is_replay ? ' (Replay)' : ''}</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp || 'TBD'}</p>
+                  </div>
+                )
+              })()}
+            </Card>
           )}
 
           {pendingCount > 0 && (
@@ -194,7 +254,7 @@ export default function Dashboard() {
                             {p.profiles?.display_name}
                             {p.user_id === user?.id && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
                           </p>
-                          <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.wins||0}W {p.draws||0}D {p.losses||0}L · {p.points_for||0} pts for</p>
+                          <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.wins||0}W {p.draws||0}D {p.losses||0}L</p>
                         </div>
                       </div>
                       <span className="text-base font-medium" style={{ color: ptColors[i] }}>{p.league_points} pts</span>
