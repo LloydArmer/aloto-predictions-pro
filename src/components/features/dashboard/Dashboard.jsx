@@ -148,7 +148,7 @@ export default function Dashboard() {
           {groupStanding && (
             <div className="mb-5">
               <SectionLabel className="mb-2">Group stage</SectionLabel>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-3 gap-2.5">
                 <StatCard label="Group rank"   value={`#${groupStanding.rank}`} sub={`of ${groupStanding.total} in group`}/>
                 <StatCard label="Group points" value={groupStanding.points} sub="league points"/>
                 <StatCard label="Games won"    value={groupStanding.wins} sub="in the group"/>
@@ -184,7 +184,7 @@ export default function Dashboard() {
                 return (
                   <div>
                     <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Next up · {ROUND_LABELS[m.round] || m.round}{m.is_replay ? ' (Replay)' : ''}</p>
-                    <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp || 'TBD'}</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp || 'To be defined'}</p>
                   </div>
                 )
               })()}

@@ -152,62 +152,75 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
 function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat }) {
   const [fixtures, setFixtures] = useState([])
   const [participants, setParticipants] = useState([])
-  const [predMap, setPredMap] = useState({}) // { userId: { fixtureId: pred } }
-  const [groupFixtures, setGroupFixtures] = useState([])
+  const [predMap, setPredMap] = useState({})
+  const [cupFixtures, setCupFixtures] = useState([]) // bracket or group matches for this GW
   const [loading, setLoading] = useState(true)
   const isGroup = compFormat === 'group_knockout'
+  const isKnockout = compFormat === 'knockout'
+  const isCupFormat = isGroup || isKnockout
 
-  useEffect(() => { if (gwId) load(); else setLoading(false) }, [gwId, isGroup])
+  useEffect(() => { if (gwId) load(); else setLoading(false) }, [gwId, compFormat])
 
   async function load() {
     setLoading(true)
     try {
       if (isGroup) {
-        // For a Group + Knockout competition, this gameweek's results are
-        // the group fixtures assigned to it (Cup Competitions → round),
-        // not the underlying real-world fixtures.
         const { data: gfx } = await supabase.from('group_fixtures')
           .select('*, home:home_user_id(display_name), away:away_user_id(display_name)')
           .eq('competition_id', competitionId).eq('gameweek_id', gwId).order('round_number')
-        setGroupFixtures(gfx || [])
-      } else {
-        const [{ data: fx }, { data: parts }, { data: preds }] = await Promise.all([
-          supabase.from('fixtures').select('*').eq('gameweek_id', gwId).order('kickoff_time'),
-          supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
-          supabase.from('predictions').select('user_id, fixture_id, predicted_home, predicted_away, points_earned').eq('gameweek_id', gwId),
-        ])
-        setFixtures(fx || [])
-        const totals = {}
-        ;(preds || []).forEach(p => { totals[p.user_id] = (totals[p.user_id] || 0) + (p.points_earned || 0) })
-        const sortedParts = [...(parts || [])].sort((a,b) => (totals[b.user_id]||0) - (totals[a.user_id]||0))
-        setParticipants(sortedParts)
-        const map = {}
-        ;(preds || []).forEach(p => { if (!map[p.user_id]) map[p.user_id] = {}; map[p.user_id][p.fixture_id] = p })
-        setPredMap(map)
+        setCupFixtures(gfx || [])
+      } else if (isKnockout) {
+        // For a Knockout competition, the "results" are the bracket matches
+        // whose assigned gameweek is this one — the participant vs participant
+        // matchups for whichever round is in progress.
+        const { data: bfx } = await supabase.from('bracket_matches')
+          .select('*, home:home_user_id(display_name), away:away_user_id(display_name), winner:winner_user_id(display_name)')
+          .eq('competition_id', competitionId).eq('gameweek_id', gwId)
+        setCupFixtures(bfx || [])
       }
+
+      // Football fixture matrix always loads for both formats — it shows
+      // each participant's predictions and points for the real fixtures,
+      // which is what feeds the participant vs participant scores.
+      const [{ data: fx }, { data: parts }, { data: preds }] = await Promise.all([
+        supabase.from('fixtures').select('*').eq('gameweek_id', gwId).order('kickoff_time'),
+        supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
+        supabase.from('predictions').select('user_id, fixture_id, predicted_home, predicted_away, points_earned').eq('gameweek_id', gwId),
+      ])
+      setFixtures(fx || [])
+      const totals = {}
+      ;(preds || []).forEach(p => { totals[p.user_id] = (totals[p.user_id] || 0) + (p.points_earned || 0) })
+      const sortedParts = [...(parts || [])].sort((a,b) => (totals[b.user_id]||0) - (totals[a.user_id]||0))
+      setParticipants(sortedParts)
+      const map = {}
+      ;(preds || []).forEach(p => { if (!map[p.user_id]) map[p.user_id] = {}; map[p.user_id][p.fixture_id] = p })
+      setPredMap(map)
     } finally { setLoading(false) }
   }
 
   if (!gwId) return <EmptyState icon="ti-calendar-off" title="No gameweek selected" />
   if (loading) return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
 
-  if (isGroup) {
+  const CupResultsCard = () => {
+    const title = isGroup ? 'Group Results' : 'Cup Results'
     return (
       <Card className="p-4 mb-4">
-        <p className="text-sm font-semibold mb-3" style={{ color:'var(--txt-primary)' }}>Group Results</p>
-        {groupFixtures.length === 0
-          ? <p className="text-xs" style={{ color:'var(--txt-muted)' }}>No group fixtures assigned to {gwLabel} yet — check Cup Competitions for this round.</p>
-          : groupFixtures.map(fx => (
+        <p className="text-sm font-semibold mb-3" style={{ color:'var(--txt-primary)' }}>{title}</p>
+        {cupFixtures.length === 0
+          ? <p className="text-xs" style={{ color:'var(--txt-muted)' }}>No cup fixtures assigned to {gwLabel} yet.</p>
+          : cupFixtures.map(fx => (
               <div key={fx.id} className="flex items-center justify-between py-2.5 border-b last:border-0 gap-3" style={{ borderColor:'var(--border)' }}>
-                <span className="text-sm" style={{ color:'var(--txt-primary)', minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fx.home?.display_name} vs {fx.away?.display_name}</span>
+                <span className="text-sm" style={{ color:'var(--txt-primary)', minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {fx.home?.display_name} vs {fx.away?.display_name}
+                </span>
                 {fx.status === 'completed' ? (
                   <div className="flex items-center" style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                    <span className="text-sm font-bold" style={{ color: 'var(--green)', width: 30, textAlign: 'right' }}>{fx.home_points}</span>
+                    <span className="text-sm font-bold" style={{ color: 'var(--green)', width: 30, textAlign: 'right' }}>{isKnockout ? fx.home_points : fx.home_points}</span>
                     <span className="text-sm font-bold" style={{ color: 'var(--green)', width: 16, textAlign: 'center' }}>–</span>
-                    <span className="text-sm font-bold" style={{ color: 'var(--green)', width: 30, textAlign: 'left' }}>{fx.away_points}</span>
+                    <span className="text-sm font-bold" style={{ color: 'var(--green)', width: 30, textAlign: 'left' }}>{isKnockout ? fx.away_points : fx.away_points}</span>
                   </div>
                 ) : (
-                  <span className="text-sm font-bold" style={{ color: 'var(--txt-muted)', flexShrink: 0 }}>Pending</span>
+                  <span className="text-sm" style={{ color:'var(--txt-muted)', flexShrink: 0 }}>Pending</span>
                 )}
               </div>
             ))
@@ -218,6 +231,7 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat })
 
   return (
     <div>
+      {isCupFormat && <CupResultsCard />}
       <Card className="p-4 mb-4">
         <p className="text-sm font-semibold mb-3" style={{ color:'var(--txt-primary)' }}>Results</p>
         {fixtures.length === 0
