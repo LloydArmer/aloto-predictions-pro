@@ -149,7 +149,7 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
 }
 
 // ───────────────────────── Gameweek Results tab ─────────────────────────
-function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat }) {
+function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, userId }) {
   const [fixtures, setFixtures] = useState([])
   const [participants, setParticipants] = useState([])
   const [predMap, setPredMap] = useState({})
@@ -259,23 +259,39 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat })
               </tr></thead>
               <tbody>
                 {participants.map(p => {
-                  const total = fixtures.reduce((sum, f) => sum + (predMap[p.user_id]?.[f.id]?.points_earned || 0), 0)
+                  const isMe = p.user_id === userId
+                  // Only count points in the total for fixtures that have kicked off —
+                  // a locked fixture's prediction isn't visible so its points shouldn't
+                  // show in the total either (it would reveal relative standing)
+                  const total = fixtures.reduce((sum, f) => {
+                    const kicked = new Date(f.kickoff_time) <= new Date()
+                    return sum + (kicked ? (predMap[p.user_id]?.[f.id]?.points_earned || 0) : 0)
+                  }, 0)
                   return (
                   <tr key={p.user_id}>
                     <td style={{ paddingLeft: 14 }}><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.profiles?.display_name}</p></td>
                     {fixtures.map(f => {
                       const pred = predMap[p.user_id]?.[f.id]
+                      const hasKickedOff = new Date(f.kickoff_time) <= new Date()
+                      // Show prediction only if the fixture has kicked off OR it's your own
+                      if (!hasKickedOff && !isMe) {
+                        return (
+                          <td key={f.id} style={{ textAlign:'center' }}>
+                            <i className="ti ti-lock text-xs" style={{ color:'var(--txt-muted)' }} title="Visible after kickoff" aria-hidden="true"/>
+                          </td>
+                        )
+                      }
                       if (!pred) return <td key={f.id} style={{ textAlign:'center' }}><span className="text-xs" style={{ color:'var(--txt-muted)' }}>—</span></td>
                       const ps = pointsStyle(pred.points_earned, rules)
                       return (
                         <td key={f.id} style={{ textAlign:'center', background: ps.bg, padding: '8px 4px' }}>
                           <p className="text-sm font-semibold" style={{ color: ps.color }}>{pred.predicted_home}–{pred.predicted_away}</p>
-                          <p className="text-xs" style={{ color: ps.color, opacity: 0.85 }}>{pred.points_earned}pts</p>
+                          {hasKickedOff && <p className="text-xs" style={{ color: ps.color, opacity: 0.85 }}>{pred.points_earned}pts</p>}
                         </td>
                       )
                     })}
                     <td style={{ textAlign:'center', borderLeft: '0.5px solid var(--border)' }}>
-                      <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>{total}</span>
+                      <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>{total || '—'}</span>
                     </td>
                   </tr>
                   )
@@ -444,7 +460,7 @@ export default function Predict() {
         : fixtures.length === 0 ? <EmptyState icon="ti-calendar-off" title="No fixtures this gameweek" description="Fixtures will appear when the admin adds them"/>
         : fixtures.map(f => <FixtureCard key={f.id} fixture={f} prediction={predictions[f.id]} userId={user?.id} count={counts[f.id]} rules={rules} gwLabel={selectedGW?.number} onSave={(fid,h,a)=>savePrediction(fid,h,a,selectedGW.id,user.id)}/>)
       ) : (
-        <GameweekResultsTab competitionId={comp} gwId={selectedGW?.id} gwLabel={selectedGW?.number} rules={rules} compFormat={competitions.find(c=>c.id===comp)?.format} />
+        <GameweekResultsTab competitionId={comp} gwId={selectedGW?.id} gwLabel={selectedGW?.number} rules={rules} compFormat={competitions.find(c=>c.id===comp)?.format} userId={user?.id} />
       )}
     </div>
   )
