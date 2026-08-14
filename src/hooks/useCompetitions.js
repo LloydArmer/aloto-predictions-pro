@@ -15,8 +15,14 @@ export function useCompetitions() {
   }
 
   async function createCompetition(comp) {
-    const { data, error } = await supabase.from('competitions').insert(comp).select().single()
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data, error } = await supabase.from('competitions').insert({ ...comp, created_by: user.id }).select().single()
     if (error) throw error
+    // Immediately register the creator as admin of this competition —
+    // every subsequent admin operation (inserting bracket matches, updating
+    // rules, etc.) checks for a participants row with role='admin', so
+    // without this the creator silently fails every permission check.
+    await supabase.from('participants').insert({ competition_id: data.id, user_id: user.id, role: 'admin' })
     setCompetitions(prev => [data, ...prev])
     return data
   }
