@@ -317,6 +317,67 @@ function gameweekShareLink(gw, competitionName) {
   return `https://wa.me/?text=${encodeURIComponent(text)}`
 }
 
+// Shows admin which participants have/haven't saved a prediction for a
+// given GW — green tick = saved, red cross = not yet. Admin cannot see
+// the actual scores predicted, only the saved/not-saved status.
+function PredictionTracker({ competitionId, gameweekId, gwLabel }) {
+  const [data, setData] = useState([]) // [{ display_name, hasPredicted }]
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!competitionId || !gameweekId) { setData([]); return }
+    load()
+  }, [competitionId, gameweekId])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const [{ data: parts }, { data: preds }, { data: fxs }] = await Promise.all([
+        supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
+        supabase.from('predictions').select('user_id').eq('gameweek_id', gameweekId),
+        supabase.from('fixtures').select('id').eq('gameweek_id', gameweekId),
+      ])
+      const fixtureCount = (fxs || []).length
+      // Count predictions per user — consider "saved" if they have at
+      // least one prediction for this GW, not necessarily all fixtures.
+      const predCountByUser = {}
+      ;(preds || []).forEach(p => { predCountByUser[p.user_id] = (predCountByUser[p.user_id] || 0) + 1 })
+      setData((parts || []).map(p => ({
+        display_name: p.profiles?.display_name || 'Unknown',
+        user_id: p.user_id,
+        hasPredicted: (predCountByUser[p.user_id] || 0) > 0,
+        predCount: predCountByUser[p.user_id] || 0,
+        fixtureCount,
+      })).sort((a,b) => (b.hasPredicted ? 1 : 0) - (a.hasPredicted ? 1 : 0)))
+    } finally { setLoading(false) }
+  }
+
+  if (!gameweekId) return null
+  if (loading) return <div className="flex justify-center py-4"><Spinner /></div>
+  if (!data.length) return null
+
+  return (
+    <Card className="p-4 mb-4">
+      <SectionLabel className="mb-3">Prediction tracker — {gwLabel}</SectionLabel>
+      <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Shows who has saved at least one prediction. Actual scores are hidden.</p>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+        {data.map(p => (
+          <div key={p.user_id} className="flex items-center gap-2">
+            {p.hasPredicted
+              ? <i className="ti ti-circle-check text-sm" style={{ color: 'var(--green)', flexShrink: 0 }} aria-hidden="true"/>
+              : <i className="ti ti-circle-x text-sm" style={{ color: 'var(--red)', flexShrink: 0 }} aria-hidden="true"/>
+            }
+            <span className="text-sm" style={{ color: 'var(--txt-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.display_name}</span>
+            {p.hasPredicted && p.fixtureCount > 0 && (
+              <span className="text-xs ml-auto" style={{ color: 'var(--txt-muted)', flexShrink: 0 }}>{p.predCount}/{p.fixtureCount}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function GameweeksTab({ competitionId, competitions }) {
   const comp = competitions.find(c => c.id === competitionId)
   const [gws, setGws] = useState([])
@@ -509,6 +570,7 @@ function GameweeksTab({ competitionId, competitions }) {
                 </div>
               )}
 
+              {gw.status === 'active' && <PredictionTracker competitionId={competitionId} gameweekId={gw.id} gwLabel={gw.number} />}
               {openGw === gw.id && <FixturesPanel gameweekId={gw.id} />}
             </Card>
           )})

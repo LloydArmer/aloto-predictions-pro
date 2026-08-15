@@ -6,7 +6,7 @@ import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
-import { outcomeLabel } from '../../../lib/scoring'
+import { outcomeLabel, resolvePointRules } from '../../../lib/scoring'
 import { buildWeeklyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import { format } from 'date-fns'
@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [gw,      setGW]      = useState(null)
   const [stats,   setStats]   = useState(null)
   const [loading, setLoading] = useState(false)
+  const [rules,   setRules]   = useState(null)
   const [groupStanding, setGroupStanding] = useState(null)
   const [groupTop3, setGroupTop3] = useState([])
   const [bracketStatus, setBracketStatus] = useState(null)
@@ -137,6 +138,8 @@ export default function Dashboard() {
 
       const { data: scores } = await supabase.from('gameweek_scores').select('*').eq('user_id', user.id).eq('competition_id', comp)
       if (scores?.length) setStats({ total: scores.reduce((a,b)=>a+(b.points||0),0), exact: scores.reduce((a,b)=>a+(b.exact_scores||0),0), correct: scores.reduce((a,b)=>a+(b.correct_results||0),0) })
+      const r = await resolvePointRules(supabase, comp)
+      setRules(r)
     } finally { setLoading(false) }
   }
 
@@ -276,7 +279,7 @@ export default function Dashboard() {
                           <Badge variant={cfg.variant}>{cfg.label}</Badge>
                           {f.outcome && f.outcome !== 'upcoming' && f.outcome !== 'no_prediction' && (
                             <span className="text-xs font-medium" style={{ color: f.outcome==='exact'?'var(--green)':f.outcome==='miss'?'var(--red)':'var(--accent)' }}>
-                              {f.outcome==='exact'?'+5':f.outcome==='result'?'+2':'0'} pts
+                              {f.outcome==='exact'?`+${(rules?.correct_result_points||2)+(rules?.exact_score_points||3)}`:f.outcome==='result'?`+${rules?.correct_result_points||2}`:'0'} pts
                             </span>
                           )}
                         </div>
