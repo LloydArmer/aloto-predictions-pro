@@ -384,6 +384,7 @@ function GameweeksTab({ competitionId, competitions }) {
   const [linksByGw, setLinksByGw] = useState({}) // { gameweek_id: [competition_id, ...] }
   const [loading, setLoading] = useState(false)
   const [openGw, setOpenGw] = useState(null)
+  const [showCompleted, setShowCompleted] = useState(false)
   const [openLinks, setOpenLinks] = useState(null)
   const [newNumber, setNewNumber] = useState('')
   const [closedMonths, setClosedMonths] = useState([])
@@ -512,9 +513,12 @@ function GameweeksTab({ competitionId, competitions }) {
 
       {loading ? <div className="flex justify-center py-10"><Spinner /></div>
         : gws.length === 0 ? <EmptyState icon="ti-calendar" title="No gameweeks yet" description="Add one above to start"/>
-        : gws.map(gw => {
-            const otherComps = competitions.filter(c => c.id !== competitionId)
-            const linkedElsewhere = (linksByGw[gw.id] || []).filter(id => id !== competitionId)
+        : (() => {
+            const activeGws = gws.filter(g => g.status === 'active')
+            const otherGws = gws.filter(g => g.status !== 'active')
+            const renderGw = (gw) => {
+              const otherComps = competitions.filter(c => c.id !== competitionId)
+              const linkedElsewhere = (linksByGw[gw.id] || []).filter(id => id !== competitionId)
             return (
             <Card key={gw.id} className="p-3 mb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -573,7 +577,23 @@ function GameweeksTab({ competitionId, competitions }) {
               {gw.status === 'active' && <PredictionTracker competitionId={competitionId} gameweekId={gw.id} gwLabel={gw.number} />}
               {openGw === gw.id && <FixturesPanel gameweekId={gw.id} />}
             </Card>
-          )})
+          )
+        }
+        return (
+          <>
+            {activeGws.map(gw => renderGw(gw))}
+            {otherGws.length > 0 && (
+              <button className="w-full text-xs py-2 mb-2 rounded-md flex items-center justify-center gap-1"
+                style={{ color: 'var(--txt-muted)', border: '0.5px dashed var(--border)' }}
+                onClick={() => setShowCompleted(v => !v)}>
+                <i className={`ti ti-chevron-${showCompleted ? 'up' : 'down'} text-xs`} aria-hidden="true"/>
+                {showCompleted ? 'Hide' : 'Show'} {otherGws.length} completed/upcoming gameweek{otherGws.length !== 1 ? 's' : ''}
+              </button>
+            )}
+            {showCompleted && otherGws.map(gw => renderGw(gw))}
+          </>
+        )
+      })()
       }
 
       {[...new Set(gws.map(g => g.month_key).filter(Boolean))].length > 0 && (

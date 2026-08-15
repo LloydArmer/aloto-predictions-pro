@@ -34,7 +34,7 @@ function ScoreInput({ value, onChange, disabled }) {
     style={disabled ? { opacity:0.45, cursor:'not-allowed' } : {}}/>
 }
 
-function AllPredictions({ fixtureId, userId, rules }) {
+function AllPredictions({ fixtureId, fixture, userId, rules }) {
   const [rows, setRows] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -51,6 +51,18 @@ function AllPredictions({ fixtureId, userId, rules }) {
       })
   }, [fixtureId])
 
+  function calcPts(pred) {
+    if (!fixture || fixture.home_score === null) return pred.points_earned || 0
+    const { predicted_home: ph, predicted_away: pa } = pred
+    const { home_score: ah, away_score: aa } = fixture
+    const isExact = ph === ah && pa === aa
+    const getR = (h, a) => h > a ? 'home' : a > h ? 'away' : 'draw'
+    const isResult = getR(ph, pa) === getR(ah, aa)
+    if (isExact) return (rules?.correct_result_points || 2) + (rules?.exact_score_points || 3)
+    if (isResult) return rules?.correct_result_points || 2
+    return 0
+  }
+
   if (loading) return <div className="flex justify-center py-4"><Spinner size="sm"/></div>
   if (!rows?.length) return <p className="text-xs py-2" style={{ color:'var(--txt-muted)' }}>No one predicted this fixture.</p>
 
@@ -58,7 +70,8 @@ function AllPredictions({ fixtureId, userId, rules }) {
     <div className="mt-2 rounded-md overflow-hidden" style={{ border:'0.5px solid var(--border)' }}>
       {rows.map((r, i) => {
         const isMe = r.user_id === userId
-        const ps = pointsStyle(r.points_earned, rules)
+        const pts = calcPts(r)
+        const ps = pointsStyle(pts, rules)
         return (
           <div key={i} className="flex items-center justify-between px-3 py-2"
             style={{ background: isMe ? 'var(--accent-dim)' : 'transparent', borderBottom: i < rows.length-1 ? '0.5px solid var(--border)' : '' }}>
@@ -67,7 +80,7 @@ function AllPredictions({ fixtureId, userId, rules }) {
             </span>
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium" style={{ color:'var(--txt-second)' }}>{r.predicted_home}–{r.predicted_away}</span>
-              <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: ps.bg, color: ps.color }}>{r.points_earned}pts</span>
+              <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: ps.bg, color: ps.color }}>{pts}pts</span>
             </div>
           </div>
         )
@@ -167,7 +180,7 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
           {showAll ? 'Hide' : 'Show'} all predictions {count != null && `(${count})`}
         </button>
       )}
-      {isLocked && showAll && <AllPredictions fixtureId={fixture.id} userId={userId} rules={rules} />}
+      {isLocked && showAll && <AllPredictions fixtureId={fixture.id} fixture={fixture} userId={userId} rules={rules} />}
     </Card>
   )
 }
