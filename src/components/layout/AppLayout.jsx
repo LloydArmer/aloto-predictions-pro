@@ -9,7 +9,7 @@ const NAV_BASE = [
   { to: '/',             label: 'Dashboard',    icon: 'ti-layout-dashboard' },
   { to: '/predict',      label: 'Predict',      icon: 'ti-pencil' },
   { to: '/table',        label: 'Table',        icon: 'ti-list-numbers' },
-  { to: '/bracket',      label: 'Cup Competitions', icon: 'ti-tournament' },
+  { to: '/bracket',      label: 'Cup',          icon: 'ti-tournament' },
   { to: '/settings',     label: 'Settings',     icon: 'ti-settings-2' },
 ]
 
@@ -18,11 +18,8 @@ export default function AppLayout({ children }) {
   const { competitions } = useCompetitions()
   const [selectedComp] = useSelectedCompetition(competitions)
   const navigate = useNavigate()
-  const [open, setOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  // Bracket is only meaningful for Knockout / Group + Knockout competitions
-  // — for a League-format competition it's permanently empty, so hide it
-  // rather than clutter the nav with an irrelevant destination.
   const compFormat = competitions.find(c => c.id === selectedComp)?.format
   const showBracket = compFormat && compFormat !== 'league'
   const showTable   = compFormat !== 'knockout'
@@ -42,12 +39,12 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-base)' }}>
 
-      {/* ── Nav ── */}
+      {/* ── Top nav bar ── */}
       <nav className="sticky top-0 z-40"
         style={{ background: 'var(--bg-surface)', borderBottom: '0.5px solid var(--border)' }}>
         <div className="max-w-5xl mx-auto px-4 flex items-center" style={{ height: 52 }}>
 
-          {/* Brand mark */}
+          {/* Brand */}
           <div className="flex items-center gap-2.5 mr-5 flex-shrink-0">
             <img src="/icon.png" alt="ALOTO Prediction Pro" width={26} height={26} style={{ borderRadius: 6 }} />
           </div>
@@ -64,7 +61,7 @@ export default function AppLayout({ children }) {
                   background: isActive ? 'var(--accent-dim)' : 'transparent',
                 })}>
                 <i className={`ti ${item.icon} text-sm`} aria-hidden="true" />
-                {item.label}
+                {item.label === 'Cup' ? 'Cup Competitions' : item.label}
               </NavLink>
             ))}
             {isAdmin && (
@@ -82,7 +79,7 @@ export default function AppLayout({ children }) {
             )}
           </div>
 
-          {/* Right side */}
+          {/* Right side — desktop only */}
           <div className="ml-auto flex items-center gap-2">
             {isAdmin && <span className="badge badge-admin hidden md:inline-flex">Admin</span>}
             <div className="avatar w-7 h-7 text-xs">{initials}</div>
@@ -92,51 +89,57 @@ export default function AppLayout({ children }) {
             <button onClick={handleSignOut} className="btn btn-ghost btn-sm hidden md:inline-flex" title="Sign out">
               <i className="ti ti-logout text-sm" aria-hidden="true" />
             </button>
-            <button className="btn btn-ghost btn-sm md:hidden" onClick={() => setOpen(o => !o)} aria-label="Menu">
-              <i className={`ti ${open ? 'ti-x' : 'ti-menu-2'} text-sm`} />
-            </button>
+            {/* Mobile: show admin link + sign out in a tiny menu */}
+            {(isAdmin) && (
+              <div className="md:hidden relative">
+                <button className="btn btn-ghost btn-sm" onClick={() => setMenuOpen(o => !o)}>
+                  <i className={`ti ${menuOpen ? 'ti-x' : 'ti-dots-vertical'} text-sm`} />
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-9 rounded-lg shadow-lg py-1 z-50 min-w-36"
+                    style={{ background: 'var(--bg-elevated)', border: '0.5px solid var(--border-med)' }}>
+                    {isAdmin && (
+                      <NavLink to="/admin" onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm"
+                        style={{ color: 'var(--amber)' }}>
+                        <i className="ti ti-shield text-sm" />Admin
+                      </NavLink>
+                    )}
+                    <button onClick={handleSignOut}
+                      className="flex items-center gap-2 px-3 py-2 text-sm w-full text-left"
+                      style={{ color: 'var(--txt-second)' }}>
+                      <i className="ti ti-logout text-sm" />Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Mobile menu */}
-        {open && (
-          <div className="md:hidden px-4 pb-3 flex flex-col gap-1"
-            style={{ borderTop: '0.5px solid var(--border)' }}>
-            {NAV.map(item => (
-              <NavLink key={item.to} to={item.to} end={item.to === '/'} onClick={() => setOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-2 px-3 py-2 rounded-md text-sm ${isActive ? 'font-medium' : ''}`
-                }
-                style={({ isActive }) => ({
-                  color: isActive ? 'var(--accent)' : 'var(--txt-second)',
-                  background: isActive ? 'var(--accent-dim)' : 'transparent',
-                })}>
-                <i className={`ti ${item.icon}`} aria-hidden="true" />{item.label}
-              </NavLink>
-            ))}
-            {isAdmin && (
-              <NavLink to="/admin" onClick={() => setOpen(false)}
-                className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
-                style={{ color: 'var(--amber)' }}>
-                <i className="ti ti-shield" />Admin
-              </NavLink>
-            )}
-            <button onClick={handleSignOut}
-              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left"
-              style={{ color: 'var(--txt-second)' }}>
-              <i className="ti ti-logout" />Sign out
-            </button>
-          </div>
-        )}
       </nav>
 
-      {/* ── Page content ── */}
-      <main className="max-w-5xl mx-auto px-4 py-6">
+      {/* ── Page content — extra bottom padding on mobile for the tab bar ── */}
+      <main className="max-w-5xl mx-auto px-4 py-6 pb-24 md:pb-6">
         {children}
       </main>
 
-      {/* ── Footer ── */}
-      <footer className="max-w-5xl mx-auto px-4 pb-8">
+      {/* ── Mobile bottom tab bar ── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex"
+        style={{ background: 'var(--bg-surface)', borderTop: '0.5px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {NAV.map(item => (
+          <NavLink key={item.to} to={item.to} end={item.to === '/'}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2"
+            style={({ isActive }) => ({
+              color: isActive ? 'var(--accent)' : 'var(--txt-muted)',
+            })}>
+            <i className={`ti ${item.icon} text-lg`} aria-hidden="true" />
+            <span style={{ fontSize: 10 }}>{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* ── Footer — desktop only ── */}
+      <footer className="hidden md:block max-w-5xl mx-auto px-4 pb-8">
         <div className="flex items-center justify-between pt-4"
           style={{ borderTop: '0.5px solid var(--border)' }}>
           <div className="flex items-center gap-2">

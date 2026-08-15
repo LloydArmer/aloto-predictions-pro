@@ -87,7 +87,22 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
   const isLocked = isPast(kickoff)
   const hasResult = fixture.home_score !== null
   const justSaved = !!prediction
-  const ps = hasResult && prediction ? pointsStyle(prediction.points_earned, rules) : null
+  // Calculate points from actual scores at display time — don't rely on
+  // points_earned in the DB which is only written after the GW is fully
+  // marked completed and recalculated. This way correct results and exact
+  // scores show the right pts label even while the GW is still active.
+  const calcPoints = () => {
+    if (!hasResult || !prediction) return 0
+    const { predicted_home: ph, predicted_away: pa } = prediction
+    const { home_score: ah, away_score: aa } = fixture
+    const isExact = ph === ah && pa === aa
+    const isResult = (ph > pa ? 'home' : pa > ph ? 'away' : 'draw') === (ah > aa ? 'home' : aa > ah ? 'away' : 'draw')
+    if (isExact) return (rules?.correct_result_points || 2) + (rules?.exact_score_points || 3)
+    if (isResult) return rules?.correct_result_points || 2
+    return 0
+  }
+  const displayPts = calcPoints()
+  const ps = hasResult && prediction ? pointsStyle(displayPts, rules) : null
 
   async function save() {
     if (home === '' || away === '') { toast.error('Enter both scores'); return }
@@ -107,7 +122,7 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
       {hasResult ? (
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <span className="text-base font-bold" style={{ color:'var(--green)' }}>Result: {fixture.home_score}–{fixture.away_score}</span>
-          {prediction && <span className="text-xs font-medium px-2.5 py-1 rounded-md" style={{ background: ps.bg, color: ps.color }}>{prediction.points_earned}pts</span>}
+          {prediction && <span className="text-xs font-medium px-2.5 py-1 rounded-md" style={{ background: ps.bg, color: ps.color }}>{displayPts}pts</span>}
           <span className="text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1" style={{ background:'rgba(239,68,68,0.14)', color:'var(--red)' }}>
             <i className="ti ti-lock text-xs" aria-hidden="true"/>Locked
           </span>
@@ -295,7 +310,13 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                       return (
                         <td key={f.id} style={{ textAlign:'center', background: ps.bg, padding: '8px 4px' }}>
                           <p className="text-sm font-semibold" style={{ color: ps.color }}>{pred.predicted_home}–{pred.predicted_away}</p>
-                          {hasKickedOff && <p className="text-xs" style={{ color: ps.color, opacity: 0.85 }}>{pred.points_earned}pts</p>}
+                          {hasKickedOff && (() => {
+                            const { predicted_home: ph, predicted_away: pa } = pred
+                            const isExact = f.home_score !== null && ph === f.home_score && pa === f.away_score
+                            const isResult = f.home_score !== null && ((ph > pa ? 'home' : pa > ph ? 'away' : 'draw') === (f.home_score > f.away_score ? 'home' : f.away_score > f.home_score ? 'away' : 'draw'))
+                            const pts = f.home_score !== null ? (isExact ? (rules?.correct_result_points||2)+(rules?.exact_score_points||3) : isResult ? (rules?.correct_result_points||2) : 0) : 0
+                            return <p className="text-xs" style={{ color: ps.color, opacity: 0.85 }}>{pts}pts</p>
+                          })()}
                         </td>
                       )
                     })}
