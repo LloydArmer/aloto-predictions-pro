@@ -158,6 +158,13 @@ export async function resolveBracketRound(supabase, competitionId, round) {
   const { data: matches } = await supabase.from('bracket_matches').select('*').eq('competition_id', competitionId).eq('round', round)
   const results = { resolved: 0, replaysScheduled: 0 }
 
+  // Scores are recorded against whichever competition's predictions are
+  // being used — for a Knockout/Group+Knockout that borrows rules from a
+  // League, the scores live under the source competition's ID, not the
+  // knockout competition's ID.
+  const { data: comp } = await supabase.from('competitions').select('rules_source_competition_id').eq('id', competitionId).maybeSingle()
+  const scoreCompId = comp?.rules_source_competition_id || competitionId
+
   async function advance(match, winnerId) {
     if (match.feeds_into_match_id && match.feeds_into_side) {
       await supabase.from('bracket_matches').update({ [match.feeds_into_side + '_user_id']: winnerId }).eq('id', match.feeds_into_match_id)
@@ -184,7 +191,7 @@ export async function resolveBracketRound(supabase, competitionId, round) {
     if (!m.home_user_id || !m.away_user_id || !gwIds.length) continue
 
     const { data: scores } = await supabase.from('gameweek_scores').select('user_id,points')
-      .eq('competition_id', competitionId).in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
+      .eq('competition_id', scoreCompId).in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
 
     const totals = { [m.home_user_id]: 0, [m.away_user_id]: 0 }
     for (const s of (scores || [])) totals[s.user_id] += s.points || 0

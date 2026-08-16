@@ -1111,6 +1111,7 @@ function BracketTab({ competitionId, competitions }) {
   const [selectedGws, setSelectedGws] = useState([])
   const [selectedParticipants, setSelectedParticipants] = useState([])
   const [resolving, setResolving] = useState(false)
+  const [livePoints, setLivePoints] = useState({}) // { gwId: { userId: pts } }
 
   useEffect(() => { if (competitionId) load(); else { setMatches([]); setGameweeks([]); setParticipants([]) } }, [competitionId])
   useEffect(() => { setSelectedGws(roundGwMap[round] || []) }, [round, roundGwMap])
@@ -1134,6 +1135,18 @@ function BracketTab({ competitionId, competitions }) {
       const map = {}
       ;(rgws || []).forEach(r => { if (!map[r.round]) map[r.round] = []; map[r.round].push(r.gameweek_id) })
       setRoundGwMap(map)
+
+      // Fetch live points for every GW assigned to any bracket match —
+      // uses the source competition's scores (same fix as resolveBracketRound).
+      const { data: sourceComp } = await supabase.from('competitions').select('rules_source_competition_id').eq('id', competitionId).maybeSingle()
+      const scoreCompId = sourceComp?.rules_source_competition_id || competitionId
+      const gwIds = [...new Set((m||[]).map(mx => mx.gameweek_id).filter(Boolean))]
+      if (gwIds.length) {
+        const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points').eq('competition_id', scoreCompId).in('gameweek_id', gwIds)
+        const cache = {}
+        ;(scores||[]).forEach(s => { if (!cache[s.gameweek_id]) cache[s.gameweek_id] = {}; cache[s.gameweek_id][s.user_id] = s.points || 0 })
+        setLivePoints(cache)
+      }
     } finally { setLoading(false) }
   }
 
@@ -1369,7 +1382,17 @@ function BracketTab({ competitionId, competitions }) {
                               {m.home?.display_name}
                               <span className="text-xs px-1.5 py-0.5 rounded ml-2" style={{ background: 'var(--green-dim)', color: 'var(--green)' }}>Bye ✓</span>
                             </p>
-                          : <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{m.home?.display_name || 'TBD'} vs {m.away?.display_name || 'TBD'}</p>
+                          : <div>
+                              <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>
+                                {m.home?.display_name || 'TBD'}
+                                {m.gameweek_id && livePoints[m.gameweek_id]?.[m.home_user_id] != null &&
+                                  <span className="text-xs ml-2" style={{ color: 'var(--accent)' }}>{livePoints[m.gameweek_id][m.home_user_id]}pts</span>}
+                                <span className="mx-1" style={{ color: 'var(--txt-muted)' }}>vs</span>
+                                {m.away?.display_name || 'TBD'}
+                                {m.gameweek_id && livePoints[m.gameweek_id]?.[m.away_user_id] != null &&
+                                  <span className="text-xs ml-2" style={{ color: 'var(--accent)' }}>{livePoints[m.gameweek_id][m.away_user_id]}pts</span>}
+                              </p>
+                            </div>
                         }
                         {m.status === 'completed' && !isBye && <p className="text-xs mt-0.5" style={{ color: 'var(--green)' }}>{m.home_points} – {m.away_points} · {m.winner?.display_name} advances</p>}
                         {m.status === 'replay_scheduled' && <p className="text-xs mt-0.5" style={{ color: 'var(--amber)' }}>Drawn — replay scheduled</p>}
