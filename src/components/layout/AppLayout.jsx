@@ -21,7 +21,7 @@ export default function AppLayout({ children }) {
   const [menuOpen, setMenuOpen] = useState(false)
 
   const compFormat = competitions.find(c => c.id === selectedComp)?.format
-  const showBracket = compFormat && compFormat !== 'league'
+  const showBracket = competitions.some(c => c.format !== 'league')
   const showTable   = compFormat !== 'knockout'
   const NAV = NAV_BASE
     .filter(item => item.to !== '/bracket' || showBracket)

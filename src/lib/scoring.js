@@ -194,16 +194,16 @@ export async function resolveBracketRound(supabase, competitionId, round) {
       .in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
 
     const totals = { [m.home_user_id]: 0, [m.away_user_id]: 0 }
-    // Group by user+gameweek taking the max to avoid double-counting
-    // when the same score exists under multiple competition IDs.
-    const seen = {}
+    // Keep max points per user+gameweek (same score may exist under
+    // multiple competition_ids), then sum across gameweeks.
+    const bestPerGw = {}
     for (const s of (scores || [])) {
       const key = `${s.user_id}:${s.gameweek_id}`
-      if (!seen[key] || s.points > seen[key]) {
-        if (seen[key]) totals[s.user_id] -= seen[key]
-        totals[s.user_id] += s.points || 0
-        seen[key] = s.points || 0
-      }
+      bestPerGw[key] = Math.max(bestPerGw[key] ?? -Infinity, s.points || 0)
+    }
+    for (const [key, p] of Object.entries(bestPerGw)) {
+      const uid = key.split(':')[0]
+      if (totals[uid] !== undefined) totals[uid] += p
     }
     const h = totals[m.home_user_id], a = totals[m.away_user_id]
 

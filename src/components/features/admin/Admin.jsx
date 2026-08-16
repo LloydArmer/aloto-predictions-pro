@@ -1144,16 +1144,15 @@ function BracketTab({ competitionId, competitions }) {
       if (gwIds.length) {
         const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points').in('gameweek_id', gwIds)
         const cache = {}
-        // Deduplicate by user+gameweek taking max (same score may exist
-        // under multiple competition_ids for shared gameweeks).
-        const seen = {}
+        const bestPerGw = {}
         for (const s of (scores || [])) {
           const key = `${s.user_id}:${s.gameweek_id}`
-          if (!cache[s.gameweek_id]) cache[s.gameweek_id] = {}
-          if (!seen[key] || s.points > seen[key]) {
-            cache[s.gameweek_id][s.user_id] = s.points || 0
-            seen[key] = s.points || 0
-          }
+          bestPerGw[key] = Math.max(bestPerGw[key] ?? -Infinity, s.points || 0)
+        }
+        for (const [key, p] of Object.entries(bestPerGw)) {
+          const [userId, gwId] = key.split(':')
+          if (!cache[gwId]) cache[gwId] = {}
+          cache[gwId][userId] = (cache[gwId][userId] || 0) + p
         }
         setLivePoints(cache)
       }

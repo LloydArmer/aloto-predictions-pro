@@ -270,14 +270,17 @@ export default function Bracket() {
       if (gwIds.length) {
         const userIds = [...new Set(unresolved.flatMap(m => [m.home_user_id, m.away_user_id]).filter(Boolean))]
         const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points').in('gameweek_id', gwIds).in('user_id', userIds)
-        // Deduplicate by user+gameweek taking max across competition_ids
-        const seen = {}, pts = {}
+        // Keep the max points per user+gameweek (same score may exist under
+        // multiple competition_ids), then sum across gameweeks for each user.
+        const bestPerGw = {} // { 'userId:gwId': maxPts }
         for (const s of (scores || [])) {
           const key = `${s.user_id}:${s.gameweek_id}`
-          if (!seen[key] || s.points > seen[key]) {
-            pts[s.user_id] = (pts[s.user_id] || 0) - (seen[key] || 0) + (s.points || 0)
-            seen[key] = s.points || 0
-          }
+          bestPerGw[key] = Math.max(bestPerGw[key] ?? -Infinity, s.points || 0)
+        }
+        const pts = {}
+        for (const [key, p] of Object.entries(bestPerGw)) {
+          const userId = key.split(':')[0]
+          pts[userId] = (pts[userId] || 0) + p
         }
         setLiveKnockoutPts(pts)
       }
