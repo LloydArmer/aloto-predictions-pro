@@ -379,7 +379,7 @@ function gameweekHalf(gw, fixtures) {
 }
 
 function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, userId }) {
-  const [plays, setPlays] = useState([])
+  const [plays, setPlays] = useState([]) // [{ half, gameweek_id, gameweek_number }]
   const [loading, setLoading] = useState(true)
   const [activating, setActivating] = useState(false)
 
@@ -389,8 +389,11 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
 
   useEffect(() => {
     if (!competitionId || !userId || !isLeague) { setLoading(false); return }
-    supabase.from('triple_points_plays').select('*').eq('competition_id', competitionId).eq('user_id', userId)
-      .then(({ data }) => { setPlays(data || []); setLoading(false) })
+    supabase.from('triple_points_plays').select('*, gameweeks(number)').eq('competition_id', competitionId).eq('user_id', userId)
+      .then(({ data }) => {
+        setPlays((data || []).map(p => ({ ...p, gameweek_number: p.gameweeks?.number || '?' })))
+        setLoading(false)
+      })
   }, [competitionId, userId, isLeague])
 
   if (!isLeague || !gameweek || loading) return null
@@ -411,26 +414,51 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
     const { error } = await supabase.from('triple_points_plays').insert({ competition_id: competitionId, gameweek_id: gameweek.id, user_id: userId, half })
     setActivating(false)
     if (error) { toast.error(error.code === '23505' ? `You've already used your ${halfLabel} chip` : 'Could not activate Triple Points'); return }
-    setPlays(prev => [...prev, { competition_id: competitionId, gameweek_id: gameweek.id, user_id: userId, half }])
+    setPlays(prev => [...prev, { competition_id: competitionId, gameweek_id: gameweek.id, gameweek_number: gameweek.number, user_id: userId, half }])
     toast.success('⚡ Triple Points active for this gameweek!')
   }
 
+  const tp1 = plays.find(p => p.half === 'first')
+  const tp2 = plays.find(p => p.half === 'second')
+  const otherHalf = half === 'first' ? 'second' : 'first'
+  const otherPlay = half === 'first' ? tp2 : tp1
+
   return (
     <Card className="p-3.5 mb-4" style={{ background: activeThisGw ? 'var(--gold-dim)' : 'var(--bg-surface)', borderColor: activeThisGw ? 'rgba(245,200,66,0.4)' : undefined }}>
-      {activeThisGw ? (
-        <div className="flex items-center gap-2">
-          <i className="ti ti-bolt text-base" style={{ color: 'var(--gold)' }} aria-hidden="true"/>
-          <span className="text-sm font-medium" style={{ color: 'var(--gold)' }}>⚡ Triple Points active for {gameweek.number} — every point this week is ×3</span>
+      {/* Always show the status of both chips clearly */}
+      <div className="flex flex-col gap-2">
+        {/* Chip 1 */}
+        <div className="flex items-start gap-2">
+          <span style={{ color: tp1 ? 'var(--gold)' : 'var(--txt-muted)', fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>⚡</span>
+          <p className="text-xs" style={{ color: tp1 ? 'var(--gold)' : 'var(--txt-second)' }}>
+            <span className="font-semibold">Triple Points 1 (due by 31st Dec)</span>
+            {tp1 ? ` — played GW${tp1.gameweek_number}` : ' — still available'}
+          </p>
         </div>
-      ) : usedThisHalf ? (
-        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Your {halfLabel} Triple Points chip was already used on GW {usedThisHalf.gameweek_id === gameweek.id ? 'this one' : ''}. Your other chip is for the other half of the season.</p>
-      ) : isBlocked ? (
-        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Triple Points is blocked for this {isCompBlocked ? 'competition' : `gameweek (${gameweek.number})`}.</p>
+        {/* Chip 2 */}
+        <div className="flex items-start gap-2">
+          <span style={{ color: tp2 ? 'var(--gold)' : 'var(--txt-muted)', fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>⚡</span>
+          <p className="text-xs" style={{ color: tp2 ? 'var(--gold)' : 'var(--txt-second)' }}>
+            <span className="font-semibold">Triple Points 2 (due by end of season)</span>
+            {tp2 ? ` — played GW${tp2.gameweek_number}` : ' — still available'}
+          </p>
+        </div>
+      </div>
+
+      {/* Action section — only shown when relevant */}
+      {activeThisGw ? (
+        <div className="flex items-center gap-2 mt-2.5 pt-2.5" style={{ borderTop: '0.5px solid rgba(245,200,66,0.3)' }}>
+          <i className="ti ti-bolt text-sm" style={{ color: 'var(--gold)' }} aria-hidden="true"/>
+          <span className="text-xs font-medium" style={{ color: 'var(--gold)' }}>Active this gameweek — every point is ×3</span>
+        </div>
+      ) : usedThisHalf ? null
+      : isBlocked ? (
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Triple Points is blocked for this {isCompBlocked ? 'competition' : `gameweek (${gameweek.number})`}.</p>
       ) : hasKickedOff ? (
-        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Too late to activate Triple Points for {gameweek.number} — the first kickoff has passed.</p>
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Too late to activate for {gameweek.number} — kickoff has passed.</p>
       ) : (
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <p className="text-xs" style={{ color: 'var(--txt-second)' }}>You have a Triple Points chip available for this {halfLabel === 'first half (by 31 Dec)' ? 'first half of the season' : 'second half of the season'}.</p>
+        <div className="flex items-center justify-between gap-2 flex-wrap mt-2.5 pt-2.5" style={{ borderTop: '0.5px solid var(--border)' }}>
+          <p className="text-xs" style={{ color: 'var(--txt-second)' }}>Play your {half === 'first' ? 'first (by 31 Dec)' : 'second (end of season)'} chip on {gameweek.number}?</p>
           <Button variant="primary" size="sm" onClick={activate} disabled={activating}>
             <i className="ti ti-bolt text-xs"/>{activating ? 'Activating…' : 'Play Triple Points'}
           </Button>
