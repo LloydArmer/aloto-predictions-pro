@@ -89,16 +89,6 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
     setSaving(true)
     try {
       const comp = await createCompetition({ name: name.trim(), format, emoji, created_by: user.id })
-      // Make the creator admin of it. Everyone (including the creator) is
-      // now auto-joined as a 'player' the instant the competition row is
-      // created (database trigger) — this has to be an upsert, not a plain
-      // insert, so it promotes that row to admin rather than colliding
-      // with the one the trigger already made.
-      const { error } = await supabase.from('participants').upsert(
-        { competition_id: comp.id, user_id: user.id, role: 'admin' },
-        { onConflict: 'competition_id,user_id' }
-      )
-      if (error) throw error
       setSelectedComp(comp.id)
       setName(''); setFormat('league'); setEmoji(FORMAT_EMOJI.league); setEmojiTouched(false)
       toast.success('Competition created!')
