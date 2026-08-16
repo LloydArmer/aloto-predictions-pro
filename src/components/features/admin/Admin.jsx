@@ -1284,110 +1284,158 @@ function BracketTab({ competitionId, competitions }) {
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
 
   const matchedIds = new Set(matches.flatMap(m => [m.home_user_id, m.away_user_id]).filter(Boolean))
-  const availableParticipants = participants.filter(p => !matchedIds.has(p.user_id))
-  const roundMatches = matches.filter(m => m.round === round)
   const preview = drawPreview()
   const hasAnyMatches = matches.length > 0
 
+  const roundOrder = ['playoff', ...ROUND_OPTIONS.map(r => r.value)]
+  const currentRound = roundOrder.find(r => matches.some(m => m.round === r && m.status !== 'completed' && !m.is_replay))
+    || roundOrder.find(r => matches.some(m => m.round === r))
+    || 'playoff'
+  const currentRoundMatches = matches.filter(m => m.round === currentRound && !m.is_replay)
+  const currentRoundReplays = matches.filter(m => m.round === currentRound && m.is_replay)
+  const currentRoundResolved = currentRoundMatches.length > 0 &&
+    currentRoundMatches.every(m => m.status === 'completed') &&
+    currentRoundReplays.every(m => m.status === 'completed')
+  const currentRoundIndex = roundOrder.indexOf(currentRound)
+  const nextRound = roundOrder[currentRoundIndex + 1]
+  const nextRoundHasMatches = nextRound && matches.some(m => m.round === nextRound)
+
+  function getNextRoundPool() {
+    const pool = []
+    for (const m of currentRoundMatches) {
+      if (m.status === 'completed' && m.winner_user_id) pool.push(m.winner_user_id)
+      else if (m.home_user_id && !m.away_user_id) pool.push(m.home_user_id)
+    }
+    return pool
+  }
+
+  async function drawNextRound() {
+    if (!nextRound) { toast.error('No further rounds available'); return }
+    const pool = getNextRoundPool()
+    if (pool.length < 2) { toast.error('Need at least 2 participants for the next round'); return }
+    const names = pool.map(id => participants.find(p => p.user_id === id)?.profiles?.display_name).filter(Boolean).join(', ')
+    const confirmed = window.confirm(`Draw ${roundLabel(nextRound)} now? ${pool.length} participants (${names}) will be randomly paired. This cannot be undone.`)
+    if (!confirmed) return
+    const shuffled = [...pool].sort(() => Math.random() - 0.5)
+    const rIdx = ROUND_OPTIONS.findIndex(r => r.value === nextRound)
+    const inserts = []
+    for (let i = 0; i < shuffled.length; i += 2) {
+      if (shuffled[i + 1]) inserts.push({ competition_id: competitionId, round: nextRound, round_order: rIdx, home_user_id: shuffled[i], away_user_id: shuffled[i + 1] })
+      else inserts.push({ competition_id: competitionId, round: nextRound, round_order: rIdx, home_user_id: shuffled[i] })
+    }
+    const { error } = await supabase.from('bracket_matches').insert(inserts)
+    if (error) { toast.error(`Could not draw: ${error.message}`); return }
+    toast.success(`${roundLabel(nextRound)} drawn!`)
+    load()
+  }
+
   return (
     <div>
-      <div className="flex gap-1.5 flex-wrap mb-4">
-        {ALL_ROUND_TABS.map(r => (
-          <button key={r.value} onClick={() => setRound(r.value)}
-            className="px-3 py-1.5 rounded-full text-xs"
-            style={{ background: round === r.value ? 'var(--accent-dim)' : 'var(--bg-surface)', color: round === r.value ? 'var(--accent)' : 'var(--txt-second)', border: '0.5px solid var(--border)' }}>
-            {r.label}
-          </button>
-        ))}
-      </div>
-
       {!hasAnyMatches && preview && (
         <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.35)' }}>
-          <SectionLabel className="mb-2">Auto-generate full knockout bracket</SectionLabel>
+          <SectionLabel className="mb-2">Generate knockout bracket</SectionLabel>
           {preview.playoffCount === 0
-            ? <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>{preview.N} participants is already a clean bracket size — the whole bracket, from <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong> through to the <strong>Final</strong>, will be created and linked in one go.</p>
-            : <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
-                {preview.N} participants doesn't divide evenly. <strong>{preview.byeCount}</strong> randomly-chosen participant{preview.byeCount !== 1 ? 's' : ''} get a bye straight to <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong>, and <strong>{preview.playoffCount}</strong> playoff match{preview.playoffCount !== 1 ? 'es' : ''} decide who joins them — every round after that, all the way to the <strong>Final</strong>, is created and linked at the same time, so winners automatically advance as each round resolves.
-              </p>
+            ? <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>{preview.N} participants — a clean bracket. {preview.N / 2} matches from <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong> to the Final, all linked automatically.</p>
+            : <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>{preview.N} participants — <strong>{preview.byeCount}</strong> get a bye to <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong>, and <strong>{preview.playoffCount}</strong> playoff match{preview.playoffCount !== 1 ? 'es' : ''} decide who joins them. All subsequent rounds are linked automatically.</p>
           }
-          <Button variant="primary" size="sm" onClick={autoGenerateDraw}>Generate full bracket for all {preview.N} participants</Button>
+          <Button variant="primary" size="sm" onClick={autoGenerateDraw}>Generate bracket for all {preview.N} participants</Button>
+        </Card>
+      )}
+      {!hasAnyMatches && participants.length < 2 && (
+        <EmptyState icon="ti-tournament" title="Add participants first" description="Go to the Participants tab and add at least 2 people before generating the bracket." />
+      )}
+
+      {hasAnyMatches && (() => {
+        const displayRounds = roundOrder.filter(r => matches.some(m => m.round === r))
+        return displayRounds.map(r => {
+          const rMatches = matches.filter(m => m.round === r && !m.is_replay)
+          const rReplays = matches.filter(m => m.round === r && m.is_replay)
+          const rResolved = rMatches.length > 0 && rMatches.every(m => m.status === 'completed') && rReplays.every(m => m.status === 'completed')
+          return (
+            <div key={r} className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <SectionLabel>{roundLabel(r)}</SectionLabel>
+                <Badge variant={rResolved ? 'result' : 'upcoming'}>{rResolved ? 'Complete' : 'In progress'}</Badge>
+              </div>
+              {rMatches.map(m => {
+                const replay = rReplays.find(rep => rep.home_user_id === m.home_user_id && rep.away_user_id === m.away_user_id)
+                const isBye = m.home_user_id && !m.away_user_id
+                return (
+                  <Card key={m.id} className="p-3 mb-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        {isBye
+                          ? <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>
+                              {m.home?.display_name}
+                              <span className="text-xs px-1.5 py-0.5 rounded ml-2" style={{ background: 'var(--green-dim)', color: 'var(--green)' }}>Bye ✓</span>
+                            </p>
+                          : <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{m.home?.display_name || 'TBD'} vs {m.away?.display_name || 'TBD'}</p>
+                        }
+                        {m.status === 'completed' && !isBye && <p className="text-xs mt-0.5" style={{ color: 'var(--green)' }}>{m.home_points} – {m.away_points} · {m.winner?.display_name} advances</p>}
+                        {m.status === 'replay_scheduled' && <p className="text-xs mt-0.5" style={{ color: 'var(--amber)' }}>Drawn — replay scheduled</p>}
+                      </div>
+                      {!isBye && m.home_user_id && m.away_user_id && (
+                        <Select value={m.gameweek_id || ''} onChange={e => assignMatchGameweek(m.id, e.target.value)} style={{ width: 110 }}>
+                          <option value="">Set GW…</option>
+                          {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                        </Select>
+                      )}
+                    </div>
+                    {replay && (
+                      <div className="mt-2 pt-2" style={{ borderTop: '0.5px solid var(--border)' }}>
+                        <p className="text-xs font-medium mb-1" style={{ color: 'var(--amber)' }}>Replay</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs" style={{ color: 'var(--txt-second)' }}>{replay.home?.display_name} vs {replay.away?.display_name}</p>
+                          {replay.status === 'completed'
+                            ? <span className="text-xs" style={{ color: 'var(--green)' }}>{replay.home_points} – {replay.away_points} · {replay.winner?.display_name} advances</span>
+                            : <Select value={replay.gameweek_id || ''} onChange={e => assignMatchGameweek(replay.id, e.target.value)} style={{ width: 110 }}>
+                                <option value="">Set GW…</option>
+                                {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                              </Select>
+                          }
+                        </div>
+                      </div>
+                    )}
+                    {r === currentRound && !isBye && m.status !== 'completed' && (
+                      <Button size="sm" variant="primary" className="mt-2" onClick={() => resolveRound(r)} disabled={resolving === r}>
+                        {resolving === r ? 'Resolving…' : `Resolve ${roundLabel(r)}`}
+                      </Button>
+                    )}
+                  </Card>
+                )
+              })}
+            </div>
+          )
+        })
+      })()}
+
+      {hasAnyMatches && currentRoundResolved && nextRound && !nextRoundHasMatches && (
+        <Card className="p-4 mt-2" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.35)' }}>
+          <SectionLabel className="mb-2">Draw {roundLabel(nextRound)}</SectionLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
+            {roundLabel(currentRound)} is complete. {getNextRoundPool().length} participants will be randomly drawn: {getNextRoundPool().map(id => participants.find(p => p.user_id === id)?.profiles?.display_name).filter(Boolean).join(', ')}.
+          </p>
+          <Button variant="primary" size="sm" onClick={drawNextRound}>Draw {roundLabel(nextRound)}</Button>
         </Card>
       )}
 
-      <Card className="p-4 mb-4">
-        <SectionLabel className="mb-2">Which gameweek(s) decide this round?</SectionLabel>
-        <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Points earned in these gameweeks decide who wins each {roundLabel(round).toLowerCase()} matchup.</p>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {gameweeks.length === 0 && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>No gameweeks yet — add some in the Gameweeks tab first</span>}
-          {gameweeks.map(gw => (
-            <label key={gw.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={selectedGws.includes(gw.id)}
-                onChange={e => setSelectedGws(prev => e.target.checked ? [...prev, gw.id] : prev.filter(id => id !== gw.id))} />
-              {gw.number}
-            </label>
-          ))}
-        </div>
-        <Button size="sm" onClick={saveRoundGameweeks} disabled={!gameweeks.length}>Save mapping</Button>
-      </Card>
-
-      <Card className="p-4 mb-4">
-        <SectionLabel className="mb-2">Manually draw this round</SectionLabel>
-        <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Only needed if you want a different pairing than what auto-generate created, or you're setting up a round from scratch without it.</p>
-        {availableParticipants.length === 0
-          ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>All participants already have a match — check other rounds, or the matches below.</p>
-          : <>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {availableParticipants.map(p => (
-                <label key={p.user_id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={selectedParticipants.includes(p.user_id)}
-                    onChange={e => setSelectedParticipants(prev => e.target.checked ? [...prev, p.user_id] : prev.filter(id => id !== p.user_id))} />
-                  {p.profiles?.display_name}
-                </label>
-              ))}
-            </div>
-            <Button size="sm" variant="primary" onClick={randomDraw}>Randomly pair selected ({selectedParticipants.length})</Button>
-          </>
-        }
-      </Card>
-
-      <SectionLabel className="mb-2">{roundLabel(round)} matches</SectionLabel>
-      {roundMatches.length === 0
-        ? <EmptyState icon="ti-tournament" title="No matches drawn for this round yet" />
-        : <>
-          {roundMatches.map(m => (
-            <Card key={m.id} className="p-3 mb-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--txt-primary)' }}>
-                  {m.is_replay && <Badge variant="upcoming">Replay</Badge>}
-                  <span style={{ fontWeight: m.winner_user_id === m.home_user_id ? 600 : 400 }}>{m.home?.display_name || 'TBD'}</span>
-                  {m.home_points != null && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>({m.home_points}pts)</span>}
-                  <span style={{ color: 'var(--txt-muted)' }}>vs</span>
-                  {m.away_user_id
-                    ? <><span style={{ fontWeight: m.winner_user_id === m.away_user_id ? 600 : 400 }}>{m.away?.display_name}</span>
-                        {m.away_points != null && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>({m.away_points}pts)</span>}</>
-                    : <span style={{ color: 'var(--txt-muted)' }}>bye</span>
-                  }
-                </div>
-                {m.status === 'completed'
-                  ? <Badge variant="result">{m.winner?.display_name} advances</Badge>
-                  : m.status === 'replay_scheduled'
-                  ? <Badge variant="miss">Drawn — replay scheduled below</Badge>
-                  : m.home_user_id && m.away_user_id && (
-                    <Select value={m.gameweek_id || ''} onChange={e => assignMatchGameweek(m.id, e.target.value)} style={{ width: 130 }}>
-                      <option value="">Set GW for match…</option>
-                      {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
-                    </Select>
-                  )
-                }
-              </div>
-            </Card>
-          ))}
-          <Button variant="primary" size="sm" className="mt-2" onClick={resolve} disabled={resolving || !roundGwMap[round]?.length}>
-            {resolving ? 'Resolving…' : 'Resolve round from gameweek points'}
-          </Button>
-          {!roundGwMap[round]?.length && <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Save a gameweek mapping above first.</p>}
-        </>
-      }
+      {hasAnyMatches && (
+        <Card className="p-4 mt-4">
+          <SectionLabel className="mb-2">Gameweek mapping</SectionLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Assign a gameweek to each match individually above, or set a round-level mapping here.</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {gameweeks.length === 0 && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>No gameweeks yet — add some in the Gameweeks tab first</span>}
+            {gameweeks.map(gw => (
+              <label key={gw.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={selectedGws.includes(gw.id)}
+                  onChange={e => setSelectedGws(prev => e.target.checked ? [...prev, gw.id] : prev.filter(id => id !== gw.id))} />
+                {gw.number}
+              </label>
+            ))}
+          </div>
+          <Button size="sm" onClick={saveRoundGameweeks} disabled={!gameweeks.length}>Save mapping</Button>
+        </Card>
+      )}
     </div>
   )
 }

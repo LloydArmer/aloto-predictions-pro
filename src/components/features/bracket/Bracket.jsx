@@ -32,7 +32,12 @@ function MatchCard({ match, userId }) {
       <div style={{ height: '0.5px', background: 'var(--border)' }}/>
       {match.away_user_id
         ? <ParticipantRow name={match.away?.display_name} uid={match.away_user_id} pts={match.away_points} isWinner={isCompleted && match.winner_user_id === match.away_user_id} isMe={match.away_user_id === userId}/>
-        : <div className="px-3 py-2.5"><span className="text-xs" style={{ color:'var(--txt-muted)' }}>Bye</span></div>
+        : <div className="px-3 py-2.5 flex items-center justify-between">
+            <span className="text-xs font-medium" style={{ color:'var(--green)' }}>
+              {match.home?.display_name} — Bye ✓
+            </span>
+            <span className="text-xs px-2 py-0.5 rounded" style={{ background:'var(--green-dim)', color:'var(--green)' }}>Advances</span>
+          </div>
       }
       {isReplayScheduled && (
         <div className="px-3 py-1.5" style={{ background:'var(--amber-dim)', borderTop:'0.5px solid var(--border)' }}>

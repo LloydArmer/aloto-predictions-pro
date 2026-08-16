@@ -432,7 +432,7 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
           <span style={{ color: tp1 ? 'var(--gold)' : 'var(--txt-muted)', fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>⚡</span>
           <p className="text-xs" style={{ color: tp1 ? 'var(--gold)' : 'var(--txt-second)' }}>
             <span className="font-semibold">Triple Points 1 (due by 31st Dec)</span>
-            {tp1 ? ` — played GW${tp1.gameweek_number}` : ' — still available'}
+            {tp1 ? ` — played ${tp1.gameweek_number}` : ' — still available'}
           </p>
         </div>
         {/* Chip 2 */}
@@ -440,7 +440,7 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
           <span style={{ color: tp2 ? 'var(--gold)' : 'var(--txt-muted)', fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>⚡</span>
           <p className="text-xs" style={{ color: tp2 ? 'var(--gold)' : 'var(--txt-second)' }}>
             <span className="font-semibold">Triple Points 2 (due by end of season)</span>
-            {tp2 ? ` — played GW${tp2.gameweek_number}` : ' — still available'}
+            {tp2 ? ` — played ${tp2.gameweek_number}` : ' — still available'}
           </p>
         </div>
       </div>
