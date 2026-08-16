@@ -9,29 +9,33 @@ import CompetitionSelector from '../../layout/CompetitionSelector'
 
 const ROUND_LABELS = { playoff:'Playoff', r64:'Round of 64', r32:'Round of 32', r16:'Round of 16', qf:'Quarter-finals', sf:'Semi-finals', f:'Final' }
 
-function MatchCard({ match, userId }) {
+function MatchCard({ match, userId, livePts = {} }) {
   const isCompleted = match.status === 'completed'
   const isReplayScheduled = match.status === 'replay_scheduled'
   const replay = match.replay
 
-  function ParticipantRow({ name, uid, pts, isWinner, isMe }) {
+  function ParticipantRow({ name, uid, pts, isWinner, isMe, isLive }) {
     return (
       <div className="flex items-center justify-between px-3 py-2.5"
         style={{ background: isCompleted && isWinner ? 'var(--accent-dim)' : isMe ? 'rgba(79,142,247,0.06)' : '' }}>
         <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isWinner ? 600 : 400, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0 }}>
           {name || 'TBD'}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
         </span>
-        {pts != null && <span className="text-sm font-bold ml-2" style={{ color: isWinner ? 'var(--green)' : 'var(--txt-second)', flexShrink:0 }}>{pts} pts</span>}
+        {pts != null && (
+          <span className="text-sm font-bold ml-2" style={{ color: isWinner ? 'var(--green)' : isLive ? 'var(--amber)' : 'var(--txt-second)', flexShrink:0 }}>
+            {pts} pts{isLive && <span className="text-xs font-normal ml-1" style={{ opacity: 0.7 }}>so far</span>}
+          </span>
+        )}
       </div>
     )
   }
 
   return (
     <div className="rounded-md overflow-hidden mb-3" style={{ border: '0.5px solid var(--border-med)', background: 'var(--bg-surface)' }}>
-      <ParticipantRow name={match.home?.display_name} uid={match.home_user_id} pts={match.home_points} isWinner={isCompleted && match.winner_user_id === match.home_user_id} isMe={match.home_user_id === userId}/>
+      <ParticipantRow name={match.home?.display_name} uid={match.home_user_id} pts={isCompleted ? match.home_points : livePts[match.home_user_id]} isWinner={isCompleted && match.winner_user_id === match.home_user_id} isMe={match.home_user_id === userId} isLive={!isCompleted && livePts[match.home_user_id] != null}/>
       <div style={{ height: '0.5px', background: 'var(--border)' }}/>
       {match.away_user_id
-        ? <ParticipantRow name={match.away?.display_name} uid={match.away_user_id} pts={match.away_points} isWinner={isCompleted && match.winner_user_id === match.away_user_id} isMe={match.away_user_id === userId}/>
+        ? <ParticipantRow name={match.away?.display_name} uid={match.away_user_id} pts={isCompleted ? match.away_points : livePts[match.away_user_id]} isWinner={isCompleted && match.winner_user_id === match.away_user_id} isMe={match.away_user_id === userId} isLive={!isCompleted && livePts[match.away_user_id] != null}/>
         : <div className="px-3 py-2.5 flex items-center justify-between">
             <span className="text-xs font-medium" style={{ color:'var(--green)' }}>
               {match.home?.display_name} — Bye ✓
@@ -227,6 +231,7 @@ export default function Bracket() {
   const { competitions } = useCompetitions()
   const [comp, setComp] = useSelectedCompetition(competitions)
   const [rounds, setRounds] = useState([])
+  const [liveKnockoutPts, setLiveKnockoutPts] = useState({}) // { userId: pts } for current active round
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { if (comp) load(); else setLoading(false) }, [comp])
@@ -256,6 +261,26 @@ export default function Bracket() {
         .map(([round, ms]) => ({ round, matches: ms }))
 
       setRounds(visibleRounds)
+
+      // Live points for unresolved knockout matches — fetch by gameweek_id
+      // only, no competition_id filter, since Carabao Test scores are stored
+      // under ALOTO's competition_id not Carabao Test's.
+      const unresolved = (matches || []).filter(m => m.status !== 'completed' && m.gameweek_id && !m.is_replay)
+      const gwIds = [...new Set(unresolved.map(m => m.gameweek_id))]
+      if (gwIds.length) {
+        const userIds = [...new Set(unresolved.flatMap(m => [m.home_user_id, m.away_user_id]).filter(Boolean))]
+        const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points').in('gameweek_id', gwIds).in('user_id', userIds)
+        // Deduplicate by user+gameweek taking max across competition_ids
+        const seen = {}, pts = {}
+        for (const s of (scores || [])) {
+          const key = `${s.user_id}:${s.gameweek_id}`
+          if (!seen[key] || s.points > seen[key]) {
+            pts[s.user_id] = (pts[s.user_id] || 0) - (seen[key] || 0) + (s.points || 0)
+            seen[key] = s.points || 0
+          }
+        }
+        setLiveKnockoutPts(pts)
+      }
     } finally { setLoading(false) }
   }
 
@@ -274,7 +299,7 @@ export default function Bracket() {
             <div key={round} className="mb-5">
               <SectionLabel className="mb-2">{ROUND_LABELS[round] || round}</SectionLabel>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {matches.map(m => <MatchCard key={m.id} match={m} userId={user?.id} />)}
+                {matches.map(m => <MatchCard key={m.id} match={m} userId={user?.id} livePts={liveKnockoutPts} />)}
               </div>
             </div>
           ))}

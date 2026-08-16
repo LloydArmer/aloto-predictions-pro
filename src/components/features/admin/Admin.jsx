@@ -1142,9 +1142,19 @@ function BracketTab({ competitionId, competitions }) {
       const scoreCompId = sourceComp?.rules_source_competition_id || competitionId
       const gwIds = [...new Set((m||[]).map(mx => mx.gameweek_id).filter(Boolean))]
       if (gwIds.length) {
-        const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points').eq('competition_id', scoreCompId).in('gameweek_id', gwIds)
+        const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points').in('gameweek_id', gwIds)
         const cache = {}
-        ;(scores||[]).forEach(s => { if (!cache[s.gameweek_id]) cache[s.gameweek_id] = {}; cache[s.gameweek_id][s.user_id] = s.points || 0 })
+        // Deduplicate by user+gameweek taking max (same score may exist
+        // under multiple competition_ids for shared gameweeks).
+        const seen = {}
+        for (const s of (scores || [])) {
+          const key = `${s.user_id}:${s.gameweek_id}`
+          if (!cache[s.gameweek_id]) cache[s.gameweek_id] = {}
+          if (!seen[key] || s.points > seen[key]) {
+            cache[s.gameweek_id][s.user_id] = s.points || 0
+            seen[key] = s.points || 0
+          }
+        }
         setLivePoints(cache)
       }
     } finally { setLoading(false) }

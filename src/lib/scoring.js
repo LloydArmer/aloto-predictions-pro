@@ -190,11 +190,21 @@ export async function resolveBracketRound(supabase, competitionId, round) {
     const gwIds = m.gameweek_id ? [m.gameweek_id] : roundGwIds
     if (!m.home_user_id || !m.away_user_id || !gwIds.length) continue
 
-    const { data: scores } = await supabase.from('gameweek_scores').select('user_id,points')
-      .eq('competition_id', scoreCompId).in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
+    const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points')
+      .in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
 
     const totals = { [m.home_user_id]: 0, [m.away_user_id]: 0 }
-    for (const s of (scores || [])) totals[s.user_id] += s.points || 0
+    // Group by user+gameweek taking the max to avoid double-counting
+    // when the same score exists under multiple competition IDs.
+    const seen = {}
+    for (const s of (scores || [])) {
+      const key = `${s.user_id}:${s.gameweek_id}`
+      if (!seen[key] || s.points > seen[key]) {
+        if (seen[key]) totals[s.user_id] -= seen[key]
+        totals[s.user_id] += s.points || 0
+        seen[key] = s.points || 0
+      }
+    }
     const h = totals[m.home_user_id], a = totals[m.away_user_id]
 
     if (h !== a) {
