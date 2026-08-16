@@ -9,33 +9,65 @@ import CompetitionSelector from '../../layout/CompetitionSelector'
 
 const ROUND_LABELS = { playoff:'Playoff', r64:'Round of 64', r32:'Round of 32', r16:'Round of 16', qf:'Quarter-finals', sf:'Semi-finals', f:'Final' }
 
-function MatchCard({ match, userId, livePts = {} }) {
-  const isCompleted = match.status === 'completed'
-  const isReplayScheduled = match.status === 'replay_scheduled'
-  const replay = match.replay
-
-  function ParticipantRow({ name, uid, pts, isWinner, isMe, isLive }) {
-    return (
-      <div className="flex items-center justify-between px-3 py-2.5"
-        style={{ background: isCompleted && isWinner ? 'var(--accent-dim)' : isMe ? 'rgba(79,142,247,0.06)' : '' }}>
-        <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isWinner ? 600 : 400, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0 }}>
-          {name || 'TBD'}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+// One participant line. `showWinnerHighlight` is an explicit prop rather than
+// something read from an enclosing scope — a completed REPLAY nested inside a
+// still-unresolved parent match needs its own winner highlight, and reading the
+// parent's status meant that highlight never rendered.
+function ParticipantRow({ name, pts, isWinner, isMe, isLive, showWinnerHighlight }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2.5"
+      style={{ background: showWinnerHighlight && isWinner ? 'var(--accent-dim)' : isMe ? 'rgba(79,142,247,0.06)' : '' }}>
+      <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isWinner ? 600 : 400, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0 }}>
+        {name || 'TBD'}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+      </span>
+      {pts != null && (
+        <span className="text-sm font-bold ml-2" style={{ color: isWinner ? 'var(--green)' : isLive ? 'var(--amber)' : 'var(--txt-second)', flexShrink:0 }}>
+          {pts} pts{isLive && <span className="text-xs font-normal ml-1" style={{ opacity: 0.7 }}>so far</span>}
         </span>
-        {pts != null && (
-          <span className="text-sm font-bold ml-2" style={{ color: isWinner ? 'var(--green)' : isLive ? 'var(--amber)' : 'var(--txt-second)', flexShrink:0 }}>
-            {pts} pts{isLive && <span className="text-xs font-normal ml-1" style={{ opacity: 0.7 }}>so far</span>}
-          </span>
-        )}
-      </div>
-    )
-  }
+      )}
+    </div>
+  )
+}
+
+const AmberBanner = ({ children, bold }) => (
+  <div className="px-3 py-1.5" style={{ background:'var(--amber-dim)', borderTop:'0.5px solid var(--border)' }}>
+    <span className="text-xs" style={{ color:'var(--amber)', fontWeight: bold ? 500 : 400 }}>{children}</span>
+  </div>
+)
+
+// The two participant rows of a single leg — used for both the original match
+// and each replay, so they render identically instead of the replay having its
+// own slightly different copy of the logic.
+function MatchLeg({ match, userId, livePts = {} }) {
+  const isCompleted = match.status === 'completed'
+  // Points written to the match by resolveBracketRound are shown WHENEVER they
+  // exist, not only when status === 'completed'. A drawn match is set to
+  // 'replay_scheduled' with its points stored, so gating on 'completed' hid the
+  // very scores that explain why it was a draw.
+  const hasStoredPts = match.home_points != null || match.away_points != null
+  const homePts = hasStoredPts ? match.home_points : livePts[match.home_user_id]
+  const awayPts = hasStoredPts ? match.away_points : livePts[match.away_user_id]
 
   return (
-    <div className="rounded-md overflow-hidden mb-3" style={{ border: '0.5px solid var(--border-med)', background: 'var(--bg-surface)' }}>
-      <ParticipantRow name={match.home?.display_name} uid={match.home_user_id} pts={isCompleted ? match.home_points : livePts[match.home_user_id]} isWinner={isCompleted && match.winner_user_id === match.home_user_id} isMe={match.home_user_id === userId} isLive={!isCompleted && livePts[match.home_user_id] != null}/>
+    <>
+      <ParticipantRow
+        name={match.home?.display_name}
+        pts={homePts}
+        isWinner={isCompleted && match.winner_user_id === match.home_user_id}
+        isMe={match.home_user_id === userId}
+        isLive={!hasStoredPts && homePts != null}
+        showWinnerHighlight={isCompleted}
+      />
       <div style={{ height: '0.5px', background: 'var(--border)' }}/>
       {match.away_user_id
-        ? <ParticipantRow name={match.away?.display_name} uid={match.away_user_id} pts={isCompleted ? match.away_points : livePts[match.away_user_id]} isWinner={isCompleted && match.winner_user_id === match.away_user_id} isMe={match.away_user_id === userId} isLive={!isCompleted && livePts[match.away_user_id] != null}/>
+        ? <ParticipantRow
+            name={match.away?.display_name}
+            pts={awayPts}
+            isWinner={isCompleted && match.winner_user_id === match.away_user_id}
+            isMe={match.away_user_id === userId}
+            isLive={!hasStoredPts && awayPts != null}
+            showWinnerHighlight={isCompleted}
+          />
         : <div className="px-3 py-2.5 flex items-center justify-between">
             <span className="text-xs font-medium" style={{ color:'var(--green)' }}>
               {match.home?.display_name} — Bye ✓
@@ -43,26 +75,32 @@ function MatchCard({ match, userId, livePts = {} }) {
             <span className="text-xs px-2 py-0.5 rounded" style={{ background:'var(--green-dim)', color:'var(--green)' }}>Advances</span>
           </div>
       }
-      {isReplayScheduled && (
-        <div className="px-3 py-1.5" style={{ background:'var(--amber-dim)', borderTop:'0.5px solid var(--border)' }}>
-          <span className="text-xs" style={{ color:'var(--amber)' }}>Drawn — replay scheduled below</span>
-        </div>
-      )}
-      {replay && (
-        <>
-          <div className="px-3 py-1" style={{ background:'var(--amber-dim)', borderTop:'0.5px solid var(--border)' }}>
-            <span className="text-xs font-medium" style={{ color:'var(--amber)' }}>Replay</span>
-          </div>
-          <ParticipantRow name={replay.home?.display_name} uid={replay.home_user_id} pts={replay.home_points} isWinner={replay.status==='completed' && replay.winner_user_id===replay.home_user_id} isMe={replay.home_user_id===userId}/>
-          <div style={{ height:'0.5px', background:'var(--border)' }}/>
-          <ParticipantRow name={replay.away?.display_name} uid={replay.away_user_id} pts={replay.away_points} isWinner={replay.status==='completed' && replay.winner_user_id===replay.away_user_id} isMe={replay.away_user_id===userId}/>
-          {replay.status==='replay_scheduled' && (
-            <div className="px-3 py-1.5" style={{ background:'var(--amber-dim)', borderTop:'0.5px solid var(--border)' }}>
-              <span className="text-xs" style={{ color:'var(--amber)' }}>Still drawn — another replay needed</span>
-            </div>
+    </>
+  )
+}
+
+function MatchCard({ match, userId, livePts = {} }) {
+  // `replays` is a chain, oldest first — a second or third replay is possible
+  // and each one needs to appear under the last.
+  const replays = match.replays || []
+
+  return (
+    // No bottom margin: the parent grid supplies gap-3, and having both made
+    // the space between cards double the space the layout was designed for.
+    <div className="rounded-md overflow-hidden" style={{ border: '0.5px solid var(--border-med)', background: 'var(--bg-surface)' }}>
+      <MatchLeg match={match} userId={userId} livePts={livePts} />
+      {match.status === 'replay_scheduled' && <AmberBanner>Drawn — replay scheduled below</AmberBanner>}
+      {replays.map((r, i) => (
+        <div key={r.id}>
+          <AmberBanner bold>{replays.length > 1 ? `Replay ${i + 1}` : 'Replay'}</AmberBanner>
+          <MatchLeg match={r} userId={userId} livePts={livePts} />
+          {r.status === 'replay_scheduled' && (
+            <AmberBanner>
+              {i === replays.length - 1 ? 'Still drawn — another replay needed' : 'Drawn — replay scheduled below'}
+            </AmberBanner>
           )}
-        </>
-      )}
+        </div>
+      ))}
     </div>
   )
 }
@@ -246,13 +284,22 @@ export default function Bracket() {
       // Group matches by round, but exclude rounds where every match
       // is still an empty shell (both participants TBD) — these are
       // future rounds drawn in advance that shouldn't be visible yet.
+      const all = matches || []
       const rm = {}
-      ;(matches || []).forEach(m => {
+      all.forEach(m => {
         if (m.is_replay) return // replays are attached to their parent match below
         if (!rm[m.round]) rm[m.round] = []
-        // Find any replay for this match
-        const replay = (matches || []).find(r => r.is_replay && r.home_user_id === m.home_user_id && r.away_user_id === m.away_user_id && r.round === m.round)
-        rm[m.round].push({ ...m, replay: replay || null })
+        // Collect EVERY replay of this matchup, oldest first. The previous
+        // .find() returned only the first, so if a replay was itself drawn the
+        // follow-up replay never appeared at all. Home/away can be listed
+        // either way round, so match the pair in both orders.
+        const replays = all
+          .filter(r => r.is_replay && r.round === m.round && (
+            (r.home_user_id === m.home_user_id && r.away_user_id === m.away_user_id) ||
+            (r.home_user_id === m.away_user_id && r.away_user_id === m.home_user_id)
+          ))
+          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+        rm[m.round].push({ ...m, replays })
       })
 
       // Only include a round if at least one match has both participants known
@@ -265,7 +312,9 @@ export default function Bracket() {
       // Live points for unresolved knockout matches — fetch by gameweek_id
       // only, no competition_id filter, since Carabao Test scores are stored
       // under ALOTO's competition_id not Carabao Test's.
-      const unresolved = (matches || []).filter(m => m.status !== 'completed' && m.gameweek_id && !m.is_replay)
+      // Replays are included here too — a replay has its own admin-assigned
+      // gameweek_id and is exactly the kind of match that needs a live total.
+      const unresolved = all.filter(m => m.status !== 'completed' && m.gameweek_id)
       const gwIds = [...new Set(unresolved.map(m => m.gameweek_id))]
       if (gwIds.length) {
         const userIds = [...new Set(unresolved.flatMap(m => [m.home_user_id, m.away_user_id]).filter(Boolean))]
@@ -301,7 +350,10 @@ export default function Bracket() {
           {rounds.map(({ round, matches }) => (
             <div key={round} className="mb-5">
               <SectionLabel className="mb-2">{ROUND_LABELS[round] || round}</SectionLabel>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* items-start: without it, a short card in the same row as a
+                  tall one (a match with replays) stretches and gains dead
+                  space under its last row. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                 {matches.map(m => <MatchCard key={m.id} match={m} userId={user?.id} livePts={liveKnockoutPts} />)}
               </div>
             </div>
