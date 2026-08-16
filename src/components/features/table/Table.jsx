@@ -56,6 +56,7 @@ function OverallPane({ competitionId, userId }) {
   const { overall, loading } = useLeaderboard(competitionId)
   const [rules, setRules] = useState(null)
   const [badgesByUser, setBadgesByUser] = useState({})
+  const [gwNumbers, setGwNumbers] = useState({})
   useEffect(() => { if (competitionId) load(); else { setRules(null); setBadgesByUser({}) } }, [competitionId])
 
   async function load() {
@@ -72,6 +73,9 @@ function OverallPane({ competitionId, userId }) {
       grouped[row.user_id].push(row.gameweeks.number)
     })
     setBadgesByUser(grouped)
+    const { data: gws } = await supabase.from('gameweeks').select('id, number')
+    const m = {}; (gws||[]).forEach(g => { m[g.id] = g.number })
+    setGwNumbers(m)
   }
 
   return (
@@ -80,15 +84,17 @@ function OverallPane({ competitionId, userId }) {
         : overall.length === 0 ? <EmptyState icon="ti-list-numbers" title="No scores yet" description="Table will populate once the first gameweek is scored"/>
         : <Card className="overflow-hidden p-0">
             <div className="overflow-x-auto">
-              <table className="data-table w-full" style={{ minWidth:680 }}>
+              <table className="data-table w-full" style={{ minWidth:900 }}>
                 <thead><tr>
                   <th style={{ width:32, paddingLeft:14 }}>#</th>
                   <th>Player</th>
-                  <th style={{ width:76, textAlign:'right' }}>Correct Results</th>
-                  <th style={{ width:76, textAlign:'right' }}>Correct Scores</th>
-                  <th style={{ width:70, textAlign:'right' }}>Results Bonus</th>
-                  <th style={{ width:66, textAlign:'right' }}>Scores Bonus</th>
-                  <th style={{ width:70, textAlign:'right', paddingRight:14 }}>Total Points</th>
+                  <th style={{ width:72, textAlign:'right' }}>Correct Results</th>
+                  <th style={{ width:72, textAlign:'right' }}>Correct Scores</th>
+                  <th style={{ width:66, textAlign:'right' }}>Results Bonus</th>
+                  <th style={{ width:62, textAlign:'right' }}>Scores Bonus</th>
+                  <th style={{ width:80, textAlign:'right' }}>⚡ TP 1</th>
+                  <th style={{ width:80, textAlign:'right' }}>⚡ TP 2</th>
+                  <th style={{ width:60, textAlign:'right', paddingRight:14 }}>Total</th>
                 </tr></thead>
                 <tbody>
                   {overall.map((p,i) => {
@@ -97,10 +103,9 @@ function OverallPane({ competitionId, userId }) {
                     const correctScores  = p.exact_scores || 0
                     const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
                     const scoresBonusPts  = (p.full_house_scores_count || 0) * (rules?.full_house_scores_bonus || 0)
-                    const resultPts = correctResults * (rules?.correct_result_points || 0)
-                    const scorePts  = correctScores * (rules?.exact_score_points || 0)
                     const badges = badgesByUser[p.user_id] || []
-                    const breakdown = [`${resultPts}pts results`, `${scorePts}pts scores`, resultsBonusPts > 0 && `${resultsBonusPts} results bonus`, scoresBonusPts > 0 && `${scoresBonusPts} scores bonus`].filter(Boolean).join(' + ')
+                    const tp1Label = p.tp1_gameweek_id ? `GW${gwNumbers[p.tp1_gameweek_id]||'?'} +${p.tp1_points||0}` : '–'
+                    const tp2Label = p.tp2_gameweek_id ? `GW${gwNumbers[p.tp2_gameweek_id]||'?'} +${p.tp2_points||0}` : '–'
                     return (
                       <Fragment key={p.user_id}>
                         <tr className={isMe?'highlight':''}>
@@ -114,25 +119,24 @@ function OverallPane({ competitionId, userId }) {
                           <td className="text-xs text-right" style={{ color:'var(--green)' }}>{correctScores}</td>
                           <td className="text-xs text-right" style={{ color: resultsBonusPts > 0 ? 'var(--amber)' : 'var(--txt-muted)' }}>{resultsBonusPts > 0 ? `+${resultsBonusPts}` : '–'}</td>
                           <td className="text-xs text-right" style={{ color: scoresBonusPts > 0 ? '#c88bfa' : 'var(--txt-muted)' }}>{scoresBonusPts > 0 ? `+${scoresBonusPts}` : '–'}</td>
+                          <td className="text-xs text-right" style={{ color: p.tp1_gameweek_id ? 'var(--gold)' : 'var(--txt-muted)' }}>{tp1Label}</td>
+                          <td className="text-xs text-right" style={{ color: p.tp2_gameweek_id ? 'var(--gold)' : 'var(--txt-muted)' }}>{tp2Label}</td>
                           <td style={{ textAlign:'right', paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points||0}</span></td>
                         </tr>
-                        <tr className={isMe?'highlight':''}>
-                          <td></td>
-                          <td colSpan={6} style={{ paddingBottom: 10, paddingTop: 0 }}>
-                            <div className="flex items-center justify-between flex-wrap gap-1.5">
-                              <span className="text-xs" style={{ color:'var(--txt-muted)' }}>{breakdown}</span>
-                              {badges.length > 0 && (
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {badges.map((n,j) => (
-                                    <span key={j} className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1" style={{ background:'var(--gold-dim)', color:'var(--gold)' }}>
-                                      <i className="ti ti-star-filled" style={{ fontSize:10 }} aria-hidden="true"/>{n}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                        {badges.length > 0 && (
+                          <tr className={isMe?'highlight':''}>
+                            <td></td>
+                            <td colSpan={8} style={{ paddingBottom: 8, paddingTop: 0 }}>
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {badges.map((n,j) => (
+                                  <span key={j} className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1" style={{ background:'var(--gold-dim)', color:'var(--gold)' }}>
+                                    <i className="ti ti-star-filled" style={{ fontSize:10 }} aria-hidden="true"/>{n}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
                       </Fragment>
                     )
                   })}
@@ -150,16 +154,23 @@ function MonthlyPane({ competitionId, months, userId }) {
   const [sel, setSel] = useState(months[months.length-1]||null)
   const { monthly, gameweeksInMonth, loading } = useMonthlyLeaderboard(competitionId, sel?.key)
   const [closedMonths, setClosedMonths] = useState([])
+  const [tpPlaysByUser, setTpPlaysByUser] = useState({})
   useEffect(() => { if(months.length) setSel(months[months.length-1]) }, [months])
   useEffect(() => {
     if (!competitionId) { setClosedMonths([]); return }
     supabase.from('closed_months').select('month_key').eq('competition_id', competitionId)
       .then(({ data }) => setClosedMonths((data || []).map(c => c.month_key)))
+    supabase.from('triple_points_plays').select('user_id, gameweek_id').eq('competition_id', competitionId)
+      .then(({ data }) => {
+        const m = {}
+        ;(data||[]).forEach(p => { if (!m[p.user_id]) m[p.user_id] = []; m[p.user_id].push(p.gameweek_id) })
+        setTpPlaysByUser(m)
+      })
   }, [competitionId])
-  const winner=monthly[0]
+  const winner = monthly[0]
   const isMonthClosed = sel && closedMonths.includes(sel.key)
-  const completedGWs=gameweeksInMonth.filter(g=>g.status==='completed')
-  const upcomingGWs=gameweeksInMonth.filter(g=>g.status==='upcoming')
+  const completedGWs = gameweeksInMonth.filter(g=>g.status==='completed')
+  const winnerUsedTp = winner && (tpPlaysByUser[winner.user_id] || []).some(gwId => gameweeksInMonth.some(g => g.id === gwId))
   return (
     <div>
       <Select value={sel?.key || ''} onChange={e => setSel(months.find(m => m.key === e.target.value) || null)} className="mb-4" style={{ maxWidth: 200 }}>
@@ -168,7 +179,7 @@ function MonthlyPane({ competitionId, months, userId }) {
       <Card raised className="p-4 mb-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{sel?.label} — gameweeks</p>
-          <span className="text-xs" style={{ color:upcomingGWs.length===0&&completedGWs.length>0?'var(--green)':'var(--amber)' }}>
+          <span className="text-xs" style={{ color: completedGWs.length===gameweeksInMonth.length&&gameweeksInMonth.length>0?'var(--green)':'var(--amber)' }}>
             {completedGWs.length===gameweeksInMonth.length&&gameweeksInMonth.length>0?'Complete':'In progress'}
           </span>
         </div>
@@ -185,7 +196,7 @@ function MonthlyPane({ competitionId, months, userId }) {
           {gameweeksInMonth.length===0&&<span className="text-xs" style={{ color:'var(--txt-muted)' }}>No gameweeks assigned yet</span>}
         </div>
         <p className="text-xs" style={{ color:'var(--txt-muted)' }}>
-          {gameweeksInMonth.length} gameweek{gameweeksInMonth.length!==1?'s':''} · {completedGWs.length} complete{upcomingGWs.length>0?` · ${upcomingGWs.length} remaining`:''}
+          {gameweeksInMonth.length} gameweek{gameweeksInMonth.length!==1?'s':''} · {completedGWs.length} complete
         </p>
       </Card>
       {loading ? <div className="flex justify-center py-16"><Spinner size="lg"/></div>
@@ -197,10 +208,9 @@ function MonthlyPane({ competitionId, months, userId }) {
                 {sel?.label} is still open — a winner will show once the admin closes this month.
               </div>
           }
-          <div className="grid grid-cols-3 gap-2.5 mb-4">
-            <StatCard label="Current leader" value={winner?.display_name?.split(' ')[0]||'—'} sub={`${winner?.total_points||0} pts`}/>
+          <div className="grid grid-cols-2 gap-2.5 mb-4">
+            <StatCard label="Current leader" value={winner?.display_name?.split(' ')[0]||'—'} sub={`${winner?.total_points||0} pts${winnerUsedTp?' ⚡':''}`}/>
             <StatCard label="Your position" value={`#${monthly.findIndex(p=>p.user_id===userId)+1||'—'}`} sub={`${monthly.find(p=>p.user_id===userId)?.total_points||0} pts`}/>
-            <StatCard label="GWs remaining" value={upcomingGWs.length} sub="still to play"/>
           </div>
           <Podium rankings={monthly.slice(0,3)} userId={userId}/>
           <SectionLabel className="mb-2">Full monthly standings</SectionLabel>
@@ -213,14 +223,34 @@ function MonthlyPane({ competitionId, months, userId }) {
                   <th style={{ width:54,textAlign:'right',paddingRight:14 }}>Total</th>
                 </tr></thead>
                 <tbody>
-                  {monthly.map((p,i)=>(
+                  {monthly.map((p,i)=>{
+                    const userTpGwIds = tpPlaysByUser[p.user_id] || []
+                    return (
                     <tr key={p.user_id} className={p.user_id===userId?'highlight':''}>
                       <td style={{ paddingLeft:14 }}><span style={{ fontSize:12,fontWeight:500,color:i===0?'var(--gold)':i===1?'#b4b2a9':i===2?'#f0997b':'var(--txt-muted)' }}>{i+1}</span></td>
                       <td><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.display_name}{p.user_id===userId&&<span className="ml-1 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}</p></td>
-                      {gameweeksInMonth.map(gw=><td key={gw.id} className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{p.gw_breakdown?.[gw.id]??'—'}</td>)}
+                      {gameweeksInMonth.map(gw=>{
+                        const pts = p.gw_breakdown?.[gw.id]
+                        const isTp = userTpGwIds.includes(gw.id)
+                        return (
+                          <td key={gw.id} className="text-right" style={{ padding:'6px 4px' }}>
+                            {pts != null
+                              ? <span className="text-xs font-medium" style={{
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                  minWidth: isTp ? 24 : 'auto', minHeight: isTp ? 24 : 'auto',
+                                  borderRadius: isTp ? '50%' : undefined,
+                                  background: isTp ? 'var(--gold)' : 'transparent',
+                                  color: isTp ? 'var(--bg-base)' : 'var(--txt-second)',
+                                  fontWeight: isTp ? 700 : 400,
+                                }}>{pts}</span>
+                              : <span className="text-xs" style={{ color:'var(--txt-muted)' }}>—</span>
+                            }
+                          </td>
+                        )
+                      })}
                       <td style={{ textAlign:'right',paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points}</span></td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>

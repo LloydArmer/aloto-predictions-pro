@@ -190,6 +190,7 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
   const [fixtures, setFixtures] = useState([])
   const [participants, setParticipants] = useState([])
   const [predMap, setPredMap] = useState({})
+  const [tpUsers, setTpUsers] = useState(new Set()) // user_ids who played TP in this GW
   const [cupFixtures, setCupFixtures] = useState([]) // bracket or group matches for this GW
   const [loading, setLoading] = useState(true)
   const isGroup = compFormat === 'group_knockout'
@@ -232,6 +233,11 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
       const map = {}
       ;(preds || []).forEach(p => { if (!map[p.user_id]) map[p.user_id] = {}; map[p.user_id][p.fixture_id] = p })
       setPredMap(map)
+      // Fetch TP plays for this specific GW — only for League competitions
+      if (!isCupFormat && competitionId && gwId) {
+        const { data: tp } = await supabase.from('triple_points_plays').select('user_id').eq('competition_id', competitionId).eq('gameweek_id', gwId)
+        setTpUsers(new Set((tp||[]).map(t => t.user_id)))
+      }
     } finally { setLoading(false) }
   }
 
@@ -288,10 +294,11 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
         <Card className="overflow-hidden p-0">
           <p className="text-sm font-semibold p-4 pb-3" style={{ color:'var(--txt-primary)' }}>Predictions & Points</p>
           <div className="overflow-x-auto">
-            <table className="data-table w-full" style={{ minWidth: 190 + fixtures.length * 100 }}>
+            <table className="data-table w-full" style={{ minWidth: 190 + fixtures.length * 100 + (tpUsers.size > 0 ? 60 : 0) }}>
               <thead><tr>
                 <th style={{ width: 110, paddingLeft: 14 }}>Participant</th>
                 {fixtures.map(f => <th key={f.id} style={{ width: 100, textAlign:'center', fontSize: 10, lineHeight: 1.3 }}>{f.home_team}<br/>v<br/>{f.away_team}</th>)}
+                {tpUsers.size > 0 && <th style={{ width: 50, textAlign:'center', fontSize: 10 }}>⚡ TP</th>}
                 <th style={{ width: 70, textAlign:'center', fontSize: 10 }}>Total</th>
               </tr></thead>
               <tbody>
@@ -333,6 +340,14 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                         </td>
                       )
                     })}
+                    {tpUsers.size > 0 && (
+                      <td style={{ textAlign:'center' }}>
+                        {tpUsers.has(p.user_id)
+                          ? <span style={{ color:'var(--gold)', fontSize:14 }}>⚡</span>
+                          : <span style={{ color:'var(--txt-muted)', fontSize:11 }}>—</span>
+                        }
+                      </td>
+                    )}
                     <td style={{ textAlign:'center', borderLeft: '0.5px solid var(--border)' }}>
                       <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>{total || '—'}</span>
                     </td>

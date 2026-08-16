@@ -20,10 +20,11 @@ export default function Dashboard() {
   const [stats,   setStats]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [rules,   setRules]   = useState(null)
+  const [myTpPlays, setMyTpPlays] = useState([]) // [{ half, gameweek_id, gameweek_number, points }]
   const [groupStanding, setGroupStanding] = useState(null)
   const [groupTop3, setGroupTop3] = useState([])
   const [bracketStatus, setBracketStatus] = useState(null)
-  const [pendingGws, setPendingGws] = useState([]) // [{ id, number, pendingCount }]
+  const [pendingGws, setPendingGws] = useState([])
   const { overall } = useLeaderboard(comp)
   const compObj = competitions.find(c => c.id === comp)
 
@@ -135,6 +136,21 @@ export default function Dashboard() {
       if (scores?.length) setStats({ total: scores.reduce((a,b)=>a+(b.points||0),0), exact: scores.reduce((a,b)=>a+(b.exact_scores||0),0), correct: scores.reduce((a,b)=>a+(b.correct_results||0),0) })
       const r = await resolvePointRules(supabase, comp)
       setRules(r)
+
+      // Fetch user's own Triple Points plays with gameweek labels and earned points
+      if (compObj?.format === 'league') {
+        const { data: plays } = await supabase.from('triple_points_plays').select('half, gameweek_id').eq('competition_id', comp).eq('user_id', user.id)
+        if (plays?.length) {
+          const gwIds = plays.map(p => p.gameweek_id)
+          const { data: gws } = await supabase.from('gameweeks').select('id, number').in('id', gwIds)
+          const { data: gwScores } = await supabase.from('gameweek_scores').select('gameweek_id, points').eq('competition_id', comp).eq('user_id', user.id).in('gameweek_id', gwIds)
+          const gwMap = {}; (gws||[]).forEach(g => { gwMap[g.id] = g.number })
+          const ptMap = {}; (gwScores||[]).forEach(s => { ptMap[s.gameweek_id] = s.points })
+          setMyTpPlays((plays||[]).map(p => ({ half: p.half, gameweek_id: p.gameweek_id, gameweek_number: gwMap[p.gameweek_id] || '?', points: ptMap[p.gameweek_id] || 0 })))
+        } else {
+          setMyTpPlays([])
+        }
+      }
     } finally { setLoading(false) }
   }
 
@@ -181,12 +197,33 @@ export default function Dashboard() {
       ) : (
         <>
           {compObj?.format === 'league' && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5">
+            <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-3">
               <StatCard label="Your rank"       value={myRank ? `#${myRank}` : '—'} sub={`of ${overall.length} players`}/>
               <StatCard label="Total points"    value={stats?.total ?? 0}  sub="this season"/>
               <StatCard label="Exact scores"    value={stats?.exact ?? 0}  sub="bonus pts earned"/>
               <StatCard label="Correct results" value={stats?.correct ?? 0} sub="correct predictions"/>
             </div>
+            {myTpPlays.length > 0 && (
+              <div className="grid grid-cols-2 gap-2.5 mb-5">
+                {['first','second'].map(half => {
+                  const play = myTpPlays.find(p => p.half === half)
+                  return (
+                    <Card key={half} className="p-3" style={{ background: play ? 'var(--gold-dim)' : 'var(--bg-surface)', borderColor: play ? 'rgba(245,200,66,0.3)' : undefined }}>
+                      <p className="text-xs mb-0.5" style={{ color: 'var(--txt-muted)' }}>⚡ Triple Points {half === 'first' ? '1 (Aug–Dec)' : '2 (Jan–May)'}</p>
+                      {play
+                        ? <><p className="text-sm font-bold" style={{ color: 'var(--gold)' }}>GW{play.gameweek_number} — {play.points} pts</p>
+                            <p className="text-xs" style={{ color: 'var(--gold)', opacity: 0.8 }}>Used</p></>
+                        : <><p className="text-sm font-medium" style={{ color: 'var(--txt-second)' }}>Not used yet</p>
+                            <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Available</p></>
+                      }
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+            {myTpPlays.length === 0 && <div className="mb-5"/>}
+            </>
           )}
 
           {groupStanding && (
@@ -320,7 +357,7 @@ export default function Dashboard() {
                       {p.display_name}
                       {p.user_id === user?.id && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
                     </p>
-                    <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.exact_scores||0} exact · {p.correct_results||0} results</p>
+                    <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.exact_scores||0} exact · {p.correct_results||0} results{(p.tp1_gameweek_id || p.tp2_gameweek_id) ? ' · ⚡ TP used' : ''}</p>
                   </div>
                 </div>
                 <span className="text-base font-medium" style={{ color: ptColors[i] }}>{p.total_points} pts</span>
