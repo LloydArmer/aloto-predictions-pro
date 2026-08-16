@@ -1266,10 +1266,10 @@ function BracketTab({ competitionId, competitions }) {
     load()
   }
 
-  async function resolve() {
+  async function resolveBracketRoundForCurrentRound(roundValue) {
     setResolving(true)
     try {
-      const result = await resolveBracketRound(supabase, competitionId, round)
+      const result = await resolveBracketRound(supabase, competitionId, roundValue)
       if (result.replaysScheduled) toast.success(`${result.resolved} resolved, ${result.replaysScheduled} drawn — replay${result.replaysScheduled !== 1 ? 's' : ''} scheduled automatically`)
       else toast.success(`${result.resolved} match${result.resolved !== 1 ? 'es' : ''} resolved`)
       load()
@@ -1397,8 +1397,8 @@ function BracketTab({ competitionId, competitions }) {
                       </div>
                     )}
                     {r === currentRound && !isBye && m.status !== 'completed' && (
-                      <Button size="sm" variant="primary" className="mt-2" onClick={() => resolveRound(r)} disabled={resolving === r}>
-                        {resolving === r ? 'Resolving…' : `Resolve ${roundLabel(r)}`}
+                      <Button size="sm" variant="primary" className="mt-2" onClick={() => resolveBracketRoundForCurrentRound(r)} disabled={resolving}>
+                        {resolving ? 'Resolving…' : `Resolve ${roundLabel(r)}`}
                       </Button>
                     )}
                   </Card>
@@ -1408,6 +1408,15 @@ function BracketTab({ competitionId, competitions }) {
           )
         })
       })()}
+
+      {hasAnyMatches && !currentRoundResolved && currentRound && (
+        <div className="mt-3 mb-2">
+          <Button variant="primary" onClick={() => resolveBracketRoundForCurrentRound(currentRound)} disabled={resolving}>
+            {resolving ? 'Resolving…' : `Resolve ${roundLabel(currentRound)} from gameweek points`}
+          </Button>
+          <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>Compares each participant's GW points to decide who advances. Make sure the gameweek is marked completed first.</p>
+        </div>
+      )}
 
       {hasAnyMatches && currentRoundResolved && nextRound && !nextRoundHasMatches && (
         <Card className="p-4 mt-2" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.35)' }}>
