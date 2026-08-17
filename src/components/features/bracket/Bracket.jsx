@@ -82,7 +82,7 @@ function MatchLeg({ match, userId, livePts = {} }) {
   )
 }
 
-function MatchCard({ match, userId, roundLabel, livePtsByMatch = {} }) {
+function MatchCard({ match, userId, roundLabel, livePtsByMatch = {}, gwNames = {} }) {
   // `replays` is a chain, oldest first — a second or third replay is possible
   // and each one needs to appear under the last.
   const replays = match.replays || []
@@ -98,7 +98,13 @@ function MatchCard({ match, userId, roundLabel, livePtsByMatch = {} }) {
       {match.status === 'replay_scheduled' && <AmberBanner>Drawn — replay scheduled below</AmberBanner>}
       {replays.map((r, i) => (
         <div key={r.id}>
-          <AmberBanner bold>{replayLabel(i)}</AmberBanner>
+          {/* A replay has its own gameweek rather than the round's, so it's
+              named on the replay row itself. */}
+          <AmberBanner bold>
+            {replayLabel(i)}
+            {r.gameweek_id && gwNames[r.gameweek_id] &&
+              <span className="font-normal" style={{ opacity: 0.85 }}> · decided on {gwNames[r.gameweek_id]}</span>}
+          </AmberBanner>
           <MatchLeg match={r} userId={userId} livePts={livePtsByMatch[r.id] || {}} />
           {r.status !== 'completed' && !r.gameweek_id && (
             <AmberBanner>Awaiting a gameweek — an admin needs to assign one</AmberBanner>
@@ -279,6 +285,7 @@ export default function Bracket() {
   const [comp, setComp] = useSelectedCompetition(competitions)
   const [rounds, setRounds] = useState([])
   const [liveKnockoutPts, setLiveKnockoutPts] = useState({}) // { matchId: { userId: pts } }
+  const [gwNames, setGwNames] = useState({}) // { gameweekId: 'GW3' }
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { if (comp) load(); else setLoading(false) }, [comp])
@@ -354,6 +361,29 @@ export default function Bracket() {
         })
       })
 
+      // Which gameweek(s) decide each round. Held in state as well as used for
+      // live points, because participants need to see it — a cup round has
+      // nothing to predict on its own screen, so the gameweek it's settled on is
+      // the only actionable detail on the page.
+      const { data: roundGws } = await supabase.from('bracket_round_gameweeks')
+        .select('round, gameweek_id').eq('competition_id', comp)
+      const roundGwMap = {}
+      ;(roundGws || []).forEach(r => { (roundGwMap[r.round] = roundGwMap[r.round] || []).push(r.gameweek_id) })
+
+      const wantedGwIds = [...new Set([
+        ...(roundGws || []).map(r => r.gameweek_id),
+        ...all.map(m => m.gameweek_id),
+      ].filter(Boolean))]
+      const { data: gwRows } = wantedGwIds.length
+        ? await supabase.from('gameweeks').select('id, number').in('id', wantedGwIds)
+        : { data: [] }
+      const names = {}; (gwRows || []).forEach(g => { names[g.id] = g.number })
+      setGwNames(names)
+
+      visibleRounds.forEach(r => {
+        r.gwLabel = (roundGwMap[r.round] || []).map(id => names[id]).filter(Boolean).join(', ') || null
+      })
+
       setRounds(visibleRounds)
 
       // Live points for unresolved matches. Scores are fetched by gameweek_id
@@ -364,10 +394,6 @@ export default function Bracket() {
       // every gameweek in play and the same figure shown on all of that user's
       // matches, so a participant in two unresolved matches saw their combined
       // total on both — a number that matched neither match.
-      const { data: roundGws } = await supabase.from('bracket_round_gameweeks')
-        .select('round, gameweek_id').eq('competition_id', comp)
-      const roundGwMap = {}
-      ;(roundGws || []).forEach(r => { (roundGwMap[r.round] = roundGwMap[r.round] || []).push(r.gameweek_id) })
       // A replay is decided on its own assigned gameweek; an ordinary match on
       // the round's shared gameweeks.
       const gwIdsFor = m => m.gameweek_id ? [m.gameweek_id] : (m.is_replay ? [] : (roundGwMap[m.round] || []))
@@ -417,9 +443,17 @@ export default function Bracket() {
           <div className="mb-4 p-3 rounded-md text-xs" style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)' }}>
             <span style={{ color: 'var(--txt-second)' }}>Matchups are decided automatically by prediction points earned in the gameweek(s) assigned to each round — no separate prediction needed here.</span>
           </div>
-          {rounds.map(({ round, matches, byes, nextRoundLabel }) => (
+          {rounds.map(({ round, matches, byes, nextRoundLabel, gwLabel }) => (
             <div key={round} className="mb-5">
-              <SectionLabel className="mb-2">{ROUND_LABELS[round] || round}</SectionLabel>
+              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <SectionLabel>{ROUND_LABELS[round] || round}</SectionLabel>
+                {/* The gameweek this round is settled on. There's nothing to
+                    predict on this screen, so this is what tells a participant
+                    where their cup points are actually coming from. */}
+                {gwLabel
+                  ? <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: 'var(--accent-dim)', color: 'var(--accent)' }}>Decided on {gwLabel}</span>
+                  : <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-muted)' }}>Gameweek TBC</span>}
+              </div>
               {/* items-start: without it, a short card in the same row as a
                   tall one (a match with replays) stretches and gains dead
                   space under its last row. */}
@@ -431,6 +465,7 @@ export default function Bracket() {
                     userId={user?.id}
                     roundLabel={ROUND_LABELS[round] || round}
                     livePtsByMatch={liveKnockoutPts}
+                    gwNames={gwNames}
                   />
                 ))}
               </div>

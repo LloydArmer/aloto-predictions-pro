@@ -43,7 +43,7 @@ export default function Dashboard() {
       // For a Group + Knockout competition, the "cup" section shows the
       // participant's next upcoming group fixture, not a bracket match.
       const { data: gfx } = await supabase.from('group_fixtures')
-        .select('*, home:home_user_id(display_name), away:away_user_id(display_name)')
+        .select('*, home:home_user_id(display_name), away:away_user_id(display_name), gameweeks(number)')
         .eq('competition_id', comp)
         .or(`home_user_id.eq.${user.id},away_user_id.eq.${user.id}`)
         .order('round_number')
@@ -57,6 +57,7 @@ export default function Dashboard() {
         isGroup: true,
         lastCompleted: lastCompleted ? {
           round: `Round ${lastCompleted.round_number}`,
+          gwLabel: lastCompleted.gameweeks?.number || null,
           oppName: lastCompleted.home_user_id === user.id ? lastCompleted.away?.display_name : lastCompleted.home?.display_name,
           myPts: lastCompleted.home_user_id === user.id ? lastCompleted.home_points : lastCompleted.away_points,
           oppPts: lastCompleted.home_user_id === user.id ? lastCompleted.away_points : lastCompleted.home_points,
@@ -65,6 +66,7 @@ export default function Dashboard() {
         } : null,
         nextMatch: nextMatch ? {
           round: `Round ${nextMatch.round_number}`,
+          gwLabel: nextMatch.gameweeks?.number || null,
           oppName: nextMatch.home_user_id === user.id ? nextMatch.away?.display_name : nextMatch.home?.display_name,
         } : null,
       })
@@ -83,7 +85,35 @@ export default function Dashboard() {
     const lastCompleted = [...myMatches].filter(m => m.status === 'completed').pop()
     const nextMatch = myMatches.find(m => m.status !== 'completed')
 
-    setBracketStatus({ isGroup: false, lastCompleted, nextMatch })
+    // Which gameweek decides a knockout match isn't stored on the match itself
+    // unless it's a replay — ordinary matches take the round's shared mapping,
+    // so resolve the label from both sources.
+    const { data: roundGws } = await supabase.from('bracket_round_gameweeks')
+      .select('round, gameweek_id').eq('competition_id', comp)
+    const roundGwIds = {}
+    ;(roundGws || []).forEach(r => { (roundGwIds[r.round] = roundGwIds[r.round] || []).push(r.gameweek_id) })
+
+    const wantedIds = [...new Set([
+      ...(roundGws || []).map(r => r.gameweek_id),
+      ...myMatches.map(m => m.gameweek_id),
+    ].filter(Boolean))]
+    const { data: gwRows } = wantedIds.length
+      ? await supabase.from('gameweeks').select('id, number').in('id', wantedIds)
+      : { data: [] }
+    const gwName = {}; (gwRows || []).forEach(g => { gwName[g.id] = g.number })
+
+    const labelFor = m => {
+      if (!m) return null
+      const ids = m.gameweek_id ? [m.gameweek_id] : (m.is_replay ? [] : (roundGwIds[m.round] || []))
+      const names = ids.map(id => gwName[id]).filter(Boolean)
+      return names.length ? names.join(', ') : null
+    }
+
+    setBracketStatus({
+      isGroup: false,
+      lastCompleted: lastCompleted ? { ...lastCompleted, gwLabel: labelFor(lastCompleted) } : null,
+      nextMatch: nextMatch ? { ...nextMatch, gwLabel: labelFor(nextMatch) } : null,
+    })
   }
 
   async function loadGroupStanding() {
@@ -253,9 +283,10 @@ export default function Dashboard() {
                   <div className="mb-3 pb-3" style={{ borderBottom: bracketStatus.nextMatch ? '0.5px solid var(--border)' : '' }}>
                     <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Last result · {roundLabel}</p>
                     <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp}</p>
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-base font-bold" style={{ color: won ? 'var(--green)' : drawn ? 'var(--amber)' : 'var(--red)' }}>{myPts} – {oppPts}</span>
                       <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: won ? 'var(--green-dim)' : drawn ? 'var(--amber-dim)' : 'var(--red-dim)', color: won ? 'var(--green)' : drawn ? 'var(--amber)' : 'var(--red)' }}>{won ? 'Won' : drawn ? 'Draw' : 'Lost'}</span>
+                      {m.gwLabel && <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-second)' }}>{m.gwLabel}</span>}
                     </div>
                   </div>
                 )
@@ -267,7 +298,15 @@ export default function Dashboard() {
                 return (
                   <div>
                     <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Next up · {roundLabel}{!bracketStatus.isGroup && m.is_replay ? ' (Replay)' : ''}</p>
-                    <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp || 'To be defined'}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>vs {opp || 'To be defined'}</p>
+                      {/* Which gameweek decides this round — the thing participants
+                          most need to know, since there's nothing to predict on the
+                          cup screen itself. */}
+                      {m.gwLabel
+                        ? <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: 'var(--accent-dim)', color: 'var(--accent)' }}>Decided on {m.gwLabel}</span>
+                        : <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-muted)' }}>Gameweek TBC</span>}
+                    </div>
                   </div>
                 )
               })()}
