@@ -157,19 +157,61 @@ export async function resolveBracketRound(supabase, competitionId, round) {
 
   const { data: matches } = await supabase.from('bracket_matches').select('*').eq('competition_id', competitionId).eq('round', round)
   const all = matches || []
-  const results = { resolved: 0, replaysScheduled: 0, notReady: 0 }
+  const results = { resolved: 0, replaysScheduled: 0, notReady: 0, surplusRemoved: 0 }
 
   const samePair = (x, y) =>
     (x.home_user_id === y.home_user_id && x.away_user_id === y.away_user_id) ||
     (x.home_user_id === y.away_user_id && x.away_user_id === y.home_user_id)
 
-  // Is there already a replay for this matchup that hasn't been settled?
-  // Without this check, a drawn match schedules a fresh replay on every
-  // single resolve run.
-  const hasOpenReplay = m => all.some(r => r.is_replay && r.id !== m.id && r.status !== 'completed' && samePair(r, m))
+  // A matchup is a CHAIN: the original, then replay 1, then replay 2, and so on,
+  // in creation order. Both helpers below reason about that chain rather than
+  // about a single match in isolation.
+  const laterLegs = m => all.filter(r =>
+    r.is_replay && r.id !== m.id && samePair(r, m) &&
+    new Date(r.created_at) > new Date(m.created_at))
+
+  // Only the LAST leg of a chain can spawn a replay. Checking merely for an
+  // *unsettled* replay wasn't enough: once a replay was completed it stopped
+  // counting, so the original — still drawn, still not completed — scheduled a
+  // fresh replay on every resolve run, forever.
+  const hasLaterLeg = m => laterLegs(m).length > 0
+
+  // The leg that actually settled this matchup, if a later one has been decided.
+  const deciderFor = m => laterLegs(m).find(r => r.status === 'completed' && r.winner_user_id)
+
+  // A leg created AFTER the matchup was already won. A healthy chain never
+  // produces one — an earlier leg is only followed by another if it was DRAWN,
+  // never if it was won — so these are leftovers from the runaway-replay bug.
+  const followsADecidedLeg = m => all.some(r =>
+    r.id !== m.id && samePair(r, m) &&
+    new Date(r.created_at) < new Date(m.created_at) &&
+    r.status === 'completed' && r.winner_user_id)
 
   for (const m of all) {
     if (m.status === 'completed') continue
+
+    // Clear out those leftovers. Only ones that were never played are removed,
+    // so nothing with a real result is discarded. Left in place they sat
+    // permanently unresolved and held the whole round open.
+    if (m.is_replay && !m.gameweek_id && followsADecidedLeg(m)) {
+      await supabase.from('bracket_matches').delete().eq('id', m.id)
+      results.surplusRemoved++
+      continue
+    }
+
+    // Settled by a later leg. The winner of the replay is the winner of the
+    // matchup, so record it here and close this leg off. Left sitting at
+    // 'replay_scheduled', the original kept the round permanently "in progress"
+    // — which is what stopped the next round from being resolvable — and, being
+    // still drawn on its own gameweek, kept generating further replays.
+    const decider = deciderFor(m)
+    if (decider) {
+      await supabase.from('bracket_matches').update({
+        winner_user_id: decider.winner_user_id, status: 'completed',
+      }).eq('id', m.id)
+      results.resolved++
+      continue
+    }
 
     // Bye — only one side of the matchup is set
     if (m.home_user_id && !m.away_user_id) {
@@ -220,9 +262,9 @@ export async function resolveBracketRound(supabase, competitionId, round) {
         winner_user_id: winner, home_points: h, away_points: a, status: 'completed',
       }).eq('id', m.id)
       results.resolved++
-    } else if (hasOpenReplay(m)) {
-      // Genuinely drawn, but a replay is already waiting on this matchup.
-      // Record the scoreline and leave it alone.
+    } else if (hasLaterLeg(m)) {
+      // Genuinely drawn, and the chain already continues past this leg.
+      // Record the scoreline and leave the replay that follows it alone.
       await supabase.from('bracket_matches').update({
         home_points: h, away_points: a, status: 'replay_scheduled',
       }).eq('id', m.id)

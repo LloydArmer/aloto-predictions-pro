@@ -1294,8 +1294,17 @@ function BracketTab({ competitionId, competitions }) {
     setResolving(true)
     try {
       const result = await resolveBracketRound(supabase, competitionId, roundValue)
-      if (result.replaysScheduled) toast.success(`${result.resolved} resolved, ${result.replaysScheduled} drawn — replay${result.replaysScheduled !== 1 ? 's' : ''} scheduled automatically`)
-      else toast.success(`${result.resolved} match${result.resolved !== 1 ? 'es' : ''} resolved`)
+      // Report every outcome, not just the successes. A run that resolves
+      // nothing usually means a gameweek isn't marked completed or a replay has
+      // no gameweek assigned — silence there just looks like the button is broken.
+      const parts = []
+      if (result.resolved) parts.push(`${result.resolved} resolved`)
+      if (result.replaysScheduled) parts.push(`${result.replaysScheduled} drawn — replay${result.replaysScheduled !== 1 ? 's' : ''} scheduled`)
+      if (result.surplusRemoved) parts.push(`${result.surplusRemoved} surplus replay${result.surplusRemoved !== 1 ? 's' : ''} cleared`)
+      if (result.notReady) parts.push(`${result.notReady} not ready`)
+      if (!parts.length) toast.success('Nothing to resolve — every match in this round is already settled')
+      else if (result.notReady && !result.resolved) toast.error(`${parts.join(', ')} — check the gameweek is marked completed, and that any replay has its own gameweek set`)
+      else toast.success(parts.join(', '))
       load()
     } catch { toast.error('Could not resolve round') }
     finally { setResolving(false) }
