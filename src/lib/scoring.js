@@ -156,14 +156,8 @@ export async function resolveBracketRound(supabase, competitionId, round) {
   const roundGwIds = (roundGws || []).map(r => r.gameweek_id)
 
   const { data: matches } = await supabase.from('bracket_matches').select('*').eq('competition_id', competitionId).eq('round', round)
-  const results = { resolved: 0, replaysScheduled: 0 }
-
-  // Scores are recorded against whichever competition's predictions are
-  // being used — for a Knockout/Group+Knockout that borrows rules from a
-  // League, the scores live under the source competition's ID, not the
-  // knockout competition's ID.
-  const { data: comp } = await supabase.from('competitions').select('rules_source_competition_id').eq('id', competitionId).maybeSingle()
-  const scoreCompId = comp?.rules_source_competition_id || competitionId
+  const all = matches || []
+  const results = { resolved: 0, replaysScheduled: 0, notReady: 0 }
 
   async function advance(match, winnerId) {
     if (match.feeds_into_match_id && match.feeds_into_side) {
@@ -171,7 +165,16 @@ export async function resolveBracketRound(supabase, competitionId, round) {
     }
   }
 
-  for (const m of (matches || [])) {
+  const samePair = (x, y) =>
+    (x.home_user_id === y.home_user_id && x.away_user_id === y.away_user_id) ||
+    (x.home_user_id === y.away_user_id && x.away_user_id === y.home_user_id)
+
+  // Is there already a replay for this matchup that hasn't been settled?
+  // Without this check, a drawn match schedules a fresh replay on every
+  // single resolve run.
+  const hasOpenReplay = m => all.some(r => r.is_replay && r.id !== m.id && r.status !== 'completed' && samePair(r, m))
+
+  for (const m of all) {
     if (m.status === 'completed') continue
 
     // Bye — only one side of the matchup is set
@@ -185,10 +188,22 @@ export async function resolveBracketRound(supabase, competitionId, round) {
       await advance(m, m.away_user_id)
       results.resolved++; continue
     }
-    // A match assigned its own gameweek (e.g. a replay) uses that one
-    // specifically; otherwise it falls back to the round's shared mapping.
-    const gwIds = m.gameweek_id ? [m.gameweek_id] : roundGwIds
-    if (!m.home_user_id || !m.away_user_id || !gwIds.length) continue
+    if (!m.home_user_id || !m.away_user_id) continue
+
+    // Which gameweeks decide this match? A REPLAY must have its own
+    // admin-assigned gameweek. It deliberately does NOT fall back to the
+    // round's shared gameweeks: replaying the same gameweek recomputes the
+    // exact totals that caused the draw, draws again, and schedules yet
+    // another replay — forever. An unassigned replay is simply not ready.
+    const gwIds = m.gameweek_id ? [m.gameweek_id] : (m.is_replay ? [] : roundGwIds)
+    if (!gwIds.length) { results.notReady++; continue }
+
+    // Nothing is decided until every gameweek feeding this match is marked
+    // completed. Resolving early gives both participants 0, which looks like
+    // a draw and schedules a replay for a match nobody has played yet.
+    const { data: gws } = await supabase.from('gameweeks').select('id, status').in('id', gwIds)
+    const allComplete = (gws || []).length === gwIds.length && (gws || []).every(g => g.status === 'completed')
+    if (!allComplete) { results.notReady++; continue }
 
     const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points')
       .in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
@@ -214,11 +229,18 @@ export async function resolveBracketRound(supabase, competitionId, round) {
       }).eq('id', m.id)
       await advance(m, winner)
       results.resolved++
+    } else if (hasOpenReplay(m)) {
+      // Genuinely drawn, but a replay is already waiting on this matchup.
+      // Record the scoreline and leave it alone.
+      await supabase.from('bracket_matches').update({
+        home_points: h, away_points: a, status: 'replay_scheduled',
+      }).eq('id', m.id)
+      results.notReady++
     } else {
-      // A genuine draw — automatically schedule a replay between the same
-      // two participants, rather than requiring a manual winner pick. The
-      // replay inherits this match's forward link (it's now the one that
-      // decides who advances); the original match no longer carries one.
+      // A genuine draw with no replay pending — schedule one. The replay
+      // inherits this match's forward link (it's now the one that decides who
+      // advances); the original match no longer carries one. It starts with no
+      // gameweek_id: an admin must assign the gameweek it will be decided on.
       await supabase.from('bracket_matches').update({
         home_points: h, away_points: a, status: 'replay_scheduled', feeds_into_match_id: null, feeds_into_side: null,
       }).eq('id', m.id)

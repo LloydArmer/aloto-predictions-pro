@@ -8,6 +8,9 @@ import { Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 
 const ROUND_LABELS = { playoff:'Playoff', r64:'Round of 64', r32:'Round of 32', r16:'Round of 16', qf:'Quarter-finals', sf:'Semi-finals', f:'Final' }
+// Bracket order, earliest round first — used to sort the rounds on screen and
+// to work out which round a bye carries a participant into.
+const ROUND_SEQUENCE = ['playoff', 'r64', 'r32', 'r16', 'qf', 'sf', 'f']
 
 // One participant line. `showWinnerHighlight` is an explicit prop rather than
 // something read from an enclosing scope — a completed REPLAY nested inside a
@@ -79,21 +82,27 @@ function MatchLeg({ match, userId, livePts = {} }) {
   )
 }
 
-function MatchCard({ match, userId, livePts = {} }) {
+function MatchCard({ match, userId, roundLabel, livePtsByMatch = {} }) {
   // `replays` is a chain, oldest first — a second or third replay is possible
   // and each one needs to appear under the last.
   const replays = match.replays || []
+  // Replays are named after the round they belong to ("Playoff replay"), so a
+  // card read on its own still says which stage of the cup it decides.
+  const replayLabel = i => `${roundLabel} replay${replays.length > 1 ? ` ${i + 1}` : ''}`
 
   return (
     // No bottom margin: the parent grid supplies gap-3, and having both made
     // the space between cards double the space the layout was designed for.
     <div className="rounded-md overflow-hidden" style={{ border: '0.5px solid var(--border-med)', background: 'var(--bg-surface)' }}>
-      <MatchLeg match={match} userId={userId} livePts={livePts} />
+      <MatchLeg match={match} userId={userId} livePts={livePtsByMatch[match.id] || {}} />
       {match.status === 'replay_scheduled' && <AmberBanner>Drawn — replay scheduled below</AmberBanner>}
       {replays.map((r, i) => (
         <div key={r.id}>
-          <AmberBanner bold>{replays.length > 1 ? `Replay ${i + 1}` : 'Replay'}</AmberBanner>
-          <MatchLeg match={r} userId={userId} livePts={livePts} />
+          <AmberBanner bold>{replayLabel(i)}</AmberBanner>
+          <MatchLeg match={r} userId={userId} livePts={livePtsByMatch[r.id] || {}} />
+          {r.status !== 'completed' && !r.gameweek_id && (
+            <AmberBanner>Awaiting a gameweek — an admin needs to assign one</AmberBanner>
+          )}
           {r.status === 'replay_scheduled' && (
             <AmberBanner>
               {i === replays.length - 1 ? 'Still drawn — another replay needed' : 'Drawn — replay scheduled below'}
@@ -269,7 +278,7 @@ export default function Bracket() {
   const { competitions } = useCompetitions()
   const [comp, setComp] = useSelectedCompetition(competitions)
   const [rounds, setRounds] = useState([])
-  const [liveKnockoutPts, setLiveKnockoutPts] = useState({}) // { userId: pts } for current active round
+  const [liveKnockoutPts, setLiveKnockoutPts] = useState({}) // { matchId: { userId: pts } }
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { if (comp) load(); else setLoading(false) }, [comp])
@@ -302,36 +311,97 @@ export default function Bracket() {
         rm[m.round].push({ ...m, replays })
       })
 
-      // Only include a round if at least one match has both participants known
+      // Only include a round if at least one match has both participants known,
+      // then put the rounds in actual bracket order — the query is sorted by
+      // round_order, which orders matches WITHIN a round and says nothing about
+      // which round comes first.
       const visibleRounds = Object.entries(rm)
         .filter(([, ms]) => ms.some(m => m.home_user_id && m.away_user_id))
         .map(([round, ms]) => ({ round, matches: ms }))
+        .sort((a, b) => {
+          const ia = ROUND_SEQUENCE.indexOf(a.round), ib = ROUND_SEQUENCE.indexOf(b.round)
+          return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+        })
+
+      // Byes. A participant who appears in the NEXT round without having played
+      // in this one went through on a bye. (A bye stored as a one-sided match
+      // still renders inline in the bracket; this catches participants seeded
+      // straight into the later round, which is the common case.)
+      const nameOf = uid => {
+        for (const m of all) {
+          if (m.home_user_id === uid && m.home?.display_name) return m.home.display_name
+          if (m.away_user_id === uid && m.away?.display_name) return m.away.display_name
+        }
+        return 'Unknown'
+      }
+      visibleRounds.forEach((r, i) => {
+        const next = visibleRounds[i + 1]
+        r.nextRoundLabel = next ? (ROUND_LABELS[next.round] || next.round) : null
+        r.byes = []
+        if (!next) return
+        const playedHere = new Set()
+        r.matches.forEach(m => {
+          ;[m.home_user_id, m.away_user_id].forEach(u => u && playedHere.add(u))
+          ;(m.replays || []).forEach(rp => [rp.home_user_id, rp.away_user_id].forEach(u => u && playedHere.add(u)))
+        })
+        const seen = new Set()
+        next.matches.forEach(m => {
+          ;[m.home_user_id, m.away_user_id].forEach(uid => {
+            if (!uid || playedHere.has(uid) || seen.has(uid)) return
+            seen.add(uid)
+            r.byes.push({ user_id: uid, name: nameOf(uid) })
+          })
+        })
+      })
 
       setRounds(visibleRounds)
 
-      // Live points for unresolved knockout matches — fetch by gameweek_id
-      // only, no competition_id filter, since Carabao Test scores are stored
-      // under ALOTO's competition_id not Carabao Test's.
-      // Replays are included here too — a replay has its own admin-assigned
-      // gameweek_id and is exactly the kind of match that needs a live total.
-      const unresolved = all.filter(m => m.status !== 'completed' && m.gameweek_id)
-      const gwIds = [...new Set(unresolved.map(m => m.gameweek_id))]
+      // Live points for unresolved matches. Scores are fetched by gameweek_id
+      // only, with no competition_id filter, since Carabao Test scores are
+      // stored under ALOTO's competition_id not Carabao Test's.
+      //
+      // These are keyed BY MATCH. Previously they were totalled per user across
+      // every gameweek in play and the same figure shown on all of that user's
+      // matches, so a participant in two unresolved matches saw their combined
+      // total on both — a number that matched neither match.
+      const { data: roundGws } = await supabase.from('bracket_round_gameweeks')
+        .select('round, gameweek_id').eq('competition_id', comp)
+      const roundGwMap = {}
+      ;(roundGws || []).forEach(r => { (roundGwMap[r.round] = roundGwMap[r.round] || []).push(r.gameweek_id) })
+      // A replay is decided on its own assigned gameweek; an ordinary match on
+      // the round's shared gameweeks.
+      const gwIdsFor = m => m.gameweek_id ? [m.gameweek_id] : (m.is_replay ? [] : (roundGwMap[m.round] || []))
+
+      const unresolved = all.filter(m => m.status !== 'completed' && m.home_user_id && m.away_user_id)
+      const gwIds = [...new Set(unresolved.flatMap(gwIdsFor))]
       if (gwIds.length) {
         const userIds = [...new Set(unresolved.flatMap(m => [m.home_user_id, m.away_user_id]).filter(Boolean))]
         const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points').in('gameweek_id', gwIds).in('user_id', userIds)
-        // Keep the max points per user+gameweek (same score may exist under
-        // multiple competition_ids), then sum across gameweeks for each user.
+        // Keep the max points per user+gameweek (the same score may exist under
+        // multiple competition_ids).
         const bestPerGw = {} // { 'userId:gwId': maxPts }
         for (const s of (scores || [])) {
           const key = `${s.user_id}:${s.gameweek_id}`
           bestPerGw[key] = Math.max(bestPerGw[key] ?? -Infinity, s.points || 0)
         }
-        const pts = {}
-        for (const [key, p] of Object.entries(bestPerGw)) {
-          const userId = key.split(':')[0]
-          pts[userId] = (pts[userId] || 0) + p
+        const byMatch = {} // { matchId: { userId: pts } }
+        for (const m of unresolved) {
+          const ids = gwIdsFor(m)
+          if (!ids.length) continue
+          const tally = {}
+          for (const uid of [m.home_user_id, m.away_user_id]) {
+            let sum = null
+            for (const g of ids) {
+              const v = bestPerGw[`${uid}:${g}`]
+              if (v != null) sum = (sum ?? 0) + v
+            }
+            // Left undefined when there's no score row at all, so an unplayed
+            // match shows nothing rather than a misleading "0 pts so far".
+            if (sum != null) tally[uid] = sum
+          }
+          byMatch[m.id] = tally
         }
-        setLiveKnockoutPts(pts)
+        setLiveKnockoutPts(byMatch)
       }
     } finally { setLoading(false) }
   }
@@ -347,15 +417,30 @@ export default function Bracket() {
           <div className="mb-4 p-3 rounded-md text-xs" style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)' }}>
             <span style={{ color: 'var(--txt-second)' }}>Matchups are decided automatically by prediction points earned in the gameweek(s) assigned to each round — no separate prediction needed here.</span>
           </div>
-          {rounds.map(({ round, matches }) => (
+          {rounds.map(({ round, matches, byes, nextRoundLabel }) => (
             <div key={round} className="mb-5">
               <SectionLabel className="mb-2">{ROUND_LABELS[round] || round}</SectionLabel>
               {/* items-start: without it, a short card in the same row as a
                   tall one (a match with replays) stretches and gains dead
                   space under its last row. */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
-                {matches.map(m => <MatchCard key={m.id} match={m} userId={user?.id} livePts={liveKnockoutPts} />)}
+                {matches.map(m => (
+                  <MatchCard
+                    key={m.id}
+                    match={m}
+                    userId={user?.id}
+                    roundLabel={ROUND_LABELS[round] || round}
+                    livePtsByMatch={liveKnockoutPts}
+                  />
+                ))}
               </div>
+              {byes?.length > 0 && (
+                <div className="mt-3 px-3 py-2 rounded-md" style={{ background: 'var(--green-dim)', border: '0.5px solid var(--border)' }}>
+                  <span className="text-xs" style={{ color: 'var(--green)' }}>
+                    Bye to {nextRoundLabel}: {byes.map(b => b.name).join(', ')}
+                  </span>
+                </div>
+              )}
             </div>
           ))}
         </>
