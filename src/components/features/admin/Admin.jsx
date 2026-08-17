@@ -1136,11 +1136,13 @@ function BracketTab({ competitionId, competitions }) {
       ;(rgws || []).forEach(r => { if (!map[r.round]) map[r.round] = []; map[r.round].push(r.gameweek_id) })
       setRoundGwMap(map)
 
-      // Fetch live points for every GW assigned to any bracket match —
-      // uses the source competition's scores (same fix as resolveBracketRound).
-      const { data: sourceComp } = await supabase.from('competitions').select('rules_source_competition_id').eq('id', competitionId).maybeSingle()
-      const scoreCompId = sourceComp?.rules_source_competition_id || competitionId
-      const gwIds = [...new Set((m||[]).map(mx => mx.gameweek_id).filter(Boolean))]
+      // Fetch live points for every GW that decides a bracket match — the ones
+      // assigned directly to a match, plus each round's shared gameweeks, since
+      // an ordinary match uses the round mapping rather than its own gameweek_id.
+      const gwIds = [...new Set([
+        ...(m || []).map(mx => mx.gameweek_id).filter(Boolean),
+        ...(rgws || []).map(rg => rg.gameweek_id).filter(Boolean),
+      ])]
       if (gwIds.length) {
         const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points').in('gameweek_id', gwIds)
         const cache = {}
@@ -1369,6 +1371,20 @@ function BracketTab({ competitionId, competitions }) {
 
       {hasAnyMatches && (() => {
         const displayRounds = roundOrder.filter(r => matches.some(m => m.round === r))
+        // Points a participant has in the gameweek(s) that decide a given match.
+        //
+        // A participant who entered no predictions has NO gameweek_scores row at
+        // all. That is a genuine score of zero, not missing data — the old code
+        // tested `!= null` and so printed nothing beside their name, making it
+        // look like the match hadn't been played. Anyone in a match with a
+        // gameweek attached now shows a figure, and that figure is 0 when they
+        // didn't enter.
+        const ptsFor = (match, uid) => {
+          if (!uid) return null
+          const gwIds = match.gameweek_id ? [match.gameweek_id] : (roundGwMap[match.round] || [])
+          if (!gwIds.length) return null
+          return gwIds.reduce((sum, g) => sum + (livePoints[g]?.[uid] ?? 0), 0)
+        }
         return displayRounds.map(r => {
           const rMatches = matches.filter(m => m.round === r && !m.is_replay)
           const rReplays = matches.filter(m => m.round === r && m.is_replay)
@@ -1380,7 +1396,13 @@ function BracketTab({ competitionId, competitions }) {
                 <Badge variant={rResolved ? 'result' : 'upcoming'}>{rResolved ? 'Complete' : 'In progress'}</Badge>
               </div>
               {rMatches.map(m => {
-                const replay = rReplays.find(rep => rep.home_user_id === m.home_user_id && rep.away_user_id === m.away_user_id)
+                // Every replay of this matchup, oldest first. The old .find()
+                // showed only one, and matched home/away in a single order.
+                const replays = rReplays
+                  .filter(rep =>
+                    (rep.home_user_id === m.home_user_id && rep.away_user_id === m.away_user_id) ||
+                    (rep.home_user_id === m.away_user_id && rep.away_user_id === m.home_user_id))
+                  .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
                 const isBye = m.home_user_id && !m.away_user_id
                 return (
                   <Card key={m.id} className="p-3 mb-2">
@@ -1394,12 +1416,12 @@ function BracketTab({ competitionId, competitions }) {
                           : <div>
                               <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>
                                 {m.home?.display_name || 'TBD'}
-                                {m.gameweek_id && livePoints[m.gameweek_id]?.[m.home_user_id] != null &&
-                                  <span className="text-xs ml-2" style={{ color: 'var(--accent)' }}>{livePoints[m.gameweek_id][m.home_user_id]}pts</span>}
+                                {ptsFor(m, m.home_user_id) != null &&
+                                  <span className="text-xs ml-2" style={{ color: 'var(--accent)' }}>{ptsFor(m, m.home_user_id)}pts</span>}
                                 <span className="mx-1" style={{ color: 'var(--txt-muted)' }}>vs</span>
                                 {m.away?.display_name || 'TBD'}
-                                {m.gameweek_id && livePoints[m.gameweek_id]?.[m.away_user_id] != null &&
-                                  <span className="text-xs ml-2" style={{ color: 'var(--accent)' }}>{livePoints[m.gameweek_id][m.away_user_id]}pts</span>}
+                                {ptsFor(m, m.away_user_id) != null &&
+                                  <span className="text-xs ml-2" style={{ color: 'var(--accent)' }}>{ptsFor(m, m.away_user_id)}pts</span>}
                               </p>
                             </div>
                         }
@@ -1413,11 +1435,21 @@ function BracketTab({ competitionId, competitions }) {
                         </Select>
                       )}
                     </div>
-                    {replay && (
-                      <div className="mt-2 pt-2" style={{ borderTop: '0.5px solid var(--border)' }}>
-                        <p className="text-xs font-medium mb-1" style={{ color: 'var(--amber)' }}>Replay</p>
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs" style={{ color: 'var(--txt-second)' }}>{replay.home?.display_name} vs {replay.away?.display_name}</p>
+                    {replays.map((replay, i) => (
+                      <div key={replay.id} className="mt-2 pt-2" style={{ borderTop: '0.5px solid var(--border)' }}>
+                        {/* Named after the round it decides, so the row reads
+                            "Quarter-final replay 1" rather than a bare "Replay". */}
+                        <p className="text-xs font-medium mb-1" style={{ color: 'var(--amber)' }}>{roundLabel(r)} replay {i + 1}</p>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <p className="text-xs" style={{ color: 'var(--txt-second)' }}>
+                            {replay.home?.display_name}
+                            {ptsFor(replay, replay.home_user_id) != null &&
+                              <span className="ml-1.5" style={{ color: 'var(--accent)' }}>{ptsFor(replay, replay.home_user_id)}pts</span>}
+                            <span className="mx-1" style={{ color: 'var(--txt-muted)' }}>vs</span>
+                            {replay.away?.display_name}
+                            {ptsFor(replay, replay.away_user_id) != null &&
+                              <span className="ml-1.5" style={{ color: 'var(--accent)' }}>{ptsFor(replay, replay.away_user_id)}pts</span>}
+                          </p>
                           {replay.status === 'completed'
                             ? <span className="text-xs" style={{ color: 'var(--green)' }}>{replay.home_points} – {replay.away_points} · {replay.winner?.display_name} advances</span>
                             : <Select value={replay.gameweek_id || ''} onChange={e => assignMatchGameweek(replay.id, e.target.value)} style={{ width: 110 }}>
@@ -1426,8 +1458,11 @@ function BracketTab({ competitionId, competitions }) {
                               </Select>
                           }
                         </div>
+                        {replay.status !== 'completed' && !replay.gameweek_id && (
+                          <p className="text-xs mt-1" style={{ color: 'var(--amber)' }}>Assign a gameweek before resolving — a replay can't reuse the round's gameweek.</p>
+                        )}
                       </div>
-                    )}
+                    ))}
                     {r === currentRound && !isBye && m.status !== 'completed' && (
                       <Button size="sm" variant="primary" className="mt-2" onClick={() => resolveBracketRoundForCurrentRound(r)} disabled={resolving}>
                         {resolving ? 'Resolving…' : `Resolve ${roundLabel(r)}`}

@@ -159,12 +159,6 @@ export async function resolveBracketRound(supabase, competitionId, round) {
   const all = matches || []
   const results = { resolved: 0, replaysScheduled: 0, notReady: 0 }
 
-  async function advance(match, winnerId) {
-    if (match.feeds_into_match_id && match.feeds_into_side) {
-      await supabase.from('bracket_matches').update({ [match.feeds_into_side + '_user_id']: winnerId }).eq('id', match.feeds_into_match_id)
-    }
-  }
-
   const samePair = (x, y) =>
     (x.home_user_id === y.home_user_id && x.away_user_id === y.away_user_id) ||
     (x.home_user_id === y.away_user_id && x.away_user_id === y.home_user_id)
@@ -180,12 +174,10 @@ export async function resolveBracketRound(supabase, competitionId, round) {
     // Bye — only one side of the matchup is set
     if (m.home_user_id && !m.away_user_id) {
       await supabase.from('bracket_matches').update({ winner_user_id: m.home_user_id, status: 'completed' }).eq('id', m.id)
-      await advance(m, m.home_user_id)
       results.resolved++; continue
     }
     if (m.away_user_id && !m.home_user_id) {
       await supabase.from('bracket_matches').update({ winner_user_id: m.away_user_id, status: 'completed' }).eq('id', m.id)
-      await advance(m, m.away_user_id)
       results.resolved++; continue
     }
     if (!m.home_user_id || !m.away_user_id) continue
@@ -227,7 +219,6 @@ export async function resolveBracketRound(supabase, competitionId, round) {
       await supabase.from('bracket_matches').update({
         winner_user_id: winner, home_points: h, away_points: a, status: 'completed',
       }).eq('id', m.id)
-      await advance(m, winner)
       results.resolved++
     } else if (hasOpenReplay(m)) {
       // Genuinely drawn, but a replay is already waiting on this matchup.
@@ -237,12 +228,16 @@ export async function resolveBracketRound(supabase, competitionId, round) {
       }).eq('id', m.id)
       results.notReady++
     } else {
-      // A genuine draw with no replay pending — schedule one. The replay
-      // inherits this match's forward link (it's now the one that decides who
-      // advances); the original match no longer carries one. It starts with no
-      // gameweek_id: an admin must assign the gameweek it will be decided on.
+      // A genuine draw with no replay pending — schedule one. The replay copies
+      // this match's forward link, and the original KEEPS its own copy. Clearing
+      // the original used to destroy the link outright: a second replay created
+      // on a later run inherited the already-nulled value, so its winner had
+      // nowhere to advance to. The original stays 'replay_scheduled', so the
+      // advance pass below never promotes it — only the replay that settles it.
+      // The replay starts with no gameweek_id: an admin must assign the
+      // gameweek it will be decided on.
       await supabase.from('bracket_matches').update({
-        home_points: h, away_points: a, status: 'replay_scheduled', feeds_into_match_id: null, feeds_into_side: null,
+        home_points: h, away_points: a, status: 'replay_scheduled',
       }).eq('id', m.id)
       await supabase.from('bracket_matches').insert({
         competition_id: competitionId, round: m.round, round_order: m.round_order,
@@ -252,6 +247,29 @@ export async function resolveBracketRound(supabase, competitionId, round) {
       })
       results.replaysScheduled++
     }
+  }
+
+  // ---- Advance pass -------------------------------------------------------
+  // Promotion runs as a separate sweep over EVERY completed match in the round
+  // rather than only the ones settled on this run. A winner decided on an
+  // earlier run whose forward link was missing at that moment is picked up here
+  // as soon as the link is available again, instead of being stranded forever.
+  // Writing the same winner into the same slot twice is a no-op, so this is
+  // safe to run repeatedly.
+  const { data: settled } = await supabase.from('bracket_matches').select('*').eq('competition_id', competitionId).eq('round', round)
+  for (const m of (settled || [])) {
+    if (m.status !== 'completed' || !m.winner_user_id) continue
+
+    // The whole matchup — the original plus every replay of it. They all feed
+    // the same slot, so any one of them that still carries the link can supply
+    // it for the rest.
+    const group = (settled || []).filter(x => x.id === m.id || samePair(x, m))
+    const linked = group.find(x => x.feeds_into_match_id && x.feeds_into_side)
+    if (!linked) continue
+
+    await supabase.from('bracket_matches')
+      .update({ [linked.feeds_into_side + '_user_id']: m.winner_user_id })
+      .eq('id', linked.feeds_into_match_id)
   }
 
   return results

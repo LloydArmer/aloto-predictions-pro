@@ -88,7 +88,7 @@ function MatchCard({ match, userId, roundLabel, livePtsByMatch = {} }) {
   const replays = match.replays || []
   // Replays are named after the round they belong to ("Playoff replay"), so a
   // card read on its own still says which stage of the cup it decides.
-  const replayLabel = i => `${roundLabel} replay${replays.length > 1 ? ` ${i + 1}` : ''}`
+  const replayLabel = i => `${roundLabel} replay ${i + 1}`
 
   return (
     // No bottom margin: the parent grid supplies gap-3, and having both made
