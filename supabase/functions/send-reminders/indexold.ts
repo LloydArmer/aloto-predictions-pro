@@ -152,9 +152,12 @@ serve(async () => {
 
     const gwIds = gameweeks.map((g: any) => g.id)
 
+    // Voided fixtures are excluded everywhere below: they can't be predicted, so
+    // chasing them would tell participants they're behind when they aren't, and
+    // a voided first fixture would set the deadline to a match nobody is playing.
     const { data: allFixtures } = await supabase
-      .from('fixtures').select('id, gameweek_id, home_team, away_team, kickoff_time, home_score')
-      .in('gameweek_id', gwIds).order('kickoff_time')
+      .from('fixtures').select('id, gameweek_id, home_team, away_team, kickoff_time, home_score, status')
+      .in('gameweek_id', gwIds).neq('status', 'void').order('kickoff_time')
 
     // A gameweek reaches participants only through the join table — the
     // gameweek row itself doesn't know who should be reminded about it.

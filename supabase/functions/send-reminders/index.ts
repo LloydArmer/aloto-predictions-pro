@@ -90,19 +90,29 @@ async function sendPush(
   title: string,
   body: string,
   link: string,
+  kind: string,
 ): Promise<SendResult> {
+  // DATA-ONLY. There is deliberately no `notification` block here.
+  //
+  // A message carrying a `notification` payload is displayed automatically by
+  // the Firebase SDK. The service worker's onBackgroundMessage handler then
+  // displays it a SECOND time, so every reminder arrived twice on every device.
+  // The two copies don't even collapse, because the auto-displayed one doesn't
+  // carry the tag the handler sets.
+  //
+  // With data only, the SDK displays nothing and the service worker is the
+  // single place a notification is created. Every value in `data` must be a
+  // string — FCM rejects anything else.
   const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       message: {
         token,
-        notification: { title, body },
-        webpush: {
-          notification: { icon: '/icons/android-icon-512x512.png', badge: '/icons/favicon.ico' },
-          fcmOptions: { link },
-        },
-        data: { url: link },
+        data: { title, body, url: link, kind },
+        // Data-only messages can otherwise be delayed by the browser's push
+        // service; reminders are time-sensitive, so ask for prompt delivery.
+        webpush: { headers: { Urgency: 'high' } },
       },
     }),
   })
@@ -276,7 +286,7 @@ serve(async () => {
       for (const device of devices) {
         try {
           const outcome = await sendPush(
-            PROJECT_ID, accessToken, device.token, job.title, job.body, `${APP_URL}/predict`,
+            PROJECT_ID, accessToken, device.token, job.title, job.body, `${APP_URL}/predict`, job.kind,
           )
           if (outcome === 'sent') deliveredToAny = true
           if (outcome === 'stale') staleTokenIds.push(device.id)

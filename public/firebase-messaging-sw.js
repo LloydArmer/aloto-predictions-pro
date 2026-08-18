@@ -28,17 +28,17 @@ const messaging = firebase.messaging()
 
 // Fired when a push arrives while the app is closed or backgrounded.
 messaging.onBackgroundMessage(payload => {
-  const { title, body } = payload.notification || {}
-  self.registration.showNotification(title || 'ALOTO Prediction Pro', {
-    body: body || '',
+  const d = payload.data || {}
+  self.registration.showNotification(d.title || 'ALOTO Prediction Pro', {
+    body: d.body || '',
     icon: '/icons/android-icon-512x512.png',
     badge: '/icons/favicon.ico',
     // Tagging by notification type means a newer reminder REPLACES an older one
     // rather than stacking. Someone who ignores the 24h nudge shouldn't come
     // back to a wall of notifications.
-    tag: payload.data?.kind || 'aloto-reminder',
+    tag: d.kind || 'aloto-reminder',
     renotify: true,
-    data: { url: payload.data?.url || '/predict' },
+    data: { url: d.url || '/predict' },
   })
 })
 
