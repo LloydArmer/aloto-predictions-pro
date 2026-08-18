@@ -202,6 +202,10 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
   const [participants, setParticipants] = useState([])
   const [predMap, setPredMap] = useState({})
   const [tpUsers, setTpUsers] = useState(new Set()) // user_ids who played TP in this GW
+  // Authoritative per-user totals for the gameweek, written by
+  // recalculateGameweek. These include the Triple Points multiplier and full
+  // house bonuses; summing per-fixture points_earned does not.
+  const [gwTotals, setGwTotals] = useState({}) // { userId: points }
   const [cupFixtures, setCupFixtures] = useState([]) // bracket or group matches for this GW
   const [loading, setLoading] = useState(true)
   const isGroup = compFormat === 'group_knockout'
@@ -246,6 +250,9 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
       setPredMap(map)
       // Fetch TP plays for this specific GW — only for League competitions
       if (!isCupFormat && competitionId && gwId) {
+        const { data: totals } = await supabase.from('gameweek_scores')
+          .select('user_id, points').eq('competition_id', competitionId).eq('gameweek_id', gwId)
+        setGwTotals(Object.fromEntries((totals || []).map(t => [t.user_id, t.points || 0])))
         const { data: tp } = await supabase.from('triple_points_plays').select('user_id').eq('competition_id', competitionId).eq('gameweek_id', gwId)
         setTpUsers(new Set((tp||[]).map(t => t.user_id)))
       }
@@ -315,13 +322,22 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
               <tbody>
                 {participants.map(p => {
                   const isMe = p.user_id === userId
-                  // Only count points in the total for fixtures that have kicked off —
-                  // a locked fixture's prediction isn't visible so its points shouldn't
-                  // show in the total either (it would reveal relative standing)
-                  const total = fixtures.reduce((sum, f) => {
+                  // Only count points for fixtures that have kicked off — a locked
+                  // fixture's prediction isn't visible, so its points mustn't show
+                  // in the total either (it would reveal relative standing).
+                  const liveSum = fixtures.reduce((sum, f) => {
                     const kicked = new Date(f.kickoff_time) <= new Date()
                     return sum + (kicked ? (predMap[p.user_id]?.[f.id]?.points_earned || 0) : 0)
                   }, 0)
+                  const playedTp = tpUsers.has(p.user_id)
+                  // Once the gameweek has been recalculated, gameweek_scores holds
+                  // the real figure — multiplier and full house bonuses included.
+                  // Before that, approximate by applying the multiplier to what's
+                  // known so far. Summing raw per-fixture points was showing a
+                  // Triple Points player the same total as everyone else.
+                  const settled = gwTotals[p.user_id]
+                  const total = settled != null ? settled : (playedTp ? liveSum * 3 : liveSum)
+                  const tpBonus = playedTp ? total - Math.round(total / 3) : 0
                   return (
                   <tr key={p.user_id}>
                     <td style={{ paddingLeft: 14 }}><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.profiles?.display_name}</p></td>
@@ -353,8 +369,13 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                     })}
                     {tpUsers.size > 0 && (
                       <td style={{ textAlign:'center' }}>
-                        {tpUsers.has(p.user_id)
-                          ? <span style={{ color:'var(--gold)', fontSize:14 }}>⚡</span>
+                        {playedTp
+                          ? <>
+                              <span style={{ color:'var(--gold)', fontSize:14 }}>⚡</span>
+                              {/* What the chip actually earned them, which is the
+                                  whole point of playing it. */}
+                              {tpBonus > 0 && <p className="text-xs font-semibold" style={{ color:'var(--gold)' }}>+{tpBonus}</p>}
+                            </>
                           : <span style={{ color:'var(--txt-muted)', fontSize:11 }}>—</span>
                         }
                       </td>

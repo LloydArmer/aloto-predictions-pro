@@ -71,10 +71,21 @@ export function useMonthlyLeaderboard(competitionId, monthKey) {
       const map = {}
       ;(scores||[]).forEach(s => {
         const k = s.user_id
-        if (!map[k]) map[k] = { user_id: k, display_name: s.profiles?.display_name || 'Unknown', avatar_initials: s.profiles?.avatar_initials || '?', total_points: 0, exact_scores: 0, correct_results: 0, gw_breakdown: {} }
+        if (!map[k]) map[k] = {
+          user_id: k,
+          display_name: s.profiles?.display_name || 'Unknown',
+          avatar_initials: s.profiles?.avatar_initials || '?',
+          total_points: 0, exact_scores: 0, correct_results: 0,
+          // Counted so the monthly table can show the same bonus columns as the
+          // overall one — the underlying booleans were being thrown away here.
+          full_house_results_count: 0, full_house_scores_count: 0,
+          gw_breakdown: {},
+        }
         map[k].total_points   += s.points || 0
         map[k].exact_scores   += s.exact_scores || 0
         map[k].correct_results += s.correct_results || 0
+        if (s.full_house_results) map[k].full_house_results_count++
+        if (s.full_house_scores)  map[k].full_house_scores_count++
         map[k].gw_breakdown[s.gameweek_id] = s.points || 0
       })
       setMonthly(Object.values(map).sort((a,b) => b.total_points - a.total_points))

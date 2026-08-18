@@ -155,6 +155,8 @@ function MonthlyPane({ competitionId, months, userId }) {
   const { monthly, gameweeksInMonth, loading } = useMonthlyLeaderboard(competitionId, sel?.key)
   const [closedMonths, setClosedMonths] = useState([])
   const [tpPlaysByUser, setTpPlaysByUser] = useState({})
+  // Needed to turn full house COUNTS into points, same as the overall table.
+  const [rules, setRules] = useState(null)
   useEffect(() => { if(months.length) setSel(months[months.length-1]) }, [months])
   useEffect(() => {
     if (!competitionId) { setClosedMonths([]); return }
@@ -166,6 +168,7 @@ function MonthlyPane({ competitionId, months, userId }) {
         ;(data||[]).forEach(p => { if (!m[p.user_id]) m[p.user_id] = []; m[p.user_id].push(p.gameweek_id) })
         setTpPlaysByUser(m)
       })
+    resolvePointRules(supabase, competitionId).then(setRules)
   }, [competitionId])
   const winner = monthly[0]
   const isMonthClosed = sel && closedMonths.includes(sel.key)
@@ -219,35 +222,37 @@ function MonthlyPane({ competitionId, months, userId }) {
               <table className="data-table w-full" style={{ minWidth:400 }}>
                 <thead><tr>
                   <th style={{ width:36,paddingLeft:14 }}>#</th><th>Player</th>
-                  {gameweeksInMonth.map(gw=><th key={gw.id} style={{ width:40,textAlign:'right',fontSize:10 }}>{gw.number}</th>)}
+                  <th style={{ width:44,textAlign:'right',fontSize:10 }}>Res</th>
+                  <th style={{ width:44,textAlign:'right',fontSize:10 }}>Exact</th>
+                  <th style={{ width:52,textAlign:'right',fontSize:10 }}>FH Res</th>
+                  <th style={{ width:52,textAlign:'right',fontSize:10 }}>FH Sc</th>
+                  <th style={{ width:80,textAlign:'right',fontSize:10 }}>⚡ TP</th>
                   <th style={{ width:54,textAlign:'right',paddingRight:14 }}>Total</th>
                 </tr></thead>
                 <tbody>
                   {monthly.map((p,i)=>{
-                    const userTpGwIds = tpPlaysByUser[p.user_id] || []
+                    // Triple Points played on a gameweek within THIS month, with
+                    // the points it earned — the overall table shows this per
+                    // chip, so the monthly view shows whichever fell in the month.
+                    const tpGwThisMonth = (tpPlaysByUser[p.user_id] || [])
+                      .filter(gwId => gameweeksInMonth.some(g => g.id === gwId))
+                    const tpLabel = tpGwThisMonth.length
+                      ? tpGwThisMonth.map(gwId => {
+                          const gw = gameweeksInMonth.find(g => g.id === gwId)
+                          return `${gw?.number || 'GW?'} ${p.gw_breakdown?.[gwId] ?? 0}`
+                        }).join(', ')
+                      : '\u2013'
+                    const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
+                    const scoresBonusPts  = (p.full_house_scores_count  || 0) * (rules?.full_house_scores_bonus  || 0)
                     return (
                     <tr key={p.user_id} className={p.user_id===userId?'highlight':''}>
                       <td style={{ paddingLeft:14 }}><span style={{ fontSize:12,fontWeight:500,color:i===0?'var(--gold)':i===1?'#b4b2a9':i===2?'#f0997b':'var(--txt-muted)' }}>{i+1}</span></td>
                       <td><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.display_name}{p.user_id===userId&&<span className="ml-1 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}</p></td>
-                      {gameweeksInMonth.map(gw=>{
-                        const pts = p.gw_breakdown?.[gw.id]
-                        const isTp = userTpGwIds.includes(gw.id)
-                        return (
-                          <td key={gw.id} className="text-right" style={{ padding:'6px 4px' }}>
-                            {pts != null
-                              ? <span className="text-xs font-medium" style={{
-                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                  minWidth: isTp ? 24 : 'auto', minHeight: isTp ? 24 : 'auto',
-                                  borderRadius: isTp ? '50%' : undefined,
-                                  background: isTp ? 'var(--gold)' : 'transparent',
-                                  color: isTp ? 'var(--bg-base)' : 'var(--txt-second)',
-                                  fontWeight: isTp ? 700 : 400,
-                                }}>{pts}</span>
-                              : <span className="text-xs" style={{ color:'var(--txt-muted)' }}>—</span>
-                            }
-                          </td>
-                        )
-                      })}
+                      <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{p.correct_results||0}</td>
+                      <td className="text-xs text-right" style={{ color:'var(--green)' }}>{p.exact_scores||0}</td>
+                      <td className="text-xs text-right" style={{ color: resultsBonusPts>0?'var(--amber)':'var(--txt-muted)' }}>{resultsBonusPts>0?`+${resultsBonusPts}`:'\u2013'}</td>
+                      <td className="text-xs text-right" style={{ color: scoresBonusPts>0?'#c88bfa':'var(--txt-muted)' }}>{scoresBonusPts>0?`+${scoresBonusPts}`:'\u2013'}</td>
+                      <td className="text-xs text-right" style={{ color: tpGwThisMonth.length?'var(--gold)':'var(--txt-muted)' }}>{tpLabel}</td>
                       <td style={{ textAlign:'right',paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points}</span></td>
                     </tr>
                   )})}
