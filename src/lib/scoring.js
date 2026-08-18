@@ -61,7 +61,8 @@ export async function recalculateGameweek(supabase, competitionId, gameweekId, r
   if (gw?.status !== 'completed') return { skipped: true, reason: 'Gameweek not marked completed yet' }
 
   const { data: fixtures } = await supabase.from('fixtures').select('*').eq('gameweek_id', gameweekId)
-  const completedFixtures = (fixtures || []).filter(f => f.status === 'completed')
+  const allFixtures = fixtures || []
+  const completedFixtures = allFixtures.filter(f => f.status === 'completed')
   const { data: predictions } = await supabase.from('predictions').select('*').eq('gameweek_id', gameweekId)
   const { data: tpPlays } = await supabase.from('triple_points_plays').select('user_id').eq('competition_id', competitionId).eq('gameweek_id', gameweekId)
   const tripleUsers = new Set((tpPlays || []).map(t => t.user_id))
@@ -88,21 +89,27 @@ export async function recalculateGameweek(supabase, competitionId, gameweekId, r
     await supabase.from('predictions').update({ points_earned: points }).eq('id', pred.id)
   }
 
-  // Full house bonuses — did this user predict every completed fixture in the
-  // gameweek, and were all of them at least correct results / all exact scores?
-  if (completedFixtures.length > 0) {
+  // Full house bonuses. Two conditions, both required:
+  //
+  //  1. EVERY fixture in the gameweek has been completed. Judging a full house
+  //     on the subset that happens to have finished would award the bonus to
+  //     someone whose remaining fixture then goes on to break the run.
+  //  2. The participant predicted EVERY fixture in the gameweek. Missing one
+  //     voids both bonuses outright, however good the predictions they did
+  //     make were — a full house means the whole gameweek, not the part of it
+  //     they turned up for.
+  //
+  // Note this counts ALL fixtures, not just completed ones, for condition 2.
+  // With condition 1 satisfied the two sets are identical, but checking
+  // against the full list keeps the rule true if that ever changes.
+  const everyFixtureCompleted = allFixtures.length > 0 && completedFixtures.length === allFixtures.length
+  if (everyFixtureCompleted) {
     for (const [uid, userPreds] of Object.entries(byUser)) {
       const predMap = {}; userPreds.forEach(p => { predMap[p.fixture_id] = p })
-      const coversAll = completedFixtures.every(f => predMap[f.id])
+      const coversAll = allFixtures.every(f => predMap[f.id])
       if (!coversAll) continue
-      const allCorrectResult = completedFixtures.every(f => {
-        const p = predMap[f.id]
-        return scoreOnePrediction(p, f, rules).isCorrectResult
-      })
-      const allExact = completedFixtures.every(f => {
-        const p = predMap[f.id]
-        return scoreOnePrediction(p, f, rules).isExact
-      })
+      const allCorrectResult = allFixtures.every(f => scoreOnePrediction(predMap[f.id], f, rules).isCorrectResult)
+      const allExact         = allFixtures.every(f => scoreOnePrediction(predMap[f.id], f, rules).isExact)
       if (!scores[uid]) scores[uid] = { user_id: uid, points: 0, exact_scores: 0, correct_results: 0, full_house_results: false, full_house_scores: false }
       if (allCorrectResult) { scores[uid].full_house_results = true; scores[uid].points += rules.full_house_results_bonus || 0 }
       if (allExact)         { scores[uid].full_house_scores  = true; scores[uid].points += rules.full_house_scores_bonus  || 0 }

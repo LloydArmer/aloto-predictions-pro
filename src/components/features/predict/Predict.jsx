@@ -378,7 +378,7 @@ function gameweekHalf(gw, fixtures) {
   return (month >= 8 && month <= 12) ? 'first' : 'second'
 }
 
-function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, userId }) {
+function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, predictions, userId }) {
   const [plays, setPlays] = useState([]) // [{ half, gameweek_id, gameweek_number }]
   const [loading, setLoading] = useState(true)
   const [activating, setActivating] = useState(false)
@@ -407,13 +407,28 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
   const hasKickedOff  = fixtures.some(f => new Date(f.kickoff_time) <= new Date())
   const halfLabel = half === 'first' ? 'first half (by 31 Dec)' : 'second half (Jan–end of season)'
 
+  // Triple Points can only be played on a gameweek the participant has
+  // predicted in full. Tripling a partial entry would reward leaving fixtures
+  // blank, and the same rule voids the full house bonuses that the chip
+  // multiplies.
+  const missing = fixtures.filter(f => !predictions?.[f.id])
+  const predictedAll = fixtures.length > 0 && missing.length === 0
+
   async function activate() {
     const confirmed = window.confirm(`Play Triple Points on ${gameweek.number}? This triples every point you earn this gameweek, including bonuses — and uses up your ${halfLabel} chip for the season. This can't be undone. Are you sure?`)
     if (!confirmed) return
     setActivating(true)
     const { error } = await supabase.from('triple_points_plays').insert({ competition_id: competitionId, gameweek_id: gameweek.id, user_id: userId, half })
     setActivating(false)
-    if (error) { toast.error(error.code === '23505' ? `You've already used your ${halfLabel} chip` : 'Could not activate Triple Points'); return }
+    if (error) {
+      // The database enforces the same complete-predictions rule the UI does,
+      // so surface its message rather than a generic failure — it says exactly
+      // how many fixtures are still missing.
+      const msg = error.code === '23505' ? `You've already used your ${halfLabel} chip`
+        : /prediction for every fixture/i.test(error.message || '') ? 'Predict every fixture in this gameweek before playing Triple Points'
+        : 'Could not activate Triple Points'
+      toast.error(msg); return
+    }
     setPlays(prev => [...prev, { competition_id: competitionId, gameweek_id: gameweek.id, gameweek_number: gameweek.number, user_id: userId, half }])
     toast.success('⚡ Triple Points active for this gameweek!')
   }
@@ -456,6 +471,11 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, use
         <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Triple Points is blocked for this {isCompBlocked ? 'competition' : `gameweek (${gameweek.number})`}.</p>
       ) : hasKickedOff ? (
         <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Too late to activate for {gameweek.number} — kickoff has passed.</p>
+      ) : !predictedAll ? (
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+          Predict all {fixtures.length} fixture{fixtures.length !== 1 ? 's' : ''} in {gameweek.number} to unlock Triple Points
+          {missing.length > 0 && ` — ${missing.length} still to go`}.
+        </p>
       ) : (
         <div className="flex items-center justify-between gap-2 flex-wrap mt-2.5 pt-2.5" style={{ borderTop: '0.5px solid var(--border)' }}>
           <p className="text-xs" style={{ color: 'var(--txt-second)' }}>Play your {half === 'first' ? 'first (by 31 Dec)' : 'second (end of season)'} chip on {gameweek.number}?</p>
@@ -539,7 +559,7 @@ export default function Predict() {
         </div>
       )}
 
-      {tab === 'mine' && <TriplePointsCard competitionId={comp} competitions={competitions} gameweek={selectedGW} fixtures={fixtures} userId={user?.id} />}
+      {tab === 'mine' && <TriplePointsCard competitionId={comp} competitions={competitions} gameweek={selectedGW} fixtures={fixtures} predictions={predictions} userId={user?.id} />}
 
       {tab === 'mine' ? (
         lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg"/></div>
