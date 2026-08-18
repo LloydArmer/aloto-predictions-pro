@@ -117,6 +117,19 @@ export async function enablePush(userId) {
   )
   if (error) return { ok: false, reason: 'save-failed' }
 
+  // Drop any older token this same browser left behind.
+  //
+  // FCM rotates tokens — on reinstall, on a permission reset, sometimes on its
+  // own schedule — and the previous one keeps working for a while. Both rows
+  // then point at the same physical device, and the reminder job sends to every
+  // row, so the participant gets the same notification twice. Matching on
+  // user_agent is the only signal available for "same device", and it is a good
+  // one: a second genuine device almost always reports a different string.
+  await supabase.from('push_tokens').delete()
+    .eq('user_id', userId)
+    .eq('user_agent', navigator.userAgent)
+    .neq('token', token)
+
   rememberDeviceToken(token)
   return { ok: true, token }
 }
