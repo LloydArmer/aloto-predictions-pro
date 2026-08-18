@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { supabase } from '../../../lib/supabase'
 import { Card, Input, Button } from '../../ui'
-import { pushCapability, enablePush, disablePush, isIOS } from '../../../lib/push'
+import { pushCapability, enablePush, disablePush, isIOS, rememberedDeviceToken } from '../../../lib/push'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
@@ -12,11 +12,19 @@ export default function Settings() {
   const [sms,   setSms]   = useState(profile?.notify_sms ?? false)
   const [saving, setSaving] = useState(false)
 
-  // Push state. `capability` is what the DEVICE can do; `pushOn` is what the
-  // participant has chosen. Both have to be true for reminders to arrive, and
-  // they fail differently, so the UI reports them separately.
+  // Push state.
+  //
+  // `deviceOn` — is THIS browser registered? This is what the toggle shows.
+  // `capability` — can this device do push at all? null means still checking.
+  // `deviceCount` — how many of the participant's devices are registered.
+  //
+  // The toggle deliberately does NOT reflect profiles.notify_push. That column
+  // defaults to true, so reading it showed the switch already on for someone who
+  // had never registered a device — they'd assume they were covered and never
+  // receive a single reminder. The switch now means "this device will be
+  // reminded", which is the thing the participant actually cares about.
   const [capability, setCapability] = useState(null)
-  const [pushOn, setPushOn] = useState(profile?.notify_push ?? true)
+  const [deviceOn, setDeviceOn] = useState(false)
   const [pushBusy, setPushBusy] = useState(false)
   const [deviceCount, setDeviceCount] = useState(0)
 
@@ -33,10 +41,24 @@ export default function Settings() {
 
   useEffect(() => { pushCapability().then(setCapability) }, [])
 
+  // Work out whether this specific browser is registered, by matching the token
+  // it recorded locally against what's actually stored.
   useEffect(() => {
     if (!user) return
-    supabase.from('push_tokens').select('id', { count: 'exact', head: true }).eq('user_id', user.id)
-      .then(({ count }) => setDeviceCount(count ?? 0))
+    let cancelled = false
+    ;(async () => {
+      const { count } = await supabase.from('push_tokens')
+        .select('id', { count: 'exact', head: true }).eq('user_id', user.id)
+      if (cancelled) return
+      setDeviceCount(count ?? 0)
+
+      const mine = rememberedDeviceToken()
+      if (!mine) { setDeviceOn(false); return }
+      const { count: hit } = await supabase.from('push_tokens')
+        .select('id', { count: 'exact', head: true }).eq('token', mine)
+      if (!cancelled) setDeviceOn((hit ?? 0) > 0)
+    })()
+    return () => { cancelled = true }
   }, [user])
 
   async function togglePush(next) {
@@ -56,17 +78,29 @@ export default function Settings() {
           toast.error(messages[result.reason] || 'Could not turn on reminders')
           return
         }
-        setDeviceCount(c => c + 1)
+        // Registering a device implies wanting reminders, so switch the account
+        // preference back on too — otherwise the job would skip them.
+        await supabase.from('profiles').update({ notify_push: true }).eq('id', user.id)
       } else {
         await disablePush(user.id)
-        setDeviceCount(0)
       }
 
-      const { error } = await supabase.from('profiles').update({ notify_push: next }).eq('id', user.id)
-      if (error) throw error
+      // Recount from the database rather than adjusting a local number: another
+      // device may have registered or dropped off since this page loaded.
+      const { count } = await supabase.from('push_tokens')
+        .select('id', { count: 'exact', head: true }).eq('user_id', user.id)
+      const remaining = count ?? 0
+      setDeviceCount(remaining)
+      setDeviceOn(next)
+
+      // Only mute the account once the LAST device has gone. Turning reminders
+      // off on a laptop shouldn't silence the phone as well.
+      if (!next && remaining === 0) {
+        await supabase.from('profiles').update({ notify_push: false }).eq('id', user.id)
+      }
+
       await fetchProfile(user.id)
-      setPushOn(next)
-      toast.success(next ? 'Reminders on for this device' : 'Reminders off')
+      toast.success(next ? 'Reminders on for this device' : 'Reminders off for this device')
     } catch {
       toast.error('Could not update reminder settings')
     } finally { setPushBusy(false) }
@@ -125,13 +159,17 @@ export default function Settings() {
               When a gameweek opens, 24 hours before kickoff, and 1 hour before
             </p>
           </div>
-          <input
-            type="checkbox"
-            checked={pushOn}
-            disabled={pushBusy || !capability?.supported}
-            onChange={e => togglePush(e.target.checked)}
-            style={{ width:16, height:16, cursor: capability?.supported ? 'pointer' : 'not-allowed', accentColor:'var(--accent)', flexShrink: 0 }}
-          />
+          {/* While capability is still resolving, say so rather than showing a
+              dead greyed-out switch that looks broken. */}
+          {capability === null
+            ? <span className="text-xs" style={{ color:'var(--txt-muted)', flexShrink:0 }}>Checking…</span>
+            : <input
+                type="checkbox"
+                checked={deviceOn}
+                disabled={pushBusy || !capability.supported}
+                onChange={e => togglePush(e.target.checked)}
+                style={{ width:16, height:16, cursor: capability.supported ? 'pointer' : 'not-allowed', accentColor:'var(--accent)', flexShrink: 0 }}
+              />}
         </div>
 
         <p className="text-xs pt-2.5" style={{ color:'var(--txt-muted)' }}>
@@ -139,9 +177,19 @@ export default function Settings() {
           Finish them early and you won't hear from us.
         </p>
 
-        {pushOn && capability?.supported && deviceCount > 0 && (
+        {deviceOn && (
           <p className="text-xs mt-2" style={{ color:'var(--green)' }}>
-            Reminders active on {deviceCount} device{deviceCount !== 1 ? 's' : ''}
+            This device is registered{deviceCount > 1 ? ` — ${deviceCount} in total on your account` : ''}
+          </p>
+        )}
+
+        {/* Registered elsewhere but not here. Without this, someone who set it up
+            on their phone would open Settings on a laptop, see the switch off,
+            and think reminders had stopped working. */}
+        {!deviceOn && deviceCount > 0 && capability?.supported && (
+          <p className="text-xs mt-2" style={{ color:'var(--txt-muted)' }}>
+            Reminders are on for {deviceCount} other device{deviceCount !== 1 ? 's' : ''}, but not this one.
+            Switch it on above to be reminded here too.
           </p>
         )}
       </Card>
@@ -149,12 +197,12 @@ export default function Settings() {
       {/* The consequence of switching reminders off, stated plainly. Missing a
           deadline means a zero for that gameweek, which is worth knowing before
           you opt out rather than after. */}
-      {!pushOn && (
+      {!deviceOn && deviceCount === 0 && capability?.supported && (
         <Card className="p-4 mb-4" style={{ background:'var(--amber-dim)', borderColor:'rgba(245,166,35,0.3)' }}>
           <p className="text-xs font-medium mb-1" style={{ color:'var(--amber)' }}>Reminders are off</p>
           <p className="text-xs" style={{ color:'var(--amber)' }}>
-            You won't be told when a gameweek opens or when a deadline is close. Predictions lock at
-            kickoff, and any fixture you haven't predicted by then scores nothing — so you'll need to
+            You won't be told when a gameweek opens or when a deadline is close. Each fixture locks at
+            its own kickoff, and any you haven't predicted by then scores nothing — so you'll need to
             keep an eye on deadlines yourself.
           </p>
         </Card>

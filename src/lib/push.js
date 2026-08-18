@@ -21,6 +21,12 @@ const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY
 let messagingPromise = null
 
 // Resolves to a messaging instance, or null if this device can't do push.
+//
+// Only a SUCCESSFUL result is cached. Caching a failure was poisoning the whole
+// page session: one transient hiccup on load — a slow chunk, a service worker
+// still installing — left every later call returning null, so the Settings
+// toggle stayed permanently greyed out until the user reloaded. Clearing the
+// cache on failure means the next call genuinely retries.
 function getMessagingInstance() {
   if (!messagingPromise) {
     messagingPromise = (async () => {
@@ -31,9 +37,25 @@ function getMessagingInstance() {
       if (!(await messagingMod.isSupported().catch(() => false))) return null
       const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig)
       return { messaging: messagingMod.getMessaging(app), mod: messagingMod }
-    })().catch(() => null)
+    })().catch(() => {
+      messagingPromise = null
+      return null
+    })
   }
   return messagingPromise
+}
+
+// Marker for "this browser registered a token". Kept locally because there is no
+// other way to tell one device apart from another: push_tokens holds a row per
+// device, but nothing in it identifies WHICH device is currently looking.
+const DEVICE_TOKEN_KEY = 'aloto.push.token'
+
+export function rememberedDeviceToken() {
+  try { return localStorage.getItem(DEVICE_TOKEN_KEY) } catch { return null }
+}
+
+function rememberDeviceToken(token) {
+  try { token ? localStorage.setItem(DEVICE_TOKEN_KEY, token) : localStorage.removeItem(DEVICE_TOKEN_KEY) } catch { /* private browsing */ }
 }
 
 /** Is the app running as an installed PWA rather than in a browser tab? */
@@ -95,6 +117,7 @@ export async function enablePush(userId) {
   )
   if (error) return { ok: false, reason: 'save-failed' }
 
+  rememberDeviceToken(token)
   return { ok: true, token }
 }
 
@@ -105,6 +128,7 @@ export async function enablePush(userId) {
  * the device means a routine token refresh could silently re-register it.
  */
 export async function disablePush(userId) {
+  rememberDeviceToken(null)
   try {
     const instance = await getMessagingInstance()
     if (instance) {
@@ -115,8 +139,13 @@ export async function disablePush(userId) {
         return
       }
     }
-  } catch { /* fall through to clearing everything for this user */ }
-  await supabase.from('push_tokens').delete().eq('user_id', userId)
+  } catch { /* fall through */ }
+
+  // Fall back to the token this browser recorded. Deleting every row for the
+  // user would unsubscribe their OTHER devices too — switching reminders off on
+  // a laptop should not silence the phone.
+  const remembered = rememberedDeviceToken()
+  if (remembered) await supabase.from('push_tokens').delete().eq('token', remembered)
 }
 
 /**
