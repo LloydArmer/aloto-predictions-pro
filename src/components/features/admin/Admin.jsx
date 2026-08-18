@@ -661,6 +661,31 @@ function FixturesPanel({ gameweekId }) {
     load()
   }
 
+  // Void / un-void. A voided fixture is out of the gameweek: it scores nothing,
+  // isn't counted when deciding whether the gameweek is complete, and nobody is
+  // penalised for not having predicted it.
+  async function toggleVoid(fx) {
+    if (fx.status === 'void') {
+      // Restoring: a fixture with scores already entered goes back to completed,
+      // otherwise back to upcoming.
+      const restored = (fx.home_score !== null && fx.away_score !== null) ? 'completed' : 'upcoming'
+      const { error } = await supabase.from('fixtures').update({ status: restored, void_reason: null }).eq('id', fx.id)
+      if (error) { toast.error('Could not restore fixture'); return }
+      toast.success('Fixture restored — recalculate the gameweek to apply it')
+      load(); return
+    }
+
+    const reason = window.prompt(
+      `Void ${fx.home_team} vs ${fx.away_team}?\n\nIt will score nobody anything and won't be required for full house bonuses or Triple Points.\n\nReason (optional):`,
+      'Postponed',
+    )
+    if (reason === null) return // cancelled
+    const { error } = await supabase.from('fixtures').update({ status: 'void', void_reason: reason.trim() || null }).eq('id', fx.id)
+    if (error) { toast.error('Could not void fixture'); return }
+    toast.success('Fixture voided — recalculate the gameweek to apply it')
+    load()
+  }
+
   async function recalc() {
     setRecalculating(true)
     try {
@@ -691,11 +716,16 @@ function FixturesPanel({ gameweekId }) {
           {fixtures.map(fx => (
             <div key={fx.id} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
               <div style={{ minWidth: 0, flex: '1 1 160px' }}>
-                <p className="text-sm" style={{ color: 'var(--txt-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fx.home_team} vs {fx.away_team}</p>
-                <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{formatUK(fx.kickoff_time, { weekday: 'short', day: '2-digit', month: 'short' })} UK</p>
+                <p className="text-sm" style={{ color: fx.status === 'void' ? 'var(--txt-muted)' : 'var(--txt-primary)', textDecoration: fx.status === 'void' ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fx.home_team} vs {fx.away_team}</p>
+                <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+                  {formatUK(fx.kickoff_time, { weekday: 'short', day: '2-digit', month: 'short' })} UK
+                  {fx.status === 'void' && <span style={{ color: 'var(--amber)' }}> · Void{fx.void_reason ? ` — ${fx.void_reason}` : ''}</span>}
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                {fx.status === 'completed'
+                {fx.status === 'void'
+                  ? <Badge variant="live">Void</Badge>
+                  : fx.status === 'completed'
                   ? <Badge variant="result">{fx.home_score} – {fx.away_score}</Badge>
                   : <div className="flex items-center gap-1.5">
                       <Input type="number" min="0" placeholder="H" style={{ width: 46 }}
@@ -706,6 +736,13 @@ function FixturesPanel({ gameweekId }) {
                       <Button size="sm" onClick={() => saveResult(fx)}>Save</Button>
                     </div>
                 }
+                {/* Void, not delete. Deleting removes the predictions people
+                    already made; voiding keeps them and simply stops the fixture
+                    counting, which is what a postponement actually is. */}
+                <button onClick={() => toggleVoid(fx)} title={fx.status === 'void' ? 'Restore fixture' : 'Void fixture (postponed / abandoned)'}
+                  className="flex items-center justify-center" style={{ width: 24, height: 24, color: fx.status === 'void' ? 'var(--amber)' : 'var(--txt-muted)' }}>
+                  <i className={`ti ${fx.status === 'void' ? 'ti-rotate' : 'ti-ban'} text-sm`} aria-hidden="true" />
+                </button>
                 <button onClick={() => deleteFixture(fx)} title="Delete fixture"
                   className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
                   <i className="ti ti-trash text-sm" aria-hidden="true" />

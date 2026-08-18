@@ -97,8 +97,12 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
   useEffect(() => { setHome(prediction?.predicted_home ?? ''); setAway(prediction?.predicted_away ?? '') }, [prediction])
 
   const kickoff  = new Date(fixture.kickoff_time)
-  const isLocked = isPast(kickoff)
-  const hasResult = fixture.home_score !== null
+  // A voided fixture (postponed, abandoned) is out of the gameweek: locked for
+  // editing, scores nobody anything, and not required for full house or Triple
+  // Points.
+  const isVoid   = fixture.status === 'void'
+  const isLocked = isVoid || isPast(kickoff)
+  const hasResult = !isVoid && fixture.home_score !== null
   const justSaved = !!prediction
   // Calculate points from actual scores at display time — don't rely on
   // points_earned in the DB which is only written after the GW is fully
@@ -126,7 +130,14 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
   }
 
   return (
-    <Card className="p-4 mb-3" style={justSaved && !isLocked ? { border: '1px solid var(--green)' } : {}}>
+    <Card className="p-4 mb-3" style={justSaved && !isLocked ? { border: '1px solid var(--green)' } : isVoid ? { opacity: 0.75 } : {}}>
+      {isVoid && (
+        <div className="mb-2 px-2 py-1 rounded" style={{ background: 'var(--amber-dim)' }}>
+          <span className="text-xs" style={{ color: 'var(--amber)' }}>
+            Void{fixture.void_reason ? ` — ${fixture.void_reason}` : ''} · scores nothing, and isn't needed for bonuses
+          </span>
+        </div>
+      )}
       <p className="text-base font-semibold" style={{ color:'var(--txt-primary)' }}>
         {fixture.home_team} <span style={{ color:'var(--txt-muted)', fontWeight:400 }}>vs</span> {fixture.away_team}
       </p>
@@ -404,15 +415,18 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, pre
   const activeThisGw = plays.some(p => p.gameweek_id === gameweek.id)
   const usedThisHalf  = plays.find(p => p.half === half)
   const isBlocked = gameweek.triple_points_blocked || isCompBlocked
-  const hasKickedOff  = fixtures.some(f => new Date(f.kickoff_time) <= new Date())
+  const hasKickedOff  = fixtures.some(f => f.status !== 'void' && new Date(f.kickoff_time) <= new Date())
   const halfLabel = half === 'first' ? 'first half (by 31 Dec)' : 'second half (Jan–end of season)'
 
   // Triple Points can only be played on a gameweek the participant has
   // predicted in full. Tripling a partial entry would reward leaving fixtures
   // blank, and the same rule voids the full house bonuses that the chip
   // multiplies.
-  const missing = fixtures.filter(f => !predictions?.[f.id])
-  const predictedAll = fixtures.length > 0 && missing.length === 0
+  // Voided fixtures are excluded — a participant can't predict a match that's
+  // been called off, so requiring it would make the chip unplayable.
+  const livePicks = fixtures.filter(f => f.status !== 'void')
+  const missing = livePicks.filter(f => !predictions?.[f.id])
+  const predictedAll = livePicks.length > 0 && missing.length === 0
 
   async function activate() {
     const confirmed = window.confirm(`Play Triple Points on ${gameweek.number}? This triples every point you earn this gameweek, including bonuses — and uses up your ${halfLabel} chip for the season. This can't be undone. Are you sure?`)
@@ -473,7 +487,7 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, pre
         <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Too late to activate for {gameweek.number} — kickoff has passed.</p>
       ) : !predictedAll ? (
         <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
-          Predict all {fixtures.length} fixture{fixtures.length !== 1 ? 's' : ''} in {gameweek.number} to unlock Triple Points
+          Predict all {livePicks.length} fixture{livePicks.length !== 1 ? 's' : ''} in {gameweek.number} to unlock Triple Points
           {missing.length > 0 && ` — ${missing.length} still to go`}.
         </p>
       ) : (
