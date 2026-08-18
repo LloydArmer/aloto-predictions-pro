@@ -150,6 +150,24 @@ function OverallPane({ competitionId, userId }) {
   )
 }
 
+// Monthly view for Group + Knockout. The month picker sits here; the table
+// itself is the same group standings component, scoped to the chosen month —
+// the prediction-points monthly table is the wrong shape for this format, since
+// group placings are decided by head-to-head results, not points totals.
+function GroupMonthlyPane({ competitionId, months, userId }) {
+  const [sel, setSel] = useState(months[months.length-1] || null)
+  useEffect(() => { if (months.length) setSel(months[months.length-1]) }, [months])
+  return (
+    <div>
+      <Select value={sel?.key || ''} onChange={e => setSel(months.find(m => m.key === e.target.value) || null)} className="mb-4" style={{ maxWidth: 200 }}>
+        {[...months].reverse().map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+      </Select>
+      <SectionLabel className="mb-2">{sel?.label} group standings</SectionLabel>
+      <GroupStandingsPane competitionId={competitionId} userId={userId} monthKey={sel?.key || null}/>
+    </div>
+  )
+}
+
 function MonthlyPane({ competitionId, months, userId }) {
   const [sel, setSel] = useState(months[months.length-1]||null)
   const { monthly, gameweeksInMonth, loading } = useMonthlyLeaderboard(competitionId, sel?.key)
@@ -269,15 +287,62 @@ function MonthlyPane({ competitionId, months, userId }) {
   )
 }
 
-function GroupStandingsPane({ competitionId, userId }) {
+// Group-stage league table. With no monthKey this is the all-time table; with
+// one it is rebuilt from just that month's group fixtures.
+//
+// The month-scoped version can't use the group_standings view — the view
+// aggregates every fixture in the competition and has no month to filter on —
+// so it recomputes the same figures from group_fixtures directly.
+function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
   const [standings, setStandings] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!competitionId) { setLoading(false); return }
     setLoading(true)
-    load()
-  }, [competitionId])
+    if (monthKey) loadForMonth(); else load()
+  }, [competitionId, monthKey])
+
+  async function withNames(rows) {
+    const userIds = [...new Set(rows.map(r => r.user_id))]
+    const { data: profs } = userIds.length ? await supabase.from('profiles').select('id, display_name').in('id', userIds) : { data: [] }
+    const nameMap = {}; (profs || []).forEach(p => { nameMap[p.id] = p.display_name })
+    return rows.map(r => ({ ...r, profiles: { display_name: nameMap[r.user_id] || 'Unknown' } }))
+  }
+
+  // Same columns as the all-time table, counting only group fixtures whose
+  // gameweek falls in the selected month. points_for / points_against are the
+  // prediction points the two participants scored in that head-to-head.
+  async function loadForMonth() {
+    const { data: fixtures } = await supabase.from('group_fixtures')
+      .select('home_user_id, away_user_id, home_points, away_points, result, gameweeks!inner(month_key)')
+      .eq('competition_id', competitionId)
+      .eq('status', 'completed')
+      .eq('gameweeks.month_key', monthKey)
+
+    const tally = {}
+    const seed = uid => {
+      if (!tally[uid]) tally[uid] = { user_id: uid, played: 0, wins: 0, draws: 0, losses: 0, points_for: 0, points_against: 0, points_diff: 0, league_points: 0 }
+      return tally[uid]
+    }
+
+    for (const fx of (fixtures || [])) {
+      const home = seed(fx.home_user_id), away = seed(fx.away_user_id)
+      const hp = fx.home_points || 0, ap = fx.away_points || 0
+      home.played++; away.played++
+      home.points_for += hp; home.points_against += ap
+      away.points_for += ap; away.points_against += hp
+      if (fx.result === 'home')      { home.wins++;  away.losses++; home.league_points += 3 }
+      else if (fx.result === 'away') { away.wins++;  home.losses++; away.league_points += 3 }
+      else                           { home.draws++; away.draws++;  home.league_points++; away.league_points++ }
+    }
+
+    const rows = Object.values(tally)
+    rows.forEach(r => { r.points_diff = r.points_for - r.points_against })
+    const merged = await withNames(rows)
+    setStandings(merged.sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for))
+    setLoading(false)
+  }
 
   async function load() {
     // group_standings is a database VIEW, not a table — PostgREST's
@@ -286,16 +351,13 @@ function GroupStandingsPane({ competitionId, userId }) {
     // metadata as base tables. Fetching separately and merging here
     // avoids that silently-failing join entirely.
     const { data: rows } = await supabase.from('group_standings').select('*').eq('competition_id', competitionId)
-    const userIds = [...new Set((rows || []).map(r => r.user_id))]
-    const { data: profs } = userIds.length ? await supabase.from('profiles').select('id, display_name').in('id', userIds) : { data: [] }
-    const nameMap = {}; (profs || []).forEach(p => { nameMap[p.id] = p.display_name })
-    const merged = (rows || []).map(r => ({ ...r, profiles: { display_name: nameMap[r.user_id] || 'Unknown' } }))
+    const merged = await withNames(rows || [])
     const sorted = merged.sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
     setStandings(sorted); setLoading(false)
   }
 
   if (loading) return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
-  if (!standings.length) return <EmptyState icon="ti-list-numbers" title="No group games played yet" description="The table will populate once group fixtures have results"/>
+  if (!standings.length) return <EmptyState icon="ti-list-numbers" title={monthKey ? 'No group games this month' : 'No group games played yet'} description={monthKey ? 'Group fixtures assigned to a gameweek this month will appear here once resolved' : 'The table will populate once group fixtures have results'}/>
 
   return (
     <Card className="overflow-hidden p-0">
@@ -389,7 +451,11 @@ export default function Table() {
           ? <GroupStandingsPane competitionId={comp} userId={user?.id}/>
           : <OverallPane competitionId={comp} userId={user?.id}/>
       )}
-      {tab==='monthly'&&comp&&<MonthlyPane competitionId={comp} months={months} userId={user?.id}/>}
+      {tab==='monthly'&&comp&&(
+        compFmt === 'group_knockout'
+          ? <GroupMonthlyPane competitionId={comp} months={months} userId={user?.id}/>
+          : <MonthlyPane competitionId={comp} months={months} userId={user?.id}/>
+      )}
     </div>
   )
 }
