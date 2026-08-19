@@ -80,10 +80,10 @@ const GLYPHS = {
 
 /**
  * @param format  'league' | 'knockout' | 'group_knockout'
- * @param emoji   the competition's stored emoji. Only used when an admin has
- *                set something of their own — the old auto-assigned defaults
- *                are ignored so existing competitions pick up the new glyph
- *                without anyone having to edit them.
+ * @param emoji   a competition's stored emoji, from before the icon became
+ *                format-derived. Rendered only if it holds something an admin
+ *                actually chose; the old auto-assigned defaults are ignored so
+ *                existing competitions pick up the new glyph on their own.
  * @param size    'sm' inline in lists and pills, 'md' for headers
  */
 export default function CompetitionIcon({ format = 'league', emoji, size = 'sm', className = '' }) {

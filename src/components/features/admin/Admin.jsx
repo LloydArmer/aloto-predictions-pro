@@ -74,22 +74,18 @@ export default function Admin() {
   )
 }
 
-// Kept only so an admin can still set a custom flourish. The format's own icon
-// is drawn from `format`, so these are no longer the visual identity — that's
-// why 'knockout' and 'group_knockout' sharing a trophy no longer matters.
-const FORMAT_EMOJI = { league: '', knockout: '', group_knockout: '' }
 
 // ───────────────────────── Competitions ─────────────────────────
 function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
-  const [emoji, setEmoji] = useState(FORMAT_EMOJI.league)
-  const [emojiTouched, setEmojiTouched] = useState(false)
+  // No longer editable: the icon is derived from `format`. The column is still
+  // written (blank) so nothing downstream has to change.
+  const emoji = ''
   const [saving, setSaving] = useState(false)
 
   function changeFormat(newFormat) {
     setFormat(newFormat)
-    if (!emojiTouched) setEmoji(FORMAT_EMOJI[newFormat])
   }
 
   async function submit(e) {
@@ -99,7 +95,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
     try {
       const comp = await createCompetition({ name: name.trim(), format, emoji, created_by: user.id })
       setSelectedComp(comp.id)
-      setName(''); setFormat('league'); setEmoji(FORMAT_EMOJI.league); setEmojiTouched(false)
+      setName(''); setFormat('league')
       toast.success('Competition created!')
     } catch (err) { toast.error(err.message || 'Could not create competition') }
     finally { setSaving(false) }
@@ -124,30 +120,19 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name</p>
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="Premier League Preds 2025/26" />
           </div>
-          <div className="flex gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
-              <Select value={format} onChange={e => changeFormat(e.target.value)} className="w-full">
+          <div>
+            {/* The icon follows the format — there is nothing to choose, so
+                nothing is asked. The picker shows the glyph the competition
+                will carry. */}
+            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
+            <div className="flex items-center gap-2.5">
+              <CompetitionIcon format={format} size="md" />
+              <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
                 <option value="league">League</option>
                 <option value="knockout">Knockout</option>
                 <option value="group_knockout">Group + Knockout</option>
               </Select>
             </div>
-            <div style={{ width: 84 }}>
-              {/* Optional now. The format's own icon is the default identity, so
-                  this is only for an admin who wants a personal touch on one
-                  competition — hence "Icon (optional)" rather than "Emoji". */}
-              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Icon</p>
-              <Input value={emoji} onChange={e => { setEmoji(e.target.value); setEmojiTouched(true) }}
-                placeholder="—" className="w-full text-center" />
-            </div>
-          </div>
-          {/* Live preview of how the competition will appear in lists. */}
-          <div className="flex items-center gap-2 -mt-1">
-            <CompetitionIcon format={format} emoji={emoji} />
-            <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>
-              {emoji.trim() ? 'Using your icon' : 'Using the format icon — leave blank to keep it'}
-            </span>
           </div>
           <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Creating…' : 'Create competition'}</Button>
         </form>
