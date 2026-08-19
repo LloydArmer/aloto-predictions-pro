@@ -42,7 +42,9 @@ export default function AppLayout({ children }) {
       {/* ── Top nav bar ── */}
       <nav className="sticky top-0 z-40"
         style={{ background: 'var(--bg-surface)', borderBottom: '0.5px solid var(--border)' }}>
-        <div className="max-w-5xl mx-auto px-4 flex items-center" style={{ height: 52 }}>
+        {/* 46px on mobile rather than 52 — with a tab bar at the bottom too,
+            every pixel of chrome is one less of content. */}
+        <div className="max-w-5xl mx-auto px-4 flex items-center h-[46px] md:h-[52px]">
 
           {/* Brand */}
           <div className="flex items-center gap-2.5 mr-5 flex-shrink-0">
@@ -119,21 +121,22 @@ export default function AppLayout({ children }) {
       </nav>
 
       {/* ── Page content — extra bottom padding on mobile for the tab bar ── */}
-      <main className="max-w-5xl mx-auto px-4 py-6 pb-24 md:pb-6">
+      {/* Bottom padding is computed from --tab-bar-h rather than guessed, so
+          content clears the bar exactly and no dead band is left below it. */}
+      <main
+        className="max-w-5xl mx-auto px-4 pt-4 md:pt-6 md:pb-6"
+        style={{ paddingBottom: 'calc(var(--tab-bar-h) + env(safe-area-inset-bottom) + 12px)' }}
+      >
         {children}
       </main>
 
       {/* ── Mobile bottom tab bar ── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex"
-        style={{ background: 'var(--bg-surface)', borderTop: '0.5px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 tab-bar">
         {NAV.map(item => (
           <NavLink key={item.to} to={item.to} end={item.to === '/'}
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2"
-            style={({ isActive }) => ({
-              color: isActive ? 'var(--accent)' : 'var(--txt-muted)',
-            })}>
-            <i className={`ti ${item.icon} text-lg`} aria-hidden="true" />
-            <span style={{ fontSize: 10 }}>{item.label}</span>
+            className={({ isActive }) => `tab-item${isActive ? ' active' : ''}`}>
+            <i className={`ti ${item.icon}`} aria-hidden="true" />
+            <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>

@@ -25,8 +25,16 @@ function Podium({ rankings, userId }) {
           <div key={p.user_id} className={`podium-card ${i===0?'first':''}`}>
             <div className="text-xl mb-1">{medals[i]}</div>
             <div className="mb-1.5"><span className={`badge badge-${badgeV[i]}`}>{i+1}{i===0?'st':i===1?'nd':'rd'}</span></div>
-            <p className="text-sm font-medium mb-0.5" style={{ color:'var(--txt-primary)' }}>
-              {p.display_name}{p.user_id===userId&&<span className="block text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+            {/* Truncated rather than wrapped: a long name used to push the
+                points total down and leave the three podium cards misaligned. */}
+            <p className="text-sm font-medium mb-0.5" title={p.display_name}
+              style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              {p.display_name}
+            </p>
+            {/* Rendered for everyone, blank when it isn't you, so all three
+                podium cards keep their totals on the same line. */}
+            <p className="text-xs font-normal mb-0.5" style={{ color:'var(--accent)', minHeight: '1em' }}>
+              {p.user_id===userId ? '(you)' : '\u00a0'}
             </p>
             <p className="text-xl font-medium" style={{ color:i===0?'var(--gold)':'var(--accent)' }}>{p.total_points??p.points}</p>
             <p className="text-xs mt-0.5" style={{ color:'var(--txt-muted)' }}>pts</p>
@@ -88,12 +96,19 @@ function OverallPane({ competitionId, userId }) {
                 <thead><tr>
                   <th style={{ width:32, paddingLeft:14 }}>#</th>
                   <th>Player</th>
-                  <th style={{ width:72, textAlign:'right' }}>Correct Results</th>
-                  <th style={{ width:72, textAlign:'right' }}>Correct Scores</th>
-                  <th style={{ width:66, textAlign:'right' }}>Results Bonus</th>
-                  <th style={{ width:62, textAlign:'right' }}>Scores Bonus</th>
-                  <th style={{ width:80, textAlign:'right' }}>⚡ TP 1</th>
-                  <th style={{ width:80, textAlign:'right' }}>⚡ TP 2</th>
+                  {/* Nine columns will not fit a phone. On mobile the two bonus
+                      columns collapse into one combined figure, and the two chips
+                      into one, leaving the player name enough width to be read
+                      rather than truncated to three letters. Desktop is
+                      unchanged — every column shown separately. */}
+                  <th style={{ width:72, textAlign:'right' }}>Results</th>
+                  <th style={{ width:72, textAlign:'right' }}>Scores</th>
+                  <th className="hidden sm:table-cell" style={{ width:66, textAlign:'right' }}>Results Bonus</th>
+                  <th className="hidden sm:table-cell" style={{ width:62, textAlign:'right' }}>Scores Bonus</th>
+                  <th className="sm:hidden" style={{ width:52, textAlign:'right' }}>Bonus</th>
+                  <th className="hidden sm:table-cell" style={{ width:80, textAlign:'right' }}>⚡ TP 1</th>
+                  <th className="hidden sm:table-cell" style={{ width:80, textAlign:'right' }}>⚡ TP 2</th>
+                  <th className="sm:hidden" style={{ width:44, textAlign:'right' }}>⚡</th>
                   <th style={{ width:60, textAlign:'right', paddingRight:14 }}>Total</th>
                 </tr></thead>
                 <tbody>
@@ -110,17 +125,23 @@ function OverallPane({ competitionId, userId }) {
                       <Fragment key={p.user_id}>
                         <tr className={isMe?'highlight':''}>
                           <td style={{ paddingLeft:14 }}><Pos n={i+1}/></td>
-                          <td>
+                          <td className="name-cell">
                             <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>
                               {p.display_name}{isMe&&<span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
                             </p>
                           </td>
                           <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{correctResults}</td>
                           <td className="text-xs text-right" style={{ color:'var(--green)' }}>{correctScores}</td>
-                          <td className="text-xs text-right" style={{ color: resultsBonusPts > 0 ? 'var(--amber)' : 'var(--txt-muted)' }}>{resultsBonusPts > 0 ? `+${resultsBonusPts}` : '–'}</td>
-                          <td className="text-xs text-right" style={{ color: scoresBonusPts > 0 ? '#c88bfa' : 'var(--txt-muted)' }}>{scoresBonusPts > 0 ? `+${scoresBonusPts}` : '–'}</td>
-                          <td className="text-xs text-right" style={{ color: p.tp1_gameweek_id ? 'var(--gold)' : 'var(--txt-muted)' }}>{tp1Label}</td>
-                          <td className="text-xs text-right" style={{ color: p.tp2_gameweek_id ? 'var(--gold)' : 'var(--txt-muted)' }}>{tp2Label}</td>
+                          <td className="text-xs text-right hidden sm:table-cell" style={{ color: resultsBonusPts > 0 ? 'var(--amber)' : 'var(--txt-muted)' }}>{resultsBonusPts > 0 ? `+${resultsBonusPts}` : '–'}</td>
+                          <td className="text-xs text-right hidden sm:table-cell" style={{ color: scoresBonusPts > 0 ? '#c88bfa' : 'var(--txt-muted)' }}>{scoresBonusPts > 0 ? `+${scoresBonusPts}` : '–'}</td>
+                          <td className="text-xs text-right sm:hidden" style={{ color: (resultsBonusPts + scoresBonusPts) > 0 ? 'var(--amber)' : 'var(--txt-muted)' }}>{(resultsBonusPts + scoresBonusPts) > 0 ? `+${resultsBonusPts + scoresBonusPts}` : '–'}</td>
+                          <td className="text-xs text-right hidden sm:table-cell" style={{ color: p.tp1_gameweek_id ? 'var(--gold)' : 'var(--txt-muted)' }}>{tp1Label}</td>
+                          <td className="text-xs text-right hidden sm:table-cell" style={{ color: p.tp2_gameweek_id ? 'var(--gold)' : 'var(--txt-muted)' }}>{tp2Label}</td>
+                          {/* Chips played, as a count — the gameweek detail is on
+                              the wider layout and in the gameweek view. */}
+                          <td className="text-xs text-right sm:hidden" style={{ color: (p.tp1_gameweek_id || p.tp2_gameweek_id) ? 'var(--gold)' : 'var(--txt-muted)' }}>
+                            {(p.tp1_gameweek_id ? 1 : 0) + (p.tp2_gameweek_id ? 1 : 0) || '–'}
+                          </td>
                           <td style={{ textAlign:'right', paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points||0}</span></td>
                         </tr>
                         {badges.length > 0 && (
@@ -242,8 +263,9 @@ function MonthlyPane({ competitionId, months, userId }) {
                   <th style={{ width:36,paddingLeft:14 }}>#</th><th>Player</th>
                   <th style={{ width:44,textAlign:'right',fontSize:10 }}>Res</th>
                   <th style={{ width:44,textAlign:'right',fontSize:10 }}>Exact</th>
-                  <th style={{ width:52,textAlign:'right',fontSize:10 }}>FH Res</th>
-                  <th style={{ width:52,textAlign:'right',fontSize:10 }}>FH Sc</th>
+                  <th className="hidden sm:table-cell" style={{ width:52,textAlign:'right',fontSize:10 }}>FH Res</th>
+                  <th className="hidden sm:table-cell" style={{ width:52,textAlign:'right',fontSize:10 }}>FH Sc</th>
+                  <th className="sm:hidden" style={{ width:48,textAlign:'right',fontSize:10 }}>Bonus</th>
                   <th style={{ width:80,textAlign:'right',fontSize:10 }}>⚡ TP</th>
                   <th style={{ width:54,textAlign:'right',paddingRight:14 }}>Total</th>
                 </tr></thead>
@@ -257,7 +279,9 @@ function MonthlyPane({ competitionId, months, userId }) {
                     const tpLabel = tpGwThisMonth.length
                       ? tpGwThisMonth.map(gwId => {
                           const gw = gameweeksInMonth.find(g => g.id === gwId)
-                          return `${gw?.number || 'GW?'} ${p.gw_breakdown?.[gwId] ?? 0}`
+                          // Middle dot rather than a space: keeps it to one line
+                          // in a narrow column on a phone.
+                          return `${gw?.number || 'GW?'}\u00b7${p.gw_breakdown?.[gwId] ?? 0}`
                         }).join(', ')
                       : '\u2013'
                     const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
@@ -265,11 +289,12 @@ function MonthlyPane({ competitionId, months, userId }) {
                     return (
                     <tr key={p.user_id} className={p.user_id===userId?'highlight':''}>
                       <td style={{ paddingLeft:14 }}><span style={{ fontSize:12,fontWeight:500,color:i===0?'var(--gold)':i===1?'#b4b2a9':i===2?'#f0997b':'var(--txt-muted)' }}>{i+1}</span></td>
-                      <td><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.display_name}{p.user_id===userId&&<span className="ml-1 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}</p></td>
+                      <td className="name-cell"><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.display_name}{p.user_id===userId&&<span className="ml-1 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}</p></td>
                       <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{p.correct_results||0}</td>
                       <td className="text-xs text-right" style={{ color:'var(--green)' }}>{p.exact_scores||0}</td>
-                      <td className="text-xs text-right" style={{ color: resultsBonusPts>0?'var(--amber)':'var(--txt-muted)' }}>{resultsBonusPts>0?`+${resultsBonusPts}`:'\u2013'}</td>
-                      <td className="text-xs text-right" style={{ color: scoresBonusPts>0?'#c88bfa':'var(--txt-muted)' }}>{scoresBonusPts>0?`+${scoresBonusPts}`:'\u2013'}</td>
+                      <td className="text-xs text-right hidden sm:table-cell" style={{ color: resultsBonusPts>0?'var(--amber)':'var(--txt-muted)' }}>{resultsBonusPts>0?`+${resultsBonusPts}`:'\u2013'}</td>
+                      <td className="text-xs text-right hidden sm:table-cell" style={{ color: scoresBonusPts>0?'#c88bfa':'var(--txt-muted)' }}>{scoresBonusPts>0?`+${scoresBonusPts}`:'\u2013'}</td>
+                      <td className="text-xs text-right sm:hidden" style={{ color: (resultsBonusPts+scoresBonusPts)>0?'var(--amber)':'var(--txt-muted)' }}>{(resultsBonusPts+scoresBonusPts)>0?`+${resultsBonusPts+scoresBonusPts}`:'\u2013'}</td>
                       <td className="text-xs text-right" style={{ color: tpGwThisMonth.length?'var(--gold)':'var(--txt-muted)' }}>{tpLabel}</td>
                       <td style={{ textAlign:'right',paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points}</span></td>
                     </tr>
