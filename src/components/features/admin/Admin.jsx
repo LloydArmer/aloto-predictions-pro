@@ -7,6 +7,7 @@ import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resol
 import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
+import CompetitionIcon, { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import toast from 'react-hot-toast'
 
 const TABS = [
@@ -53,7 +54,9 @@ export default function Admin() {
         <div className="flex items-center gap-2 mb-3 p-2 rounded-md" style={{ background: 'var(--accent-dim)', border: '0.5px solid rgba(79,142,247,0.3)' }}>
           <i className="ti ti-folder text-sm flex-shrink-0" style={{ color: 'var(--accent)' }} aria-hidden="true" />
           <Select value={selectedComp || ''} onChange={e => setSelectedComp(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0, fontWeight: 600 }}>
-            {competitions.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+            {/* <option> cannot hold markup, so a plain-text mark stands in for
+                the icon and at least keeps the formats distinguishable. */}
+            {competitions.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
           </Select>
         </div>
       )}
@@ -71,7 +74,10 @@ export default function Admin() {
   )
 }
 
-const FORMAT_EMOJI = { league: '📊', knockout: '🏆', group_knockout: '🏆' }
+// Kept only so an admin can still set a custom flourish. The format's own icon
+// is drawn from `format`, so these are no longer the visual identity — that's
+// why 'knockout' and 'group_knockout' sharing a trophy no longer matters.
+const FORMAT_EMOJI = { league: '', knockout: '', group_knockout: '' }
 
 // ───────────────────────── Competitions ─────────────────────────
 function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp }) {
@@ -119,7 +125,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="Premier League Preds 2025/26" />
           </div>
           <div className="flex gap-3">
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
               <Select value={format} onChange={e => changeFormat(e.target.value)} className="w-full">
                 <option value="league">League</option>
@@ -127,10 +133,21 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
                 <option value="group_knockout">Group + Knockout</option>
               </Select>
             </div>
-            <div style={{ width: 90 }}>
-              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Emoji</p>
-              <Input value={emoji} onChange={e => { setEmoji(e.target.value); setEmojiTouched(true) }} className="w-full text-center" />
+            <div style={{ width: 84 }}>
+              {/* Optional now. The format's own icon is the default identity, so
+                  this is only for an admin who wants a personal touch on one
+                  competition — hence "Icon (optional)" rather than "Emoji". */}
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Icon</p>
+              <Input value={emoji} onChange={e => { setEmoji(e.target.value); setEmojiTouched(true) }}
+                placeholder="—" className="w-full text-center" />
             </div>
+          </div>
+          {/* Live preview of how the competition will appear in lists. */}
+          <div className="flex items-center gap-2 -mt-1">
+            <CompetitionIcon format={format} emoji={emoji} />
+            <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+              {emoji.trim() ? 'Using your icon' : 'Using the format icon — leave blank to keep it'}
+            </span>
           </div>
           <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Creating…' : 'Create competition'}</Button>
         </form>
@@ -144,7 +161,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
               className="p-3 mb-2 flex items-center justify-between flex-wrap gap-2"
               style={{ border: selectedComp === c.id ? '1px solid var(--accent)' : '0.5px solid var(--border)' }}>
               <div className="flex items-center gap-2 cursor-pointer" onClick={() => setSelectedComp(c.id)} style={{ flex: '1 1 140px', minWidth: 0 }}>
-                <span>{c.emoji}</span>
+                <CompetitionIcon format={c.format} emoji={c.emoji} />
                 <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
               </div>
               <div className="flex items-center gap-2">
@@ -256,7 +273,7 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
           <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Use points rules from</p>
           <Select value={sourceId} onChange={e => saveSource(e.target.value)} style={{ width: '100%', maxWidth: 260 }}>
             <option value="">— Select a League competition —</option>
-            {leagueOptions.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+            {leagueOptions.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
           </Select>
           {leagueOptions.length === 0 && <p className="text-xs mt-1" style={{ color: 'var(--amber)' }}>No League-format competitions exist yet to borrow rules from.</p>}
         </div>
@@ -559,7 +576,7 @@ function GameweeksTab({ competitionId, competitions }) {
                       return (
                         <label key={c.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={linked} onChange={() => toggleLink(gw.id, c.id, linked)} />
-                          {c.emoji} {c.name}
+                          {FORMAT_MARK[c.format] || ''} {c.name}
                         </label>
                       )
                     })}

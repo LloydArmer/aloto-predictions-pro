@@ -1,4 +1,5 @@
 import { useCompetitions } from '../../hooks/useCompetitions'
+import CompetitionIcon from '../ui/CompetitionIcon'
 
 export default function CompetitionSelector({ value, onChange, excludeFormats = [] }) {
   const { competitions, loading } = useCompetitions()
@@ -13,8 +14,10 @@ export default function CompetitionSelector({ value, onChange, excludeFormats = 
   return (
     <div className="flex gap-1.5 flex-wrap mb-5">
       {visible.map(c => (
-        <button key={c.id} className={`pill ${value === c.id ? 'active' : ''}`} onClick={() => onChange(c.id)}>
-          {c.emoji || '⚽'} {c.name}
+        <button key={c.id} className={`pill ${value === c.id ? 'active' : ''}`} onClick={() => onChange(c.id)}
+          style={{ gap: 7, paddingLeft: 6 }}>
+          <CompetitionIcon format={c.format} emoji={c.emoji} />
+          {c.name}
         </button>
       ))}
     </div>

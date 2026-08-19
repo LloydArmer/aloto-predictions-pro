@@ -6,6 +6,7 @@ import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
 import { resolvePointRules } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
+import { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
 
@@ -572,7 +573,7 @@ export default function Predict() {
     <div>
       <div className="flex gap-2 flex-wrap mb-4">
         <Select value={comp || ''} onChange={e => setComp(e.target.value)} style={{ flex: '1 1 200px' }}>
-          {competitions.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+          {competitions.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
         </Select>
         <Select value={selectedGW?.id || ''} onChange={e => setSelectedGW(gameweeks.find(g => g.id === e.target.value) || null)} style={{ flex: '1 1 140px' }}>
           {gameweeks.length === 0 && <option value="">No gameweeks yet</option>}
