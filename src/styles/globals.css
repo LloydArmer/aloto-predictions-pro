@@ -204,6 +204,31 @@
     .tab-item { transition: none; }
   }
 
+  /* Horizontal strip of buttons that scrolls rather than wrapping. Admin's
+     five section tabs were wrapping onto three rows on a phone, pushing the
+     actual content most of the way down the screen. */
+  .tab-strip {
+    display: flex; gap: 4px;
+    overflow-x: auto; flex-wrap: nowrap;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .tab-strip::-webkit-scrollbar { display: none; }
+  .tab-strip > * { flex: 0 0 auto; white-space: nowrap; }
+
+  /* Pinned first column for wide tables. Without it, scrolling the predictions
+     grid sideways takes the participant names off screen and leaves a wall of
+     numbers with nothing to attach them to. */
+  .data-table .sticky-col {
+    position: sticky; left: 0; z-index: 2;
+    background: var(--bg-surface);
+  }
+  .data-table thead .sticky-col { background: var(--bg-raised); z-index: 3; }
+  .data-table tr.highlight .sticky-col { background: var(--accent-dim); }
+  .data-table .sticky-col::after {
+    content: ''; position: absolute; top: 0; right: 0; bottom: 0;
+    width: 1px; background: var(--border);
+  }
+
   /* ── Mobile density ───────────────────────────────────────────────────
      Reclaiming vertical space so more fits above the fold. Scoped to small
      screens only; desktop spacing is unchanged. */

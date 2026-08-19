@@ -314,7 +314,7 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
           <div className="overflow-x-auto">
             <table className="data-table w-full" style={{ minWidth: 190 + fixtures.length * 100 + (tpUsers.size > 0 ? 60 : 0) }}>
               <thead><tr>
-                <th style={{ width: 110, paddingLeft: 14 }}>Participant</th>
+                <th className="sticky-col" style={{ width: 110, paddingLeft: 14 }}>Participant</th>
                 {fixtures.map(f => <th key={f.id} style={{ width: 100, textAlign:'center', fontSize: 10, lineHeight: 1.3 }}>{f.home_team}<br/>v<br/>{f.away_team}</th>)}
                 {tpUsers.size > 0 && <th style={{ width: 50, textAlign:'center', fontSize: 10 }}>⚡ TP</th>}
                 <th style={{ width: 70, textAlign:'center', fontSize: 10 }}>Total</th>
@@ -339,8 +339,14 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                   const total = settled != null ? settled : (playedTp ? liveSum * 3 : liveSum)
                   const tpBonus = playedTp ? total - Math.round(total / 3) : 0
                   return (
-                  <tr key={p.user_id}>
-                    <td style={{ paddingLeft: 14 }}><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.profiles?.display_name}</p></td>
+                  <tr key={p.user_id} className={isMe ? 'highlight' : ''}>
+                    {/* Pinned: scrolling the grid sideways used to take the names
+                        off screen, leaving numbers with nothing to attach them to. */}
+                    <td className="sticky-col" style={{ paddingLeft: 14, maxWidth: 0 }}>
+                      <p className="text-sm font-medium" style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {p.profiles?.display_name}
+                      </p>
+                    </td>
                     {fixtures.map(f => {
                       const pred = predMap[p.user_id]?.[f.id]
                       const hasKickedOff = new Date(f.kickoff_time) <= new Date()

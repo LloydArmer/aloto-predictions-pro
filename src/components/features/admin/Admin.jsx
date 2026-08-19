@@ -33,9 +33,10 @@ export default function Admin() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-base font-medium mb-4" style={{ color: 'var(--txt-primary)' }}>Admin</h1>
+      <h1 className="text-base font-medium mb-3" style={{ color: 'var(--txt-primary)' }}>Admin</h1>
 
-      <div className="flex gap-1 mb-3 flex-wrap">
+      {/* One scrolling line rather than wrapping to three rows on a phone. */}
+      <div className="tab-strip mb-3">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors"
@@ -46,10 +47,12 @@ export default function Admin() {
       </div>
 
       {tab !== 'competitions' && competitions.length > 0 && (
-        <div className="flex items-center gap-2 mb-4 p-2.5 rounded-md flex-wrap" style={{ background: 'var(--accent-dim)', border: '0.5px solid rgba(79,142,247,0.3)' }}>
-          <i className="ti ti-folder text-sm" style={{ color: 'var(--accent)' }} aria-hidden="true" />
-          <span className="text-xs" style={{ color: 'var(--txt-second)' }}>Managing:</span>
-          <Select value={selectedComp || ''} onChange={e => setSelectedComp(e.target.value)} style={{ flex: '1 1 160px', fontWeight: 600 }}>
+        // The competition picker. "Managing:" was dropped — the folder icon and
+        // the picker itself already say what this is, and on a phone the label
+        // pushed the control onto a second line.
+        <div className="flex items-center gap-2 mb-3 p-2 rounded-md" style={{ background: 'var(--accent-dim)', border: '0.5px solid rgba(79,142,247,0.3)' }}>
+          <i className="ti ti-folder text-sm flex-shrink-0" style={{ color: 'var(--accent)' }} aria-hidden="true" />
+          <Select value={selectedComp || ''} onChange={e => setSelectedComp(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0, fontWeight: 600 }}>
             {competitions.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
           </Select>
         </div>
