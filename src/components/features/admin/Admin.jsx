@@ -1568,8 +1568,64 @@ function BracketTab({ competitionId, competitions }) {
 }
 
 // ───────────────────────── Participants ─────────────────────────
+function JoinCodeCard({ competitionId, competitionName, initialCode, onChanged }) {
+  const [code, setCode] = useState(initialCode || '')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => { setCode(initialCode || '') }, [initialCode, competitionId])
+
+  const message = `Join "${competitionName}" on ALOTO Prediction Pro.\n\n1. Sign up at ${window.location.origin}/signup\n2. Go to Settings and enter this code:\n\n${code}`
+
+  async function copyCode() {
+    try { await navigator.clipboard.writeText(code); toast.success('Code copied') }
+    catch { toast.error('Could not copy — select it and copy by hand') }
+  }
+
+  function shareOnWhatsApp() {
+    // Opens the admin's OWN WhatsApp with the message ready. No Twilio, no
+    // per-message cost, and it arrives from a number people recognise.
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank')
+  }
+
+  async function regenerate() {
+    if (!window.confirm('Issue a new code?\n\nThe current one stops working immediately. Anyone already in the competition stays in.')) return
+    setBusy(true)
+    try {
+      const { data, error } = await supabase.rpc('regenerate_join_code', { p_competition_id: competitionId })
+      if (error) throw error
+      setCode(data)
+      onChanged?.(data)
+      toast.success('New code issued')
+    } catch { toast.error('Could not issue a new code') }
+    finally { setBusy(false) }
+  }
+
+  if (!code) return null
+
+  return (
+    <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
+      <p className="text-xs font-medium mb-1" style={{ color: 'var(--accent)' }}>Join code</p>
+      <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
+        Share this and people can add themselves — no need to add them here one by one.
+      </p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="px-3 py-2 rounded-md" style={{
+          background: 'var(--bg-elevated)', border: '0.5px solid var(--border-med)',
+          color: 'var(--txt-primary)', fontSize: 20, fontWeight: 700, letterSpacing: '4px',
+        }}>{code}</span>
+        <Button onClick={copyCode} className="btn-sm"><i className="ti ti-copy text-sm mr-1" aria-hidden="true" />Copy</Button>
+        <Button onClick={shareOnWhatsApp} className="btn-sm"><i className="ti ti-brand-whatsapp text-sm mr-1" aria-hidden="true" />Share</Button>
+        <Button onClick={regenerate} disabled={busy} className="btn-sm" title="Issue a new code and invalidate this one">
+          <i className="ti ti-refresh text-sm" aria-hidden="true" />
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
 function ParticipantsTab({ competitionId, competitions, inviterName }) {
   const comp = competitions.find(c => c.id === competitionId)
+  const [joinCode, setJoinCode] = useState(null)
   const [participants, setParticipants] = useState([])
   const [invitations, setInvitations] = useState([])
   const [loading, setLoading] = useState(false)
@@ -1589,6 +1645,8 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
       setParticipants(parts || [])
       const { data: invs } = await supabase.from('invitations').select('*').eq('competition_id', competitionId).is('accepted_at', null)
       setInvitations(invs || [])
+      const { data: c } = await supabase.from('competitions').select('join_code').eq('id', competitionId).maybeSingle()
+      setJoinCode(c?.join_code || null)
     } finally { setLoading(false) }
   }
 
@@ -1694,8 +1752,17 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
 
   return (
     <div>
+      {/* Sharing the code is the primary route in now; adding people by hand
+          below is the fallback for anyone who can't manage it. */}
+      <JoinCodeCard
+        competitionId={competitionId}
+        competitionName={comp?.name || 'our league'}
+        initialCode={joinCode}
+        onChanged={setJoinCode}
+      />
+
       <Card className="p-4 mb-4">
-        <SectionLabel className="mb-3">Add a player</SectionLabel>
+        <SectionLabel className="mb-3">Add a player manually</SectionLabel>
         <form onSubmit={addParticipant} className="flex flex-wrap gap-2 items-center">
           <Input placeholder="Name (required)" value={name} onChange={e => setName(e.target.value)} style={{ flex: '1 1 130px' }} />
           <Input type="email" placeholder="Email (optional)" value={email} onChange={e => setEmail(e.target.value)} style={{ flex: '1 1 160px' }} />

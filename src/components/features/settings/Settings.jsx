@@ -3,6 +3,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { supabase } from '../../../lib/supabase'
 import { Card, Input, Button } from '../../ui'
 import { pushCapability, enablePush, disablePush, isIOS, rememberedDeviceToken } from '../../../lib/push'
+import JoinCompetition from '../competitions/JoinCompetition'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
@@ -137,7 +138,13 @@ export default function Settings() {
 
   return (
     <div className="max-w-sm">
-      <h1 className="text-base font-medium mb-5" style={{ color:'var(--txt-primary)' }}>Notification settings</h1>
+      <h1 className="text-base font-medium mb-5" style={{ color:'var(--txt-primary)' }}>Settings</h1>
+
+      {/* Joining lives here because it's where someone looks when they've been
+          sent a code and don't yet know where to put it. */}
+      <div className="mb-5">
+        <JoinCompetition onJoined={() => window.location.reload()} />
+      </div>
 
       {!isAdmin && !checkingAdmin && !adminExists && (
         <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'rgba(79,142,247,0.35)' }}>

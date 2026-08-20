@@ -6,6 +6,7 @@ import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
+import JoinCompetition from '../competitions/JoinCompetition'
 import { outcomeLabel, resolvePointRules } from '../../../lib/scoring'
 import { buildWeeklyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import CompetitionSelector from '../../layout/CompetitionSelector'
@@ -206,16 +207,22 @@ export default function Dashboard() {
   // state, not an error, so show guidance instead of an empty dashboard shell.
   if (competitions.length === 0) {
     return (
-      <Card className="p-6 text-center">
-        <EmptyState
-          icon="ti-trophy"
-          title="No competitions yet"
-          description={isAdmin
-            ? "Create your first competition in Admin to get started."
-            : "You haven't been added to a competition yet. Ask your admin to add you."}
-          action={isAdmin ? <Link to="/admin" className="btn btn-primary btn-sm">Go to Admin</Link> : null}
-        />
-      </Card>
+      <div>
+        <Card className="p-6 text-center mb-4">
+          <EmptyState
+            icon="ti-trophy"
+            title="No competitions yet"
+            description={isAdmin
+              ? "Create your first competition in Admin, or join one with a code."
+              : "Enter the code your league admin sent you to get started."}
+            action={isAdmin ? <Link to="/admin" className="btn btn-primary btn-sm">Go to Admin</Link> : null}
+          />
+        </Card>
+        {/* The first screen a new player lands on. Putting the code box here
+            means they don't have to go hunting for where it belongs — this is
+            the whole reason they opened the app. */}
+        <JoinCompetition onJoined={() => window.location.reload()} />
+      </div>
     )
   }
 
