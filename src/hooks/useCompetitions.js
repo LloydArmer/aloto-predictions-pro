@@ -9,7 +9,24 @@ export function useCompetitions() {
 
   async function fetch() {
     try {
-      const { data } = await supabase.from('competitions').select('*').order('created_at', { ascending: false })
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setCompetitions([]); return }
+
+      // Only competitions this person is a participant in.
+      //
+      // This used to select every competition in the database with no filter,
+      // so a brand new account saw — and could use — every league anyone had
+      // ever created. That made the join code decorative: there was nothing to
+      // join, because you were already looking at everything.
+      const { data: mine } = await supabase
+        .from('participants').select('competition_id').eq('user_id', user.id)
+
+      const ids = (mine || []).map(p => p.competition_id)
+      if (!ids.length) { setCompetitions([]); return }
+
+      const { data } = await supabase
+        .from('competitions').select('*').in('id', ids)
+        .order('created_at', { ascending: false })
       setCompetitions(data || [])
     } finally { setLoading(false) }
   }
