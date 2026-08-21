@@ -53,6 +53,9 @@ export default function SeasonTab({ competitionId }) {
   const [pickConfig, setPickConfig] = useState(null)
   const [picks, setPicks] = useState([])
   const [scoring, setScoring] = useState(false)
+  const [resultsOpen, setResultsOpen] = useState(false)
+  const [tableOpen, setTableOpen] = useState(true)
+  const [picksOpen, setPicksOpen] = useState(true)
 
   useEffect(() => { if (competitionId) load(); else setLoading(false) }, [competitionId])
 
@@ -260,10 +263,18 @@ export default function SeasonTab({ competitionId }) {
         </Card>
       ) : (
         <Card className="p-4 mb-5">
-          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-            <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
-              {tableConfig.league_name} · {tableConfig.team_count} teams
-            </p>
+          {/* The whole section collapses too, so once a league is set up it
+              takes one line rather than most of the screen. The open/closed
+              toggle stays visible either way — it's the control most likely to
+              be needed in a hurry. */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <button onClick={() => setTableOpen(o => !o)} className="flex items-center gap-2" style={{ minWidth: 0 }}>
+              <i className={`ti ti-chevron-${tableOpen ? 'up' : 'down'} text-base`}
+                style={{ color: 'var(--txt-muted)' }} aria-hidden="true" />
+              <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+                {tableConfig.league_name} · {tableConfig.team_count} teams
+              </span>
+            </button>
             <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--txt-second)', cursor: 'pointer' }}>
               <input type="checkbox" checked={tableConfig.is_open}
                 onChange={e => updateTableConfig({ is_open: e.target.checked })}
@@ -271,6 +282,15 @@ export default function SeasonTab({ competitionId }) {
               Open for predictions
             </label>
           </div>
+
+          {!tableOpen && (
+            <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+              {teams.length} of {tableConfig.team_count} teams · {deadlineLabel(tableConfig.deadline)}
+              {tableConfig.results_entered ? ' · final table saved' : ''}
+            </p>
+          )}
+
+          {tableOpen && <div className="mt-3">
 
           <div className="flex flex-wrap gap-3 mb-3">
             <div>
@@ -292,21 +312,38 @@ export default function SeasonTab({ competitionId }) {
 
           {teams.length >= tableConfig.team_count && (
             <div className="mt-4 pt-4" style={{ borderTop: '0.5px solid var(--border)' }}>
-              <p className="text-sm font-medium mb-2" style={{ color: 'var(--txt-primary)' }}>
-                Final table {tableConfig.results_entered && <span className="text-xs font-normal" style={{ color: 'var(--green)' }}>· saved</span>}
-              </p>
-              <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>
-                Enter the real finishing order once the season ends, then calculate scores below.
-              </p>
-              <TableOrderEditor
-                teams={teams}
-                value={results}
-                count={tableConfig.team_count}
-                onChange={(pos, teamId) => setResults(prev => ({ ...prev, [pos]: teamId }))}
-              />
-              <Button variant="primary" className="mt-3" onClick={saveResults}>Save final table</Button>
+              {/* Collapsed by default. Twenty dropdown rows is a lot of screen
+                  for something only touched once a season — and leaving it open
+                  buries the controls above it. */}
+              <button onClick={() => setResultsOpen(o => !o)}
+                className="flex items-center justify-between w-full gap-2">
+                <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+                  Final table
+                  {tableConfig.results_entered
+                    ? <span className="text-xs font-normal ml-2" style={{ color: 'var(--green)' }}>· saved</span>
+                    : <span className="text-xs font-normal ml-2" style={{ color: 'var(--txt-muted)' }}>· not entered yet</span>}
+                </span>
+                <i className={`ti ti-chevron-${resultsOpen ? 'up' : 'down'} text-base`}
+                  style={{ color: 'var(--txt-muted)' }} aria-hidden="true" />
+              </button>
+
+              {resultsOpen && (
+                <div className="mt-3">
+                  <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>
+                    Enter the real finishing order once the season ends, then calculate scores below.
+                  </p>
+                  <TableOrderEditor
+                    teams={teams}
+                    value={results}
+                    count={tableConfig.team_count}
+                    onChange={(pos, teamId) => setResults(prev => ({ ...prev, [pos]: teamId }))}
+                  />
+                  <Button variant="primary" className="mt-3" onClick={saveResults}>Save final table</Button>
+                </div>
+              )}
             </div>
           )}
+          </div>}
         </Card>
       )}
 
@@ -322,7 +359,14 @@ export default function SeasonTab({ competitionId }) {
         </Card>
       ) : (
         <Card className="p-4 mb-5">
-          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <button onClick={() => setPicksOpen(o => !o)} className="flex items-center gap-2" style={{ minWidth: 0 }}>
+              <i className={`ti ti-chevron-${picksOpen ? 'up' : 'down'} text-base`}
+                style={{ color: 'var(--txt-muted)' }} aria-hidden="true" />
+              <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+                {picks.length} question{picks.length !== 1 ? 's' : ''}
+              </span>
+            </button>
             <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--txt-second)', cursor: 'pointer' }}>
               <input type="checkbox" checked={pickConfig.is_open}
                 onChange={e => updatePickConfig({ is_open: e.target.checked })}
@@ -330,6 +374,14 @@ export default function SeasonTab({ competitionId }) {
               Open for predictions
             </label>
           </div>
+
+          {!picksOpen && (
+            <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+              {picks.reduce((sum, p) => sum + (p.points || 0), 0)} points available · {deadlineLabel(pickConfig.deadline)}
+            </p>
+          )}
+
+          {picksOpen && <div className="mt-3">
 
           <div className="flex flex-wrap gap-3 mb-4">
             <div>
@@ -361,6 +413,7 @@ export default function SeasonTab({ competitionId }) {
                   teams={teams}
                 />
               ))}
+          </div>}
         </Card>
       )}
 
