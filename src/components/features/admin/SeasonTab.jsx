@@ -31,6 +31,38 @@ const PICK_SUGGESTIONS = [
   'Premier League Golden Boot',
 ]
 
+/**
+ * A number input that can be emptied while you type.
+ *
+ * The obvious `parseInt(e.target.value) || 0` on every keystroke turns an empty
+ * box into a 0 the instant you clear it, which then can't be typed over — you
+ * end up fighting the field. This keeps the raw text locally, so the box can be
+ * blank, and only commits a number when you leave it.
+ */
+function NumberField({ value, onCommit, width = 90, min = 0, placeholder }) {
+  const [text, setText] = useState(value == null ? '' : String(value))
+
+  // Re-sync when the value changes elsewhere (a reload, another edit).
+  useEffect(() => { setText(value == null ? '' : String(value)) }, [value])
+
+  function commit() {
+    const parsed = text.trim() === '' ? min : parseInt(text, 10)
+    const safe = Number.isFinite(parsed) && parsed >= min ? parsed : min
+    setText(String(safe))
+    if (safe !== value) onCommit(safe)
+  }
+
+  return (
+    <Input
+      type="number" min={min} value={text} placeholder={placeholder}
+      onChange={e => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      style={{ width }}
+    />
+  )
+}
+
 /** Converts a datetime-local value to ISO, and back for display. */
 const toLocalInput = iso => {
   if (!iso) return ''
@@ -115,6 +147,26 @@ export default function SeasonTab({ competitionId }) {
     })
     if (error) { toast.error('Could not create the table prediction'); return }
     toast.success('Created — now add the teams')
+    load()
+  }
+
+  /**
+   * Removes the whole final-table setup so a different league can be chosen.
+   *
+   * There is one final table per competition — that's what the unique
+   * constraint enforces, and it matches "predict THE table". Changing league
+   * therefore means starting that section again, which is destructive enough to
+   * spell out rather than just do.
+   */
+  async function deleteTableConfig() {
+    const warning = teams.length
+      ? `Remove the ${tableConfig.league_name} table?\n\nIts ${teams.length} teams, everyone's predictions and any saved final table will be deleted. This cannot be undone.`
+      : `Remove the ${tableConfig.league_name} table and choose a different league?`
+    if (!window.confirm(warning)) return
+
+    const { error } = await supabase.from('season_table_configs').delete().eq('id', tableConfig.id)
+    if (error) { toast.error('Could not remove'); return }
+    toast.success('Removed — pick a league to start again')
     load()
   }
 
@@ -290,14 +342,22 @@ export default function SeasonTab({ competitionId }) {
             </p>
           )}
 
+          {tableOpen && (
+            <div className="mt-2">
+              <button onClick={deleteTableConfig} className="text-xs"
+                style={{ color: 'var(--txt-muted)', textDecoration: 'underline' }}>
+                Change league
+              </button>
+            </div>
+          )}
+
           {tableOpen && <div className="mt-3">
 
           <div className="flex flex-wrap gap-3 mb-3">
             <div>
               <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Points per correct position</p>
-              <Input type="number" min="0" value={tableConfig.points_per_position}
-                onChange={e => updateTableConfig({ points_per_position: parseInt(e.target.value, 10) || 0 })}
-                style={{ width: 90 }} />
+              <NumberField value={tableConfig.points_per_position}
+                onCommit={v => updateTableConfig({ points_per_position: v })} width={90} />
             </div>
             <div>
               <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Deadline</p>
@@ -448,8 +508,7 @@ function CustomLeagueForm({ onCreate }) {
       </div>
       <div>
         <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Teams</p>
-        <Input type="number" min="2" max="32" value={count}
-          onChange={e => setCount(parseInt(e.target.value, 10) || 20)} style={{ width: 74 }}/>
+        <NumberField value={count} onCommit={setCount} width={74} min={2} />
       </div>
       <Button variant="primary" disabled={!name.trim()} onClick={() => onCreate(name.trim(), count)}>Create</Button>
     </div>
@@ -532,9 +591,7 @@ function PickEditor({ pick, onUpdate, onRemove, onAddOptions, onReload, teams })
 
         <div className="flex items-center gap-1.5">
           <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Points</span>
-          <Input type="number" min="0" value={pick.points}
-            onChange={e => onUpdate({ points: parseInt(e.target.value, 10) || 0 })}
-            style={{ width: 62 }}/>
+          <NumberField value={pick.points} onCommit={v => onUpdate({ points: v })} width={62} />
           <Button className="btn-sm" onClick={() => setExpanded(x => !x)}>
             <i className={`ti ti-chevron-${expanded ? 'up' : 'down'} text-sm`} aria-hidden="true"/>
           </Button>
