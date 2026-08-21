@@ -7,6 +7,7 @@ import { useLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import JoinCompetition from '../competitions/JoinCompetition'
+import ReminderBanner from './ReminderBanner'
 import { outcomeLabel, resolvePointRules } from '../../../lib/scoring'
 import { buildWeeklyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import CompetitionSelector from '../../layout/CompetitionSelector'
@@ -319,6 +320,8 @@ export default function Dashboard() {
               })()}
             </Card>
           )}
+
+          <ReminderBanner userId={user?.id} pendingGws={pendingGws} />
 
           {pendingGws.map(pg => (
             <Link key={pg.id} to="/predict" className="block mb-3">
