@@ -531,6 +531,30 @@ function GameweeksTab({ competitionId, competitions }) {
                     <input type="checkbox" checked={gw.triple_points_blocked || false} onChange={e => updateGw(gw.id, { triple_points_blocked: e.target.checked })} />
                     Block Triple Points this GW
                   </label>
+
+                  {/* Full house bonus overrides. Blank means the competition's
+                      normal rule — which is what every gameweek should use
+                      unless it's unusual, like a 10-fixture final round where a
+                      full house is far harder to hit. */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }} title="Leave blank to use the competition's normal bonus">FH bonus:</span>
+                    <input type="number" min="0" placeholder="Res"
+                      value={gw.full_house_results_bonus ?? ''}
+                      onChange={e => {
+                        const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
+                        setGws(prev => prev.map(g => g.id === gw.id ? { ...g, full_house_results_bonus: v } : g))
+                        updateGw(gw.id, { full_house_results_bonus: v })
+                      }}
+                      style={{ width: 62, background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
+                    <input type="number" min="0" placeholder="Sc"
+                      value={gw.full_house_scores_bonus ?? ''}
+                      onChange={e => {
+                        const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
+                        setGws(prev => prev.map(g => g.id === gw.id ? { ...g, full_house_scores_bonus: v } : g))
+                        updateGw(gw.id, { full_house_scores_bonus: v })
+                      }}
+                      style={{ width: 62, background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {otherComps.length > 0 && (

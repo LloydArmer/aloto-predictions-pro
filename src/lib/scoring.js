@@ -60,6 +60,16 @@ export async function recalculateGameweek(supabase, competitionId, gameweekId, r
   const { data: gw } = await supabase.from('gameweeks').select('status').eq('id', gameweekId).single()
   if (gw?.status !== 'completed') return { skipped: true, reason: 'Gameweek not marked completed yet' }
 
+  // A gameweek can override the full house bonuses. An end-of-season gameweek
+  // with all 10 fixtures at once is a much harder full house than the usual
+  // six, so it can be worth more without changing how any other gameweek
+  // scores. Null on either column means "use the competition's rule".
+  const { data: gwRow } = await supabase.from('gameweeks')
+    .select('full_house_results_bonus, full_house_scores_bonus').eq('id', gameweekId).maybeSingle()
+
+  const resultsBonus = gwRow?.full_house_results_bonus ?? rules.full_house_results_bonus ?? 0
+  const scoresBonus  = gwRow?.full_house_scores_bonus  ?? rules.full_house_scores_bonus  ?? 0
+
   const { data: fixtures } = await supabase.from('fixtures').select('*').eq('gameweek_id', gameweekId)
   // A VOIDED fixture is out of the gameweek entirely — postponed, abandoned, or
   // called off. It scores nobody anything and, crucially, it does not stop a
@@ -115,8 +125,8 @@ export async function recalculateGameweek(supabase, competitionId, gameweekId, r
       const allCorrectResult = liveFixtures.every(f => scoreOnePrediction(predMap[f.id], f, rules).isCorrectResult)
       const allExact         = liveFixtures.every(f => scoreOnePrediction(predMap[f.id], f, rules).isExact)
       if (!scores[uid]) scores[uid] = { user_id: uid, points: 0, exact_scores: 0, correct_results: 0, full_house_results: false, full_house_scores: false }
-      if (allCorrectResult) { scores[uid].full_house_results = true; scores[uid].points += rules.full_house_results_bonus || 0 }
-      if (allExact)         { scores[uid].full_house_scores  = true; scores[uid].points += rules.full_house_scores_bonus  || 0 }
+      if (allCorrectResult) { scores[uid].full_house_results = true; scores[uid].points += resultsBonus }
+      if (allExact)         { scores[uid].full_house_scores  = true; scores[uid].points += scoresBonus }
     }
   }
 
