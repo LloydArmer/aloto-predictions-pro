@@ -7,6 +7,7 @@ import { supabase } from '../../../lib/supabase'
 import { resolvePointRules } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
+import SeasonPredictions from '../season/SeasonPredictions'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
 
@@ -582,7 +583,7 @@ export default function Predict() {
       </div>
 
       <div className="flex gap-4 mb-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
-        {[['mine','My Predictions'],['results','Gameweek Results']].map(([k,label]) => (
+        {[['mine','My Predictions'],['results','Gameweek Results'],['season','Season']].map(([k,label]) => (
           <button key={k} onClick={() => setTab(k)} className="text-sm pb-2"
             style={{ color: tab===k ? 'var(--accent)' : 'var(--txt-muted)', fontWeight: tab===k ? 600 : 400, borderBottom: tab===k ? '2px solid var(--accent)' : '2px solid transparent' }}>
             {label}
@@ -601,6 +602,7 @@ export default function Predict() {
         </div>
       )}
 
+      {tab === 'season' && <SeasonPredictions competitionId={comp} userId={user?.id} />}
       {tab === 'mine' && <TriplePointsCard competitionId={comp} competitions={competitions} gameweek={selectedGW} fixtures={fixtures} predictions={predictions} userId={user?.id} />}
 
       {tab === 'mine' ? (

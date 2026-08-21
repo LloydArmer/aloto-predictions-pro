@@ -477,6 +477,16 @@ export default function SeasonTab({ competitionId }) {
         </Card>
       )}
 
+      {/* ================= WHO'S DONE ================= */}
+      {(tableConfig?.is_open || pickConfig?.is_open) && (
+        <CompletionTracker
+          competitionId={competitionId}
+          tableConfig={tableConfig}
+          pickConfig={pickConfig}
+          picks={picks}
+        />
+      )}
+
       {/* ================= SCORING ================= */}
       {(tableConfig || pickConfig) && (
         <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
@@ -496,6 +506,122 @@ export default function SeasonTab({ competitionId }) {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * Who has entered and who hasn't, so an admin can chase the stragglers before
+ * the deadline rather than discovering afterwards that half the league missed
+ * it.
+ *
+ * Counts rows rather than reading the entries themselves — an admin has no
+ * business seeing predictions before the deadline any more than anyone else
+ * does, and knowing someone is "18 of 20 placed" is all that's needed to chase
+ * them.
+ */
+function CompletionTracker({ competitionId, tableConfig, pickConfig, picks }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => { load() }, [competitionId, tableConfig?.id, pickConfig?.id, picks.length])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const { data: parts } = await supabase.from('participants')
+        .select('user_id, profiles(display_name)').eq('competition_id', competitionId)
+
+      const tableCounts = {}
+      if (tableConfig?.id) {
+        const { data } = await supabase.from('season_table_predictions')
+          .select('user_id').eq('config_id', tableConfig.id)
+        ;(data || []).forEach(r => { tableCounts[r.user_id] = (tableCounts[r.user_id] || 0) + 1 })
+      }
+
+      const pickCounts = {}
+      const pickIds = picks.map(p => p.id)
+      if (pickIds.length) {
+        const { data } = await supabase.from('season_pick_answers')
+          .select('user_id').in('pick_id', pickIds)
+        ;(data || []).forEach(r => { pickCounts[r.user_id] = (pickCounts[r.user_id] || 0) + 1 })
+      }
+
+      const list = (parts || []).map(p => ({
+        user_id: p.user_id,
+        name: p.profiles?.display_name || 'Unknown',
+        tableDone: tableConfig ? (tableCounts[p.user_id] || 0) : null,
+        tableNeeded: tableConfig?.team_count || 0,
+        picksDone: pickIds.length ? (pickCounts[p.user_id] || 0) : null,
+        picksNeeded: pickIds.length,
+      }))
+
+      // Least complete first — the people who need chasing are the point of
+      // this list, so they shouldn't be at the bottom of it.
+      list.sort((a, b) => {
+        const ratio = x => {
+          const done = (x.tableDone || 0) + (x.picksDone || 0)
+          const need = (x.tableNeeded || 0) + (x.picksNeeded || 0)
+          return need ? done / need : 1
+        }
+        return ratio(a) - ratio(b) || a.name.localeCompare(b.name)
+      })
+      setRows(list)
+    } finally { setLoading(false) }
+  }
+
+  const allDone = rows.filter(r =>
+    (r.tableDone === null || r.tableDone >= r.tableNeeded) &&
+    (r.picksDone === null || r.picksDone >= r.picksNeeded)).length
+
+  return (
+    <Card className="p-4 mb-4">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center justify-between w-full gap-2">
+        <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+          Who's entered
+          <span className="text-xs font-normal ml-2"
+            style={{ color: allDone === rows.length && rows.length ? 'var(--green)' : 'var(--amber)' }}>
+            {allDone} of {rows.length} complete
+          </span>
+        </span>
+        <i className={`ti ti-chevron-${open ? 'up' : 'down'} text-base`} style={{ color: 'var(--txt-muted)' }} aria-hidden="true"/>
+      </button>
+
+      {open && (loading ? <div className="py-4"><Spinner/></div> : (
+        <div className="mt-3 rounded-md overflow-hidden" style={{ border: '0.5px solid var(--border-med)' }}>
+          <table className="data-table">
+            <thead><tr>
+              <th className="name-cell" style={{ paddingLeft: 12 }}>Player</th>
+              {tableConfig && <th style={{ width: 74, textAlign: 'right' }}>Table</th>}
+              {picks.length > 0 && <th style={{ width: 74, textAlign: 'right', paddingRight: 12 }}>Picks</th>}
+            </tr></thead>
+            <tbody>
+              {rows.map(r => {
+                const tableOk = r.tableDone === null || r.tableDone >= r.tableNeeded
+                const picksOk = r.picksDone === null || r.picksDone >= r.picksNeeded
+                return (
+                  <tr key={r.user_id}>
+                    <td className="name-cell" style={{ paddingLeft: 12 }}>
+                      <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{r.name}</p>
+                    </td>
+                    {tableConfig && (
+                      <td className="text-xs text-right" style={{ color: tableOk ? 'var(--green)' : 'var(--amber)' }}>
+                        {tableOk ? 'Done ✓' : `${r.tableDone}/${r.tableNeeded}`}
+                      </td>
+                    )}
+                    {picks.length > 0 && (
+                      <td className="text-xs text-right" style={{ paddingRight: 12, color: picksOk ? 'var(--green)' : 'var(--amber)' }}>
+                        {picksOk ? 'Done ✓' : `${r.picksDone}/${r.picksNeeded}`}
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </Card>
+  )
+}
 
 function CustomLeagueForm({ onCreate }) {
   const [name, setName] = useState('')

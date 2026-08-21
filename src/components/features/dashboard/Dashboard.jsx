@@ -8,6 +8,7 @@ import { supabase } from '../../../lib/supabase'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import JoinCompetition from '../competitions/JoinCompetition'
 import ReminderBanner from './ReminderBanner'
+import SeasonBanner from './SeasonBanner'
 import { outcomeLabel, resolvePointRules } from '../../../lib/scoring'
 import { buildWeeklyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import CompetitionSelector from '../../layout/CompetitionSelector'
@@ -322,6 +323,10 @@ export default function Dashboard() {
           )}
 
           <ReminderBanner userId={user?.id} pendingGws={pendingGws} />
+
+          {/* Season deadlines sit with the gameweek ones — same place, same
+              look, so there's a single "things you owe" area rather than two. */}
+          <SeasonBanner competitionId={comp} userId={user?.id} />
 
           {pendingGws.map(pg => (
             <Link key={pg.id} to="/predict" className="block mb-3">

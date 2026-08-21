@@ -115,19 +115,25 @@ export async function fetchSeasonPoints(competitionId) {
   return map
 }
 
-/** Days until a deadline. Negative once it has passed; null if there isn't one. */
+/**
+ * Days until a deadline. -1 once it has passed, null if there isn't one.
+ *
+ * Any past deadline collapses to -1 rather than a rounded negative, because
+ * Math.ceil of a small negative gives -0 — and -0 < 0 is false, so a deadline
+ * that passed an hour ago was reading as "Closes today".
+ */
 export function daysUntil(deadline) {
   if (!deadline) return null
   const ms = new Date(deadline).getTime() - Date.now()
+  if (ms <= 0) return -1
   return Math.ceil(ms / (24 * 60 * 60 * 1000))
 }
 
-/** "3 days left", "Last day", "Closed" — for the dashboard countdown. */
+/** "3 days left", "Closes today", "Closed" — for the dashboard countdown. */
 export function deadlineLabel(deadline) {
   const days = daysUntil(deadline)
   if (days === null) return 'No deadline set'
   if (days < 0) return 'Closed'
-  if (days === 0) return 'Closes today'
-  if (days === 1) return '1 day left'
+  if (days === 1) return 'Closes today'      // under 24 hours to go
   return `${days} days left`
 }
