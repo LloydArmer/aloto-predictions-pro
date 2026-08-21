@@ -14,7 +14,30 @@ export function useLeaderboard(competitionId) {
     setLoading(true)
     try {
       const { data } = await supabase.from('leaderboard_overall').select('*').eq('competition_id', id).order('total_points', { ascending: false })
-      setOverall(data || [])
+
+      // Season prediction points — the final table and individual picks. They
+      // aren't gameweek points, so they aren't in the view; they're merged here
+      // and added to the total, with the season figure kept separately so the
+      // table can show its own column.
+      const { data: season } = await supabase.from('season_scores')
+        .select('user_id, table_points, picks_points').eq('competition_id', id)
+
+      const seasonByUser = {}
+      ;(season || []).forEach(r => { seasonByUser[r.user_id] = (r.table_points || 0) + (r.picks_points || 0) })
+
+      const merged = (data || []).map(row => {
+        const seasonPoints = seasonByUser[row.user_id] || 0
+        return {
+          ...row,
+          season_points: seasonPoints,
+          gameweek_points: row.total_points || 0,   // before season points, for reference
+          total_points: (row.total_points || 0) + seasonPoints,
+        }
+      })
+
+      // Re-sorted, because adding season points can change the order.
+      merged.sort((a, b) => b.total_points - a.total_points || (b.exact_scores || 0) - (a.exact_scores || 0))
+      setOverall(merged)
     } finally { setLoading(false) }
   }
 

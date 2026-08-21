@@ -62,6 +62,9 @@ function WinnerBanner({ player, label }) {
 
 function OverallPane({ competitionId, userId }) {
   const { overall, loading } = useLeaderboard(competitionId)
+  // Season predictions are optional per competition, so the column only appears
+  // where they've actually been scored.
+  const hasSeasonPoints = overall.some(p => (p.season_points || 0) > 0)
   const [rules, setRules] = useState(null)
   const [badgesByUser, setBadgesByUser] = useState({})
   const [gwNumbers, setGwNumbers] = useState({})
@@ -109,6 +112,10 @@ function OverallPane({ competitionId, userId }) {
                   <th className="hidden sm:table-cell" style={{ width:80, textAlign:'right' }}>⚡ TP 1</th>
                   <th className="hidden sm:table-cell" style={{ width:80, textAlign:'right' }}>⚡ TP 2</th>
                   <th className="sm:hidden" style={{ width:44, textAlign:'right' }}>⚡</th>
+                  {/* Only rendered once season points exist, so a competition
+                      that doesn't run season predictions keeps the table it
+                      already had. */}
+                  {hasSeasonPoints && <th style={{ width:60, textAlign:'right' }}>Season</th>}
                   <th style={{ width:60, textAlign:'right', paddingRight:14 }}>Total</th>
                 </tr></thead>
                 <tbody>
@@ -142,6 +149,11 @@ function OverallPane({ competitionId, userId }) {
                           <td className="text-xs text-right sm:hidden" style={{ color: (p.tp1_gameweek_id || p.tp2_gameweek_id) ? 'var(--gold)' : 'var(--txt-muted)' }}>
                             {(p.tp1_gameweek_id ? 1 : 0) + (p.tp2_gameweek_id ? 1 : 0) || '–'}
                           </td>
+                          {hasSeasonPoints && (
+                            <td className="text-xs text-right" style={{ color: p.season_points > 0 ? 'var(--gold)' : 'var(--txt-muted)' }}>
+                              {p.season_points > 0 ? `+${p.season_points}` : '–'}
+                            </td>
+                          )}
                           <td style={{ textAlign:'right', paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points||0}</span></td>
                         </tr>
                         {badges.length > 0 && (

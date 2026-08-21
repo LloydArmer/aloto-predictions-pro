@@ -39,7 +39,13 @@ const toLocalInput = iso => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export default function SeasonTab({ competitionId, gameweeks = [] }) {
+/**
+ * Season points are NOT tied to a gameweek. They're settled once the season's
+ * final gameweek has been played and stand as their own strand, with their own
+ * column in the overall standings — which is why there is no "which gameweek do
+ * these count in" control here.
+ */
+export default function SeasonTab({ competitionId }) {
   const [loading, setLoading] = useState(true)
   const [tableConfig, setTableConfig] = useState(null)
   const [teams, setTeams] = useState([])
@@ -265,18 +271,6 @@ export default function SeasonTab({ competitionId, gameweeks = [] }) {
                 style={{ background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
               <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>{deadlineLabel(tableConfig.deadline)}</p>
             </div>
-            <div>
-              {/* Season points have no date of their own, and the monthly
-                  standings work by gameweek — so the admin says which one they
-                  land in. */}
-              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Points count in</p>
-              <Select value={tableConfig.settled_gameweek_id || ''}
-                onChange={e => updateTableConfig({ settled_gameweek_id: e.target.value || null })}
-                style={{ width: 130 }}>
-                <option value="">Choose GW…</option>
-                {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
-              </Select>
-            </div>
           </div>
 
           <TeamListEditor teams={teams} onAdd={addTeamsBulk} onRemove={removeTeam} expected={tableConfig.team_count}/>
@@ -330,15 +324,6 @@ export default function SeasonTab({ competitionId, gameweeks = [] }) {
                 style={{ background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
               <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>{deadlineLabel(pickConfig.deadline)}</p>
             </div>
-            <div>
-              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Points count in</p>
-              <Select value={pickConfig.settled_gameweek_id || ''}
-                onChange={e => updatePickConfig({ settled_gameweek_id: e.target.value || null })}
-                style={{ width: 130 }}>
-                <option value="">Choose GW…</option>
-                {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
-              </Select>
-            </div>
           </div>
 
           <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>Add a question</p>
@@ -369,8 +354,9 @@ export default function SeasonTab({ competitionId, gameweeks = [] }) {
         <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
           <p className="text-sm font-medium mb-1" style={{ color: 'var(--accent)' }}>Calculate season points</p>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
-            Scores every participant against the final table and the marked answers, and adds the totals to the
-            overall standings. Safe to run again after correcting anything.
+            Run this once the season's final gameweek has been played. It scores everyone against the final
+            table and the marked answers, and the totals appear as their own Season column in the overall
+            standings. Safe to run again after correcting anything.
           </p>
           <Button variant="primary" onClick={runScoring} disabled={scoring}>
             {scoring ? 'Calculating…' : 'Calculate season points'}

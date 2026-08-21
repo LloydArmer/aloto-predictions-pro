@@ -23,10 +23,8 @@ export async function calculateSeasonScores(competitionId) {
   // ---- Final league table -------------------------------------------------
   const { data: tableConfig } = await supabase
     .from('season_table_configs')
-    .select('id, points_per_position, settled_gameweek_id, results_entered')
+    .select('id, points_per_position, results_entered')
     .eq('competition_id', competitionId).maybeSingle()
-
-  let settledGwId = tableConfig?.settled_gameweek_id || null
 
   if (tableConfig?.results_entered) {
     const { data: results } = await supabase
@@ -53,12 +51,10 @@ export async function calculateSeasonScores(competitionId) {
 
   // ---- Individual picks ---------------------------------------------------
   const { data: pickConfig } = await supabase
-    .from('season_pick_configs').select('id, settled_gameweek_id')
+    .from('season_pick_configs').select('id')
     .eq('competition_id', competitionId).maybeSingle()
 
   if (pickConfig) {
-    settledGwId = settledGwId || pickConfig.settled_gameweek_id
-
     const { data: picks } = await supabase
       .from('season_picks').select('id, points, correct_option_id, allow_free_text').eq('config_id', pickConfig.id)
 
@@ -92,7 +88,6 @@ export async function calculateSeasonScores(competitionId) {
     competition_id: competitionId,
     user_id,
     ...v,
-    settled_gameweek_id: settledGwId,
     updated_at: new Date().toISOString(),
   }))
 

@@ -70,7 +70,7 @@ export default function Admin() {
       )}
       {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
       {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
-      {tab === 'season' && <SeasonTabLoader competitionId={selectedComp} />}
+      {tab === 'season' && <SeasonTab competitionId={selectedComp} />}
       {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
     </div>
@@ -374,20 +374,6 @@ function PredictionTracker({ competitionId, gameweekId, gwLabel }) {
       </div>
     </Card>
   )
-}
-
-/**
- * Loads the gameweek list SeasonTab needs for its "points count in" picker.
- * Kept separate so SeasonTab itself takes plain props and stays testable.
- */
-function SeasonTabLoader({ competitionId }) {
-  const [gameweeks, setGameweeks] = useState([])
-  useEffect(() => {
-    if (!competitionId) { setGameweeks([]); return }
-    supabase.from('gameweeks').select('id, number').eq('competition_id', competitionId).order('number')
-      .then(({ data }) => setGameweeks(data || []))
-  }, [competitionId])
-  return <SeasonTab competitionId={competitionId} gameweeks={gameweeks} />
 }
 
 function GameweeksTab({ competitionId, competitions }) {
