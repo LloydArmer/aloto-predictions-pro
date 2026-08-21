@@ -8,12 +8,14 @@ import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/grou
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
 import CompetitionIcon, { FORMAT_MARK } from '../../ui/CompetitionIcon'
+import SeasonTab from './SeasonTab'
 import toast from 'react-hot-toast'
 
 const TABS = [
   { key: 'competitions', label: 'Competitions', icon: 'ti-trophy' },
   { key: 'rules',        label: 'Points rules', icon: 'ti-star' },
   { key: 'gameweeks',    label: 'Gameweeks & fixtures', icon: 'ti-calendar' },
+  { key: 'season',       label: 'Season predictions', icon: 'ti-calendar-star' },
   { key: 'config',       label: 'Config', icon: 'ti-settings' },
   { key: 'participants', label: 'Participants', icon: 'ti-users' },
 ]
@@ -68,6 +70,7 @@ export default function Admin() {
       )}
       {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
       {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
+      {tab === 'season' && <SeasonTabLoader competitionId={selectedComp} />}
       {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
       {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
     </div>
@@ -371,6 +374,20 @@ function PredictionTracker({ competitionId, gameweekId, gwLabel }) {
       </div>
     </Card>
   )
+}
+
+/**
+ * Loads the gameweek list SeasonTab needs for its "points count in" picker.
+ * Kept separate so SeasonTab itself takes plain props and stays testable.
+ */
+function SeasonTabLoader({ competitionId }) {
+  const [gameweeks, setGameweeks] = useState([])
+  useEffect(() => {
+    if (!competitionId) { setGameweeks([]); return }
+    supabase.from('gameweeks').select('id, number').eq('competition_id', competitionId).order('number')
+      .then(({ data }) => setGameweeks(data || []))
+  }, [competitionId])
+  return <SeasonTab competitionId={competitionId} gameweeks={gameweeks} />
 }
 
 function GameweeksTab({ competitionId, competitions }) {
