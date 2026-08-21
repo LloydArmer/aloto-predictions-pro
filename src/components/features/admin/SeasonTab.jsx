@@ -59,8 +59,9 @@ export default function SeasonTab({ competitionId }) {
   async function load() {
     setLoading(true)
     try {
-      const { data: tc } = await supabase.from('season_table_configs')
+      const { data: tc, error: tcErr } = await supabase.from('season_table_configs')
         .select('*').eq('competition_id', competitionId).maybeSingle()
+      if (tcErr) { toast.error('Could not load the table setup'); console.error(tcErr) }
       setTableConfig(tc || null)
 
       if (tc) {
@@ -80,9 +81,23 @@ export default function SeasonTab({ competitionId }) {
       setPickConfig(pc || null)
 
       if (pc) {
-        const { data: pk } = await supabase.from('season_picks')
-          .select('*, season_pick_options(*)').eq('config_id', pc.id).order('sort_order')
-        setPicks(pk || [])
+        // The embed is disambiguated by constraint name on purpose. There are
+        // TWO foreign keys between these tables — options point at their pick,
+        // and a pick points at its correct option — so a plain
+        // `season_pick_options(*)` is ambiguous and PostgREST refuses it. The
+        // failure is silent from the app's point of view: no rows, no error
+        // shown, and the questions simply never appear.
+        const { data: pk, error: pkErr } = await supabase.from('season_picks')
+          .select('*, season_pick_options!season_pick_options_pick_id_fkey(*)')
+          .eq('config_id', pc.id).order('sort_order')
+
+        if (pkErr) {
+          toast.error('Could not load the questions')
+          console.error('season_picks load failed:', pkErr)
+          setPicks([])
+        } else {
+          setPicks(pk || [])
+        }
       } else {
         setPicks([])
       }
