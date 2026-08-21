@@ -408,14 +408,14 @@ export default function SeasonTab({ competitionId }) {
       )}
 
       {/* ================= INDIVIDUAL PICKS ================= */}
-      <SectionLabel className="mb-2">Individual predictions</SectionLabel>
+      <SectionLabel className="mb-2">Individual Predictions</SectionLabel>
 
       {!pickConfig ? (
         <Card className="p-4 mb-5">
           <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
             One-off calls — who wins each competition, the golden boot. Set the questions and the points for each.
           </p>
-          <Button variant="primary" onClick={createPickConfig}>Set up individual predictions</Button>
+          <Button variant="primary" onClick={createPickConfig}>Set up Individual Predictions</Button>
         </Card>
       ) : (
         <Card className="p-4 mb-5">

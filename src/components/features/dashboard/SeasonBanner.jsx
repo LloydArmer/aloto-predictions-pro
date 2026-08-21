@@ -10,7 +10,8 @@ import { daysUntil, deadlineLabel } from '../../../lib/seasonScoring'
  *
  * Deliberately mirrors the pending-gameweek cards: same amber, same shape, same
  * position. A second visual language for "you owe us something" would just make
- * both easier to ignore.
+ * both easier to ignore. Urgency is carried by the countdown chip turning red,
+ * not by the card changing colour.
  *
  * Shows nothing at all when there is nothing outstanding — a card saying
  * "you're up to date" is clutter on a screen someone opens twice a day.
@@ -65,7 +66,7 @@ export default function SeasonBanner({ competitionId, userId }) {
           if ((count ?? 0) < ids.length) {
             pending.push({
               key: 'picks',
-              label: 'Individual predictions',
+              label: 'Individual Predictions',
               detail: `${ids.length - (count ?? 0)} of ${ids.length} unanswered`,
               deadline: pc.deadline,
             })
@@ -90,13 +91,10 @@ export default function SeasonBanner({ competitionId, userId }) {
         return (
           <Link key={item.key} to="/predict" className="block mb-3">
             <Card className="p-3.5 flex items-center justify-between gap-3 flex-wrap"
-              style={{
-                background: urgent ? 'var(--amber-dim)' : 'var(--bg-surface)',
-                borderColor: urgent ? 'rgba(245,166,35,0.35)' : 'var(--border)',
-              }}>
+              style={{ background: 'var(--amber-dim)', borderColor: 'rgba(245,166,35,0.35)' }}>
               <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
                 <i className="ti ti-calendar-star text-base flex-shrink-0"
-                  style={{ color: urgent ? 'var(--amber)' : 'var(--accent)' }} aria-hidden="true" />
+                  style={{ color: 'var(--amber)' }} aria-hidden="true" />
                 <div style={{ minWidth: 0 }}>
                   <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                     {item.label}
@@ -107,10 +105,13 @@ export default function SeasonBanner({ competitionId, userId }) {
 
               {/* The countdown is the point of the card — someone with three
                   weeks left behaves very differently from someone with one day. */}
+              {/* Urgency shows in the countdown chip alone — red inside an
+                  amber card, rather than changing the whole card and losing the
+                  match with the gameweek reminders above it. */}
               <span className="text-xs font-semibold px-2 py-1 rounded flex-shrink-0"
                 style={{
-                  background: urgent ? 'rgba(245,166,35,0.18)' : 'var(--bg-elevated)',
-                  color: urgent ? 'var(--amber)' : 'var(--txt-second)',
+                  background: urgent ? 'var(--red-dim)' : 'rgba(245,166,35,0.18)',
+                  color: urgent ? 'var(--red)' : 'var(--amber)',
                 }}>
                 {deadlineLabel(item.deadline)}
               </span>

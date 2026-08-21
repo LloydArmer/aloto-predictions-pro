@@ -179,7 +179,7 @@ export default function SeasonPredictions({ competitionId, userId }) {
       {pickConfig?.is_open && picks.length > 0 && (
         <div className="mb-4">
           <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-            <SectionLabel>Individual predictions</SectionLabel>
+            <SectionLabel>Individual Predictions</SectionLabel>
             <DeadlinePill deadline={pickConfig.deadline} done={picksAnswered === picks.length}/>
           </div>
 
