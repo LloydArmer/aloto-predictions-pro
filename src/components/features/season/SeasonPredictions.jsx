@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { Card, Button, Input, Select, SectionLabel, EmptyState, Spinner } from '../../ui'
 import TableOrderEditor from './TableOrderEditor'
+import SeasonResults from './SeasonResults'
 import { deadlineLabel, daysUntil } from '../../../lib/seasonScoring'
 import toast from 'react-hot-toast'
 
@@ -24,12 +25,19 @@ export default function SeasonPredictions({ competitionId, userId }) {
   const [pickConfig, setPickConfig] = useState(null)
   const [picks, setPicks] = useState([])
   const [myPicks, setMyPicks] = useState({})     // pickId -> optionId | text
+  const [scored, setScored] = useState(false)
 
   useEffect(() => { if (competitionId && userId) load(); else setLoading(false) }, [competitionId, userId])
 
   async function load() {
     setLoading(true)
     try {
+      // Once anything has been scored the results become the main thing on
+      // this screen — the entry forms are then only there for reference.
+      const { count: scoreCount } = await supabase.from('season_scores')
+        .select('id', { count: 'exact', head: true }).eq('competition_id', competitionId)
+      setScored((scoreCount ?? 0) > 0)
+
       const { data: tc } = await supabase.from('season_table_configs')
         .select('*').eq('competition_id', competitionId).maybeSingle()
       setTableConfig(tc || null)
@@ -127,13 +135,21 @@ export default function SeasonPredictions({ competitionId, userId }) {
 
   if (loading) return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
 
-  if (!tableConfig?.is_open && !pickConfig?.is_open) {
+  if (!scored && !tableConfig?.is_open && !pickConfig?.is_open) {
     return <EmptyState icon="ti-calendar-star" title="No season predictions open"
       description="Your admin will open these before the season starts"/>
   }
 
   return (
     <div>
+      {/* Results first once they exist. Nobody opens this screen in May to
+          re-read their own entry form. */}
+      {scored && (
+        <div className="mb-6">
+          <SeasonResults competitionId={competitionId} userId={userId} />
+        </div>
+      )}
+
       {/* ---------------- Final league table ---------------- */}
       {tableConfig?.is_open && (
         <div className="mb-6">
