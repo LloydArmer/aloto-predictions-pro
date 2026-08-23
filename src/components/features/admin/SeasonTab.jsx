@@ -477,6 +477,7 @@ export default function SeasonTab({ competitionId }) {
             ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No questions yet.</p>
             : picks.map(pick => (
                 <PickEditor key={pick.id} pick={pick}
+                  stillOpen={pickConfig.is_open && (!pickConfig.deadline || new Date(pickConfig.deadline) > new Date())}
                   onUpdate={patch => updatePick(pick.id, patch)}
                   onRemove={() => removePick(pick)}
                   onAddOptions={text => addOptionsBulk(pick, text)}
@@ -641,7 +642,7 @@ function CompletionTracker({ competitionId, tableConfig, pickConfig, picks }) {
  * are grouped, so "Haaland" typed by seven people is one row to tick rather
  * than seven.
  */
-function FreeTextMarker({ pick }) {
+function FreeTextMarker({ pick, stillOpen }) {
   const [answers, setAnswers] = useState([])
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
@@ -696,7 +697,14 @@ function FreeTextMarker({ pick }) {
       {open && (loading ? <div className="py-3"><Spinner/></div> : (
         <div className="mt-2">
           {groups.length === 0 ? (
-            <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Nobody has answered this yet.</p>
+            // Distinguishes "no answers" from "answers exist but are hidden" —
+            // the second looks identical from here and would otherwise read as
+            // a bug, which is exactly how it was first reported.
+            <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+              {stillOpen
+                ? 'Answers stay hidden — from you too — until predictions are locked. Untick "Open for Predictions" above, or wait for the deadline.'
+                : 'Nobody has answered this yet.'}
+            </p>
           ) : (
             <>
               <Button className="btn-sm mb-2" onClick={suggestAll} disabled={!pick.correct_answer?.trim()}>
@@ -830,7 +838,7 @@ function TeamListEditor({ teams, onAdd, onRemove, expected }) {
   )
 }
 
-function PickEditor({ pick, onUpdate, onRemove, onAddOptions, onReload, teams }) {
+function PickEditor({ pick, onUpdate, onRemove, onAddOptions, onReload, teams, stillOpen }) {
   const [expanded, setExpanded] = useState(false)
   const [optionText, setOptionText] = useState('')
   const options = pick.season_pick_options || []
@@ -872,7 +880,7 @@ function PickEditor({ pick, onUpdate, onRemove, onAddOptions, onReload, teams })
               </p>
               <Input value={pick.correct_answer || ''} placeholder="Correct answer, e.g. Erling Haaland"
                 onChange={e => onUpdate({ correct_answer: e.target.value })} className="w-full"/>
-              <FreeTextMarker pick={pick}/>
+              <FreeTextMarker pick={pick} stillOpen={stillOpen}/>
             </div>
           ) : (
             <div>
