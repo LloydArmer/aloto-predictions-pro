@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase'
 import { Card, Button, Input, Select, SectionLabel, EmptyState, Spinner } from '../../ui'
 import TableOrderEditor from '../season/TableOrderEditor'
 import { calculateSeasonScores, deadlineLabel } from '../../../lib/seasonScoring'
+import { looksCorrect, groupAnswers, similarity } from '../../../lib/fuzzyMatch'
 import toast from 'react-hot-toast'
 
 // Suggestions only — the admin can name anything. These exist so the common
@@ -240,16 +241,26 @@ export default function SeasonTab({ competitionId }) {
   }
 
   async function addPick(label) {
-    // The Golden Boot is typed rather than chosen: hundreds of possible
-    // players, and the plausible list shifts mid-season. The admin marks the
-    // right answers afterwards, which also credits "Haaland" and
-    // "Erling Haaland" alike.
-    const freeText = /golden boot|top scorer/i.test(label)
+    // Only the two league title questions get a dropdown: a fixed 20 or 24
+    // clubs, known before the season starts, and a list that size is pleasant
+    // to scroll.
+    //
+    // The rest are typed. The FA Cup admits 700-odd clubs; the Champions League
+    // draws from across Europe; the Golden Boot has hundreds of candidates and
+    // its plausible list shifts in January. A dropdown of any of those is worse
+    // than typing, and building one is a season's admin work for nothing.
+    // Typed answers are matched against the correct one and the admin
+    // confirms — see the marking panel.
+    const DROPDOWN_QUESTIONS = [
+      /premier league winners/i,
+      /championship winners/i,
+    ]
+    const freeText = !DROPDOWN_QUESTIONS.some(re => re.test(label))
     const { error } = await supabase.from('season_picks').insert({
       config_id: pickConfig.id, label, sort_order: picks.length, allow_free_text: freeText,
     })
     if (error) { toast.error('Could not add'); return }
-    toast.success(freeText ? `${label} added — answers are typed` : `${label} added — now add the options`)
+    toast.success(freeText ? `${label} added — participants type their answer` : `${label} added — now add the options`)
     load()
   }
 
@@ -623,6 +634,129 @@ function CompletionTracker({ competitionId, tableConfig, pickConfig, picks }) {
   )
 }
 
+/**
+ * Marks typed answers correct or not.
+ *
+ * The matcher suggests; the admin decides. Identical-after-normalising answers
+ * are grouped, so "Haaland" typed by seven people is one row to tick rather
+ * than seven.
+ */
+function FreeTextMarker({ pick }) {
+  const [answers, setAnswers] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => { if (open) load() }, [open, pick.id])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const { data } = await supabase.from('season_pick_answers')
+        .select('id, user_id, answer_text, is_correct, profiles(display_name)')
+        .eq('pick_id', pick.id)
+      setAnswers(data || [])
+    } finally { setLoading(false) }
+  }
+
+  async function mark(answerId, correct) {
+    // Goes through the database function, which checks admin rights — the
+    // column is deliberately not writable by a participant on their own answer.
+    const { error } = await supabase.rpc('mark_pick_answer', { p_answer_id: answerId, p_correct: correct })
+    if (error) { toast.error('Could not mark'); return }
+    setAnswers(prev => prev.map(a => a.id === answerId ? { ...a, is_correct: correct } : a))
+  }
+
+  async function markGroup(group, correct) {
+    for (const a of group.answers) await mark(a.id, correct)
+  }
+
+  /** Ticks everything the matcher is confident about; leaves the rest alone. */
+  async function suggestAll() {
+    if (!pick.correct_answer?.trim()) { toast.error('Enter the correct answer first'); return }
+    const groups = groupAnswers(answers.filter(a => a.answer_text))
+    let marked = 0
+    for (const g of groups) {
+      const match = looksCorrect(g.display, pick.correct_answer)
+      if (match) { await markGroup(g, true); marked += g.answers.length }
+      else { await markGroup(g, false) }
+    }
+    toast.success(`${marked} answer${marked !== 1 ? 's' : ''} marked correct — check and adjust below`)
+  }
+
+  const groups = groupAnswers(answers.filter(a => a.answer_text))
+
+  return (
+    <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 text-xs"
+        style={{ color: 'var(--accent)' }}>
+        <i className={`ti ti-chevron-${open ? 'up' : 'down'} text-sm`} aria-hidden="true"/>
+        Mark answers{answers.length ? ` (${answers.length})` : ''}
+      </button>
+
+      {open && (loading ? <div className="py-3"><Spinner/></div> : (
+        <div className="mt-2">
+          {groups.length === 0 ? (
+            <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Nobody has answered this yet.</p>
+          ) : (
+            <>
+              <Button className="btn-sm mb-2" onClick={suggestAll} disabled={!pick.correct_answer?.trim()}>
+                <i className="ti ti-wand text-sm mr-1" aria-hidden="true"/>Suggest matches
+              </Button>
+
+              {groups.map(g => {
+                const score = pick.correct_answer ? similarity(g.display, pick.correct_answer) : 0
+                const suggested = pick.correct_answer ? looksCorrect(g.display, pick.correct_answer) : false
+                const state = g.answers[0].is_correct   // grouped answers share a verdict
+
+                return (
+                  <div key={g.key} className="flex items-center justify-between gap-2 py-2"
+                    style={{ borderBottom: '0.5px solid var(--border)' }}>
+                    <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+                      <p className="text-sm" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {g.display}
+                        {g.answers.length > 1 && (
+                          <span className="text-xs ml-1.5" style={{ color: 'var(--txt-muted)' }}>x{g.answers.length}</span>
+                        )}
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--txt-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {g.answers.map(a => a.profiles?.display_name || '?').join(', ')}
+                        {pick.correct_answer && (
+                          <span style={{ color: suggested ? 'var(--green)' : 'var(--txt-muted)' }}>
+                            {' · '}{Math.round(score * 100)}% match
+                          </span>
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={() => markGroup(g, true)} aria-label="Correct"
+                        className="flex items-center justify-center" style={{
+                          width: 30, height: 28, borderRadius: 6,
+                          background: state === true ? 'var(--green-dim)' : 'var(--bg-elevated)',
+                          color: state === true ? 'var(--green)' : 'var(--txt-muted)',
+                        }}>
+                        <i className="ti ti-check text-sm" aria-hidden="true"/>
+                      </button>
+                      <button onClick={() => markGroup(g, false)} aria-label="Not correct"
+                        className="flex items-center justify-center" style={{
+                          width: 30, height: 28, borderRadius: 6,
+                          background: state === false ? 'var(--red-dim)' : 'var(--bg-elevated)',
+                          color: state === false ? 'var(--red)' : 'var(--txt-muted)',
+                        }}>
+                        <i className="ti ti-x text-sm" aria-hidden="true"/>
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function CustomLeagueForm({ onCreate }) {
   const [name, setName] = useState('')
   const [count, setCount] = useState(20)
@@ -733,11 +867,12 @@ function PickEditor({ pick, onUpdate, onRemove, onAddOptions, onReload, teams })
           {pick.allow_free_text ? (
             <div>
               <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>
-                Participants type their answer. Note the right one here for your own reference, then mark
-                each entry correct on the results screen — that way spellings and short forms all count.
+                Participants type their answer. Enter the correct one here, then use Suggest below —
+                spellings, short forms and nicknames are matched for you, and you confirm.
               </p>
-              <Input value={pick.correct_answer || ''} placeholder="Correct answer (your note)"
+              <Input value={pick.correct_answer || ''} placeholder="Correct answer, e.g. Erling Haaland"
                 onChange={e => onUpdate({ correct_answer: e.target.value })} className="w-full"/>
+              <FreeTextMarker pick={pick}/>
             </div>
           ) : (
             <div>
