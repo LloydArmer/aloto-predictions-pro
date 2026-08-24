@@ -173,13 +173,14 @@ function OverallPane({ competitionId, userId }) {
                           <tr className={isMe?'highlight':''}>
                             <td></td>
                             <td colSpan={8} style={{ paddingBottom: 8, paddingTop: 0 }}>
-                              <div className="flex items-center gap-1 flex-wrap">
-                                {badges.map((n,j) => (
-                                  <span key={j} className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1" style={{ background:'var(--gold-dim)', color:'var(--gold)' }}>
-                                    <i className="ti ti-star-filled" style={{ fontSize:10 }} aria-hidden="true"/>{n}
-                                  </span>
-                                ))}
-                              </div>
+                              {/* One line naming the gameweeks, rather than a
+                                  chip each. Twelve chips is a wall; "12 full
+                                  houses: GW1, GW3, …" reads at a glance. */}
+                              <span className="text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                                style={{ background:'var(--gold-dim)', color:'var(--gold)' }}>
+                                <i className="ti ti-star-filled" style={{ fontSize:10 }} aria-hidden="true"/>
+                                {badges.length} full house{badges.length !== 1 ? 's' : ''}: {badges.join(', ')}
+                              </span>
                             </td>
                           </tr>
                         )}
@@ -370,7 +371,7 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
         <span style={{ flex: '1 1 auto' }}>
           <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Player</span>
         </span>
-        <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>Pts</span>
+        <span className="text-xs flex-shrink-0 text-right" style={{ color: 'var(--txt-muted)', minWidth: 46 }}>Pts</span>
         {/* Matches the chevron's width so "Pts" sits over the number, not over
             the chevron. */}
         <span className="flex-shrink-0" style={{ width: 13 }} aria-hidden="true"/>
@@ -406,20 +407,25 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
               <span style={{ flex: '1 1 auto', minWidth: 0 }}>
                 <span className="text-sm font-medium block" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                   {p.display_name}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
+                  {/* A COUNT, not one chip per full house. Someone with a good
+                      season could have a dozen, and a dozen chips would push the
+                      name off the row entirely. The gameweeks themselves are in
+                      the expanded detail, where there's room for them. */}
+                  {badges.length > 0 && (
+                    <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded"
+                      style={{ background: 'var(--gold-dim)', color: 'var(--gold)', whiteSpace: 'nowrap' }}>
+                      ★ {badges.length}
+                    </span>
+                  )}
                 </span>
-                {badges.length > 0 && (
-                  <span className="flex items-center gap-1 flex-wrap mt-1">
-                    {badges.map((n, j) => (
-                      <span key={j} className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1"
-                        style={{ background: 'var(--gold-dim)', color: 'var(--gold)' }}>
-                        <i className="ti ti-star-filled" style={{ fontSize: 10 }} aria-hidden="true"/>{n}
-                      </span>
-                    ))}
-                  </span>
-                )}
               </span>
 
-              <span className="text-base font-semibold flex-shrink-0" style={{ color: 'var(--accent)' }}>
+              {/* Fixed width and tabular figures so every total occupies the
+                  same space and the digits line up down the column — otherwise
+                  a 96 and a 186 sit at different offsets and look like
+                  different sizes. */}
+              <span className="text-base font-semibold flex-shrink-0 text-right"
+                style={{ color: 'var(--accent)', minWidth: 46, fontVariantNumeric: 'tabular-nums' }}>
                 {p.total_points || 0}
               </span>
               <i className={`ti ti-chevron-${open ? 'up' : 'down'} text-sm flex-shrink-0`}
@@ -434,6 +440,19 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
                     <span className="text-xs font-medium" style={{ color: colour }}>{value}</span>
                   </div>
                 ))}
+
+                {badges.length > 0 && (
+                  <div className="flex items-start justify-between gap-3 py-1.5">
+                    <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>
+                      Full house{badges.length !== 1 ? 's' : ''}
+                    </span>
+                    {/* Wraps rather than truncating — a long list here is a good
+                        season, and worth reading. */}
+                    <span className="text-xs font-medium text-right" style={{ color: 'var(--gold)' }}>
+                      {badges.join(', ')}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </Card>
