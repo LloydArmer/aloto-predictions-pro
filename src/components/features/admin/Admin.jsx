@@ -1595,6 +1595,94 @@ function BracketTab({ competitionId, competitions }) {
 }
 
 // ───────────────────────── Participants ─────────────────────────
+/**
+ * Who will actually receive reminders.
+ *
+ * Two things must both be true, and they fail differently: reminders not muted,
+ * AND a device registered. The second is the one that catches people out —
+ * someone can have the toggle on and receive nothing, because they never
+ * granted permission or they're on an iPhone that isn't installed to the Home
+ * Screen. Showing only "notifications: on" would hide exactly the case an admin
+ * needs to chase.
+ */
+function NotificationStatus({ competitionId }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => { if (open && competitionId) load() }, [open, competitionId])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const { data, error } = await supabase.rpc('competition_notification_status', { p_competition_id: competitionId })
+      if (error) { toast.error('Could not load notification status'); console.error(error); return }
+      setRows(data || [])
+    } finally { setLoading(false) }
+  }
+
+  const reachable = rows.filter(r => r.notify_push && r.device_count > 0).length
+
+  return (
+    <Card className="p-4 mb-4">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center justify-between w-full gap-2">
+        <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+          Reminders
+          {rows.length > 0 && (
+            <span className="text-xs font-normal ml-2"
+              style={{ color: reachable === rows.length ? 'var(--green)' : 'var(--amber)' }}>
+              {reachable} of {rows.length} will be reminded
+            </span>
+          )}
+        </span>
+        <i className={`ti ti-chevron-${open ? 'up' : 'down'} text-base`} style={{ color: 'var(--txt-muted)' }} aria-hidden="true" />
+      </button>
+
+      {open && (loading ? <div className="py-4"><Spinner/></div> : (
+        <div className="mt-3">
+          <div className="rounded-md overflow-hidden" style={{ border: '0.5px solid var(--border-med)' }}>
+            <table className="data-table">
+              <thead><tr>
+                <th className="name-cell" style={{ paddingLeft: 12 }}>Player</th>
+                <th style={{ width: 130, textAlign: 'right', paddingRight: 12 }}>Status</th>
+              </tr></thead>
+              <tbody>
+                {rows.map(r => {
+                  const on = r.notify_push && r.device_count > 0
+                  // Three states, not two — "muted" and "never set it up" need
+                  // different conversations.
+                  const label = on
+                    ? `On · ${r.device_count} device${r.device_count !== 1 ? 's' : ''}`
+                    : r.notify_push ? 'No device registered' : 'Muted'
+                  const colour = on ? 'var(--green)' : r.notify_push ? 'var(--amber)' : 'var(--txt-muted)'
+
+                  return (
+                    <tr key={r.user_id}>
+                      <td className="name-cell" style={{ paddingLeft: 12 }}>
+                        <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{r.display_name}</p>
+                      </td>
+                      <td className="text-xs" style={{ textAlign: 'right', paddingRight: 12, color: colour }}>
+                        {label}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {rows.some(r => r.notify_push && r.device_count === 0) && (
+            <p className="text-xs mt-2" style={{ color: 'var(--amber)' }}>
+              "No device registered" means they haven't turned reminders on in the app yet — on iPhone that
+              needs the app added to the Home Screen first. They'll get nothing until they do.
+            </p>
+          )}
+        </div>
+      ))}
+    </Card>
+  )
+}
+
 function JoinCodeCard({ competitionId, competitionName, initialCode, onChanged }) {
   const [code, setCode] = useState(initialCode || '')
   const [busy, setBusy] = useState(false)
@@ -1779,6 +1867,8 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
 
   return (
     <div>
+      <NotificationStatus competitionId={competitionId} />
+
       {/* Sharing the code is the primary route in now; adding people by hand
           below is the fallback for anyone who can't manage it. */}
       <JoinCodeCard
