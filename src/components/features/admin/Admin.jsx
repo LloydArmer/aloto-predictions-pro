@@ -11,13 +11,21 @@ import CompetitionIcon, { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import SeasonTab from './SeasonTab'
 import toast from 'react-hot-toast'
 
+// Short labels on purpose. "Gameweeks & fixtures" and "Season predictions" made
+// the strip roughly twice the width of a phone, so the last tabs were always
+// off-screen and easy to miss entirely. One word each, and the icons are hidden
+// below 640px, which fits all six without scrolling.
+//
+// "Config" became "Cup" because that's what it holds — bracket generation and
+// group fixtures. A tab called Config gives no clue that's where cup setup
+// lives.
 const TABS = [
   { key: 'competitions', label: 'Competitions', icon: 'ti-trophy' },
-  { key: 'rules',        label: 'Points rules', icon: 'ti-star' },
-  { key: 'gameweeks',    label: 'Gameweeks & fixtures', icon: 'ti-calendar' },
-  { key: 'season',       label: 'Season predictions', icon: 'ti-calendar-star' },
-  { key: 'config',       label: 'Config', icon: 'ti-settings' },
-  { key: 'participants', label: 'Participants', icon: 'ti-users' },
+  { key: 'gameweeks',    label: 'Fixtures',     icon: 'ti-calendar' },
+  { key: 'rules',        label: 'Scoring',      icon: 'ti-star' },
+  { key: 'config',       label: 'Cup',          icon: 'ti-tournament' },
+  { key: 'season',       label: 'Season',       icon: 'ti-calendar-star' },
+  { key: 'participants', label: 'Players',      icon: 'ti-users' },
 ]
 
 export default function Admin() {
@@ -42,9 +50,14 @@ export default function Admin() {
       <div className="tab-strip mb-3">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors"
+            // Scrolls the selected tab into view. Six tabs don't fit a 390px
+            // screen however short the labels, so rather than shaving pixels the
+            // strip follows you — the tab you're on is always visible, and its
+            // neighbours hint that there are more either side.
+            ref={el => { if (el && tab === t.key) el.scrollIntoView({ inline: 'center', block: 'nearest' }) }}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs transition-colors"
             style={{ background: tab === t.key ? 'var(--accent-dim)' : 'transparent', color: tab === t.key ? 'var(--accent)' : 'var(--txt-second)', fontWeight: tab === t.key ? 500 : 400 }}>
-            <i className={`ti ${t.icon}`} aria-hidden="true" />{t.label}
+            <i className={`ti ${t.icon} hidden sm:inline`} aria-hidden="true" />{t.label}
           </button>
         ))}
       </div>

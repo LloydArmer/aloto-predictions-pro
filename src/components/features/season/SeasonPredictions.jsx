@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { Card, Button, Input, Select, SectionLabel, EmptyState, Spinner } from '../../ui'
 import TableOrderEditor from './TableOrderEditor'
-import SeasonResults from './SeasonResults'
 import { deadlineLabel, daysUntil } from '../../../lib/seasonScoring'
 import toast from 'react-hot-toast'
 
@@ -142,12 +141,14 @@ export default function SeasonPredictions({ competitionId, userId }) {
 
   return (
     <div>
-      {/* Results first once they exist. Nobody opens this screen in May to
-          re-read their own entry form. */}
+      {/* Results live in Standings, not here. This screen is for entering
+          predictions; Standings is for seeing how everyone did. */}
       {scored && (
-        <div className="mb-6">
-          <SeasonResults competitionId={competitionId} userId={userId} />
-        </div>
+        <Card className="p-3 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
+          <p className="text-xs" style={{ color: 'var(--accent)' }}>
+            Season predictions have been scored — see how everyone did under Standings → Season.
+          </p>
+        </Card>
       )}
 
       {/* ---------------- Final league table ---------------- */}

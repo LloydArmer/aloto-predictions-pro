@@ -438,11 +438,19 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
   )
 }
 
-export default function Table() {
+/**
+ * @param embeddedView  when set, this renders inside Standings: its own
+ *                      competition selector and Overall/Monthly switch are
+ *                      suppressed, because the parent already provides both.
+ *                      Standalone use (no prop) is unchanged.
+ */
+export default function Table({ embeddedView = null }) {
   const { user } = useAuth()
   const { competitions } = useCompetitions()
   const [comp, setComp] = useSelectedCompetition(competitions)
-  const [tab, setTab] = useState('overall')
+  const [ownTab, setTab] = useState('overall')
+  const embedded = embeddedView !== null
+  const tab = embedded ? embeddedView : ownTab
   const [gameweeks, setGameweeks] = useState([])
   const [months, setMonths] = useState([])
   const compFmt = competitions.find(c => c.id === comp)?.format
@@ -467,22 +475,24 @@ export default function Table() {
   // Pure Knockout — no table concept applies
   if (compFmt === 'knockout') return (
     <div>
-      <CompetitionSelector value={comp} onChange={setComp}/>
-      <EmptyState icon="ti-list-numbers" title="No table for Knockout competitions" description="Head to Cup Competitions to see the bracket and results"/>
+      {!embedded && <CompetitionSelector value={comp} onChange={setComp}/>}
+      <EmptyState icon="ti-list-numbers" title="No table for Knockout competitions" description="Open the Cup tab to see the bracket and results"/>
     </div>
   )
 
   return (
     <div>
-      <CompetitionSelector value={comp} onChange={setComp}/>
-      <div className="seg-control mb-5">
-        <button className={`seg-btn ${tab==='overall'?'active':''}`} onClick={()=>setTab('overall')}>
-          <i className="ti ti-list-numbers text-sm mr-1" aria-hidden="true"/>Overall
-        </button>
-        <button className={`seg-btn ${tab==='monthly'?'active':''}`} onClick={()=>setTab('monthly')}>
-          <i className="ti ti-calendar-month text-sm mr-1" aria-hidden="true"/>Monthly
-        </button>
-      </div>
+      {!embedded && <CompetitionSelector value={comp} onChange={setComp}/>}
+      {!embedded && (
+        <div className="seg-control mb-5">
+          <button className={`seg-btn ${tab==='overall'?'active':''}`} onClick={()=>setTab('overall')}>
+            <i className="ti ti-list-numbers text-sm mr-1" aria-hidden="true"/>Overall
+          </button>
+          <button className={`seg-btn ${tab==='monthly'?'active':''}`} onClick={()=>setTab('monthly')}>
+            <i className="ti ti-calendar-month text-sm mr-1" aria-hidden="true"/>Monthly
+          </button>
+        </div>
+      )}
       {tab==='overall'&&comp&&(
         compFmt === 'group_knockout'
           ? <GroupStandingsPane competitionId={comp} userId={user?.id}/>

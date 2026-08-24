@@ -5,8 +5,7 @@ import AppLayout from './components/layout/AppLayout'
 import { Login, Signup } from './components/features/auth/Auth'
 import Dashboard      from './components/features/dashboard/Dashboard'
 import Predict        from './components/features/predict/Predict'
-import Table          from './components/features/table/Table'
-import Bracket        from './components/features/bracket/Bracket'
+import Standings      from './components/features/standings/Standings'
 import Admin          from './components/features/admin/Admin'
 import Settings       from './components/features/settings/Settings'
 import { Spinner }    from './components/ui'
@@ -39,9 +38,12 @@ function AppRoutes() {
       <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
       <Route path="/"             element={wrap(Dashboard)} />
       <Route path="/predict"      element={wrap(Predict)} />
-      <Route path="/table"        element={wrap(Table)} />
-      <Route path="/leaderboards" element={<Navigate to="/table" replace />} />
-      <Route path="/bracket"      element={wrap(Bracket)} />
+      <Route path="/standings"    element={wrap(Standings)} />
+      {/* Old paths kept as redirects: they're in people's history, and the
+          dashboard cards linked to them. */}
+      <Route path="/table"        element={<Navigate to="/standings" replace />} />
+      <Route path="/leaderboards" element={<Navigate to="/standings" replace />} />
+      <Route path="/bracket"      element={<Navigate to="/standings" replace />} />
       <Route path="/admin"        element={wrap(Admin)} />
       <Route path="/settings"     element={wrap(Settings)} />
       <Route path="*"             element={<Navigate to="/" replace />} />

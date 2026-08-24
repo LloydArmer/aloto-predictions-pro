@@ -8,8 +8,9 @@ import toast from 'react-hot-toast'
 const NAV_BASE = [
   { to: '/',             label: 'Dashboard',    icon: 'ti-layout-dashboard' },
   { to: '/predict',      label: 'Predict',      icon: 'ti-pencil' },
-  { to: '/table',        label: 'Table',        icon: 'ti-list-numbers' },
-  { to: '/bracket',      label: 'Cup',          icon: 'ti-tournament' },
+  // Table, Cup and Season results merged into one destination. Four tabs on a
+  // 390px screen give noticeably wider targets than five, and no truncation.
+  { to: '/standings',    label: 'Standings',    icon: 'ti-list-numbers' },
   { to: '/settings',     label: 'Settings',     icon: 'ti-settings-2' },
 ]
 
