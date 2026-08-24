@@ -576,10 +576,15 @@ export default function Predict() {
         <Select value={comp || ''} onChange={e => setComp(e.target.value)} style={{ flex: '1 1 200px' }}>
           {competitions.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
         </Select>
-        <Select value={selectedGW?.id || ''} onChange={e => setSelectedGW(gameweeks.find(g => g.id === e.target.value) || null)} style={{ flex: '1 1 140px' }}>
-          {gameweeks.length === 0 && <option value="">No gameweeks yet</option>}
-          {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}{gw.status === 'active' ? ' (current)' : ''}</option>)}
-        </Select>
+        {/* Hidden on Season: season predictions cover the whole season and
+            aren't tied to a gameweek, so a gameweek picker there is a control
+            that does nothing. */}
+        {tab !== 'season' && (
+          <Select value={selectedGW?.id || ''} onChange={e => setSelectedGW(gameweeks.find(g => g.id === e.target.value) || null)} style={{ flex: '1 1 140px' }}>
+            {gameweeks.length === 0 && <option value="">No gameweeks yet</option>}
+            {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}{gw.status === 'active' ? ' (current)' : ''}</option>)}
+          </Select>
+        )}
       </div>
 
       <div className="flex gap-4 mb-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
@@ -605,11 +610,17 @@ export default function Predict() {
       {tab === 'season' && <SeasonPredictions competitionId={comp} userId={user?.id} />}
       {tab === 'mine' && <TriplePointsCard competitionId={comp} competitions={competitions} gameweek={selectedGW} fixtures={fixtures} predictions={predictions} userId={user?.id} />}
 
-      {tab === 'mine' ? (
+      {/* Explicit per-tab checks, not a ternary. This was
+          `tab === 'mine' ? predictions : results`, so adding a third tab meant
+          Season fell into the else branch and rendered the Gameweek Results
+          content underneath itself. */}
+      {tab === 'mine' && (
         lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg"/></div>
         : fixtures.length === 0 ? <EmptyState icon="ti-calendar-off" title="No fixtures this gameweek" description="Fixtures will appear when the admin adds them"/>
         : fixtures.map(f => <FixtureCard key={f.id} fixture={f} prediction={predictions[f.id]} userId={user?.id} count={counts[f.id]} rules={rules} gwLabel={selectedGW?.number} onSave={(fid,h,a)=>savePrediction(fid,h,a,selectedGW.id,user.id)}/>)
-      ) : (
+      )}
+
+      {tab === 'results' && (
         <GameweekResultsTab competitionId={comp} gwId={selectedGW?.id} gwLabel={selectedGW?.number} rules={rules} compFormat={competitions.find(c=>c.id===comp)?.format} userId={user?.id} />
       )}
     </div>
