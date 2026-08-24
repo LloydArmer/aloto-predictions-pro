@@ -93,7 +93,20 @@ function OverallPane({ competitionId, userId }) {
     <div>
       {loading ? <div className="flex justify-center py-20"><Spinner size="lg"/></div>
         : overall.length === 0 ? <EmptyState icon="ti-list-numbers" title="No scores yet" description="Table will populate once the first gameweek is scored"/>
-        : <Card className="overflow-hidden p-0">
+        : <>
+          {/* Mobile: no horizontal scrolling at all.
+              Nine columns can't fit 390px, and the minWidth needed to hold them
+              pushed Total — the one number people open this screen for — off the
+              right-hand edge. So the phone gets rank, name and total, and a tap
+              reveals the breakdown for that player. */}
+          <div className="sm:hidden">
+            <MobileOverall
+              overall={overall} userId={userId} rules={rules}
+              badgesByUser={badgesByUser} gwNumbers={gwNumbers} hasSeasonPoints={hasSeasonPoints}
+            />
+          </div>
+
+          <Card className="overflow-hidden p-0 hidden sm:block">
             <div className="overflow-x-auto">
               <table className="data-table w-full" style={{ minWidth:900 }}>
                 <thead><tr>
@@ -177,6 +190,7 @@ function OverallPane({ competitionId, userId }) {
               </table>
             </div>
           </Card>
+          </>
       }
       {overall.length > 0 && <p className="text-xs text-center mt-3" style={{ color:'var(--txt-muted)' }}>Your row highlighted in blue</p>}
     </div>
@@ -270,7 +284,10 @@ function MonthlyPane({ competitionId, months, userId }) {
           <SectionLabel className="mb-2">Full monthly standings</SectionLabel>
           <Card className="overflow-hidden p-0 mb-4">
             <div className="overflow-x-auto">
-              <table className="data-table w-full" style={{ minWidth:400 }}>
+              {/* min-width applies from sm upward only. On a phone the columns
+                  already collapse to fit; forcing 400px just reintroduced the
+                  sideways scroll they were collapsed to avoid. */}
+              <table className="data-table w-full sm:min-w-[400px]">
                 <thead><tr>
                   <th style={{ width:36,paddingLeft:14 }}>#</th><th>Player</th>
                   <th style={{ width:44,textAlign:'right',fontSize:10 }}>Res</th>
@@ -330,6 +347,83 @@ function MonthlyPane({ competitionId, months, userId }) {
 // The month-scoped version can't use the group_standings view — the view
 // aggregates every fixture in the competition and has no month to filter on —
 // so it recomputes the same figures from group_fixtures directly.
+/**
+ * The overall table on a phone.
+ *
+ * Three things on the closed row — position, name, total — because that is what
+ * a standings table is for. Everything else is one tap away rather than one
+ * sideways scroll away, and a tap is far easier to discover: a horizontally
+ * scrolling table gives no hint that anything exists to the right of it.
+ */
+function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSeasonPoints }) {
+  const [expanded, setExpanded] = useState(null)
+
+  return (
+    <div>
+      {overall.map((p, i) => {
+        const isMe = p.user_id === userId
+        const open = expanded === p.user_id
+        const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
+        const scoresBonusPts  = (p.full_house_scores_count  || 0) * (rules?.full_house_scores_bonus  || 0)
+        const badges = badgesByUser[p.user_id] || []
+
+        const detail = [
+          ['Correct results', p.correct_results || 0, 'var(--accent)'],
+          ['Correct scores',  p.exact_scores || 0,    'var(--green)'],
+          ...(resultsBonusPts > 0 ? [['Results bonus', `+${resultsBonusPts}`, 'var(--amber)']] : []),
+          ...(scoresBonusPts  > 0 ? [['Scores bonus',  `+${scoresBonusPts}`,  '#c88bfa']] : []),
+          ...(p.tp1_gameweek_id ? [['Triple Points 1', `GW${gwNumbers[p.tp1_gameweek_id] || '?'} +${p.tp1_points || 0}`, 'var(--gold)']] : []),
+          ...(p.tp2_gameweek_id ? [['Triple Points 2', `GW${gwNumbers[p.tp2_gameweek_id] || '?'} +${p.tp2_points || 0}`, 'var(--gold)']] : []),
+          ...(hasSeasonPoints && p.season_points > 0 ? [['Season predictions', `+${p.season_points}`, 'var(--gold)']] : []),
+        ]
+
+        return (
+          <Card key={p.user_id} className="mb-2 p-0 overflow-hidden"
+            style={isMe ? { borderColor: 'var(--accent)', background: 'var(--accent-dim)' } : {}}>
+            <button onClick={() => setExpanded(open ? null : p.user_id)}
+              className="flex items-center gap-3 w-full px-3 py-2.5 text-left">
+              <span className="flex-shrink-0" style={{ width: 20 }}><Pos n={i + 1}/></span>
+
+              <span style={{ flex: '1 1 auto', minWidth: 0 }}>
+                <span className="text-sm font-medium block" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {p.display_name}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
+                </span>
+                {badges.length > 0 && (
+                  <span className="flex items-center gap-1 flex-wrap mt-1">
+                    {badges.map((n, j) => (
+                      <span key={j} className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1"
+                        style={{ background: 'var(--gold-dim)', color: 'var(--gold)' }}>
+                        <i className="ti ti-star-filled" style={{ fontSize: 10 }} aria-hidden="true"/>{n}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </span>
+
+              <span className="text-base font-semibold flex-shrink-0" style={{ color: 'var(--accent)' }}>
+                {p.total_points || 0}
+              </span>
+              <i className={`ti ti-chevron-${open ? 'up' : 'down'} text-sm flex-shrink-0`}
+                style={{ color: 'var(--txt-muted)' }} aria-hidden="true"/>
+            </button>
+
+            {open && (
+              <div className="px-3 pb-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+                {detail.map(([label, value, colour]) => (
+                  <div key={label} className="flex items-center justify-between py-1.5">
+                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>{label}</span>
+                    <span className="text-xs font-medium" style={{ color: colour }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
 function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
   const [standings, setStandings] = useState([])
   const [loading, setLoading] = useState(true)
@@ -399,10 +493,12 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
   return (
     <Card className="overflow-hidden p-0">
       <div className="overflow-x-auto">
+        {/* Eight numeric columns can't be collapsed without losing the point of
+            a league table, so this one still scrolls — but the name column is
+            pinned, so a row of numbers always has a player attached to it. */}
         <table className="data-table w-full" style={{ minWidth: 560 }}>
           <thead><tr>
-            <th style={{ width: 32, paddingLeft: 14 }}>#</th>
-            <th>Participant</th>
+            <th className="sticky-col" style={{ width: 118, paddingLeft: 12 }}>Participant</th>
             <th style={{ width: 40, textAlign: 'right' }}>P</th>
             <th style={{ width: 36, textAlign: 'right' }}>W</th>
             <th style={{ width: 36, textAlign: 'right' }}>D</th>
@@ -415,10 +511,12 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
           <tbody>
             {standings.map((s,i) => (
               <tr key={s.user_id} className={s.user_id === userId ? 'highlight' : ''}>
-                <td style={{ paddingLeft: 14 }}><Pos n={i+1}/></td>
-                <td>
-                  <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>
-                    {s.profiles?.display_name}{s.user_id === userId && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+                {/* Position folded into the pinned cell — a separate # column
+                    would eat a third of the width that stays on screen. */}
+                <td className="sticky-col" style={{ paddingLeft: 12, maxWidth: 0 }}>
+                  <p className="text-sm font-medium" style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    <span className="mr-1.5" style={{ color:'var(--txt-muted)', fontSize:11 }}>{i+1}</span>
+                    {s.profiles?.display_name}{s.user_id === userId && <span className="ml-1 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
                   </p>
                 </td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.played}</td>
