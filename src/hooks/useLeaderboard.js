@@ -35,6 +35,35 @@ export function useLeaderboard(competitionId) {
         }
       })
 
+      // Someone whose only points are season points has no row in the view at
+      // all — leaderboard_overall is built from gameweek_scores, so a
+      // participant who hasn't been scored on a gameweek yet simply isn't in
+      // it. Without this they'd be missing from the table entirely despite
+      // having points, which reads as the table being broken.
+      const inView = new Set((data || []).map(r => r.user_id))
+      const missing = Object.keys(seasonByUser).filter(uid => !inView.has(uid) && seasonByUser[uid] > 0)
+
+      if (missing.length) {
+        const { data: profs } = await supabase.from('profiles')
+          .select('id, display_name, avatar_initials').in('id', missing)
+
+        ;(profs || []).forEach(pr => {
+          merged.push({
+            competition_id: id,
+            user_id: pr.id,
+            display_name: pr.display_name,
+            avatar_initials: pr.avatar_initials,
+            total_points: seasonByUser[pr.id],
+            gameweek_points: 0,
+            season_points: seasonByUser[pr.id],
+            exact_scores: 0,
+            correct_results: 0,
+            full_house_results_count: 0,
+            full_house_scores_count: 0,
+          })
+        })
+      }
+
       // Re-sorted, because adding season points can change the order.
       merged.sort((a, b) => b.total_points - a.total_points || (b.exact_scores || 0) - (a.exact_scores || 0))
       setOverall(merged)
