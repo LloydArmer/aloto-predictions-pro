@@ -80,8 +80,14 @@ function OverallPane({ competitionId, userId }) {
     const grouped = {}
     ;(rows || []).forEach(row => {
       if (!row.gameweeks) return
-      if (!grouped[row.user_id]) grouped[row.user_id] = []
-      grouped[row.user_id].push(row.gameweeks.number)
+      if (!grouped[row.user_id]) grouped[row.user_id] = { results: [], scores: [], all: [] }
+      const g = grouped[row.user_id]
+      if (row.full_house_results) g.results.push(row.gameweeks.number)
+      if (row.full_house_scores)  g.scores.push(row.gameweeks.number)
+      // Distinct gameweeks. An all-scores full house is also an all-results one
+      // — getting every score exact means getting every result right — so the
+      // same gameweek would otherwise be counted twice.
+      if (!g.all.includes(row.gameweeks.number)) g.all.push(row.gameweeks.number)
     })
     setBadgesByUser(grouped)
     const { data: gws } = await supabase.from('gameweeks').select('id, number')
@@ -138,7 +144,7 @@ function OverallPane({ competitionId, userId }) {
                     const correctScores  = p.exact_scores || 0
                     const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
                     const scoresBonusPts  = (p.full_house_scores_count || 0) * (rules?.full_house_scores_bonus || 0)
-                    const badges = badgesByUser[p.user_id] || []
+                    const fh = badgesByUser[p.user_id] || { results: [], scores: [], all: [] }
                     const tp1Label = p.tp1_gameweek_id ? `GW${gwNumbers[p.tp1_gameweek_id]||'?'} +${p.tp1_points||0}` : '–'
                     const tp2Label = p.tp2_gameweek_id ? `GW${gwNumbers[p.tp2_gameweek_id]||'?'} +${p.tp2_points||0}` : '–'
                     return (
@@ -169,18 +175,29 @@ function OverallPane({ competitionId, userId }) {
                           )}
                           <td style={{ textAlign:'right', paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points||0}</span></td>
                         </tr>
-                        {badges.length > 0 && (
+                        {fh.all.length > 0 && (
                           <tr className={isMe?'highlight':''}>
                             <td></td>
                             <td colSpan={8} style={{ paddingBottom: 8, paddingTop: 0 }}>
-                              {/* One line naming the gameweeks, rather than a
-                                  chip each. Twelve chips is a wall; "12 full
-                                  houses: GW1, GW3, …" reads at a glance. */}
-                              <span className="text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                                style={{ background:'var(--gold-dim)', color:'var(--gold)' }}>
-                                <i className="ti ti-star-filled" style={{ fontSize:10 }} aria-hidden="true"/>
-                                {badges.length} full house{badges.length !== 1 ? 's' : ''}: {badges.join(', ')}
-                              </span>
+                              {/* Labelled by type, so the gameweeks tie to the
+                                  Results Bonus and Scores Bonus columns above
+                                  rather than floating free of them. */}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {fh.results.length > 0 && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                                    style={{ background:'var(--amber-dim)', color:'var(--amber)' }}>
+                                    <i className="ti ti-star-filled" style={{ fontSize:10 }} aria-hidden="true"/>
+                                    All results: {fh.results.join(', ')}
+                                  </span>
+                                )}
+                                {fh.scores.length > 0 && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                                    style={{ background:'rgba(200,139,250,0.14)', color:'#c88bfa' }}>
+                                    <i className="ti ti-star-filled" style={{ fontSize:10 }} aria-hidden="true"/>
+                                    All scores: {fh.scores.join(', ')}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         )}
@@ -385,13 +402,26 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
         const open = expanded === p.user_id
         const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
         const scoresBonusPts  = (p.full_house_scores_count  || 0) * (rules?.full_house_scores_bonus  || 0)
-        const badges = badgesByUser[p.user_id] || []
+        const fh = badgesByUser[p.user_id] || { results: [], scores: [], all: [] }
 
+        // A full house and its bonus are one event, not two. Showing "Results
+        // bonus +15" on one line and "Full houses: GW3, GW7" on another
+        // described the same thing twice and made it look like separate
+        // scoring. Each line now names the achievement, which gameweeks, and
+        // what it was worth.
         const detail = [
           ['Correct results', p.correct_results || 0, 'var(--accent)'],
           ['Correct scores',  p.exact_scores || 0,    'var(--green)'],
-          ...(resultsBonusPts > 0 ? [['Results bonus', `+${resultsBonusPts}`, 'var(--amber)']] : []),
-          ...(scoresBonusPts  > 0 ? [['Scores bonus',  `+${scoresBonusPts}`,  '#c88bfa']] : []),
+          ...(fh.results.length ? [[
+            `Full house — all results (${fh.results.length})`,
+            `${fh.results.join(', ')}  +${resultsBonusPts}`,
+            'var(--amber)',
+          ]] : []),
+          ...(fh.scores.length ? [[
+            `Full house — all scores (${fh.scores.length})`,
+            `${fh.scores.join(', ')}  +${scoresBonusPts}`,
+            '#c88bfa',
+          ]] : []),
           ...(p.tp1_gameweek_id ? [['Triple Points 1', `GW${gwNumbers[p.tp1_gameweek_id] || '?'} +${p.tp1_points || 0}`, 'var(--gold)']] : []),
           ...(p.tp2_gameweek_id ? [['Triple Points 2', `GW${gwNumbers[p.tp2_gameweek_id] || '?'} +${p.tp2_points || 0}`, 'var(--gold)']] : []),
           ...(hasSeasonPoints && p.season_points > 0 ? [['Season predictions', `+${p.season_points}`, 'var(--gold)']] : []),
@@ -411,10 +441,11 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
                       season could have a dozen, and a dozen chips would push the
                       name off the row entirely. The gameweeks themselves are in
                       the expanded detail, where there's room for them. */}
-                  {badges.length > 0 && (
+                  {fh.all.length > 0 && (
                     <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded"
+                      title={`${fh.all.length} full house${fh.all.length !== 1 ? 's' : ''}`}
                       style={{ background: 'var(--gold-dim)', color: 'var(--gold)', whiteSpace: 'nowrap' }}>
-                      ★ {badges.length}
+                      ★ {fh.all.length}
                     </span>
                   )}
                 </span>
@@ -435,24 +466,14 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
             {open && (
               <div className="px-3 pb-3" style={{ borderTop: '0.5px solid var(--border)' }}>
                 {detail.map(([label, value, colour]) => (
-                  <div key={label} className="flex items-center justify-between py-1.5">
-                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>{label}</span>
-                    <span className="text-xs font-medium" style={{ color: colour }}>{value}</span>
+                  <div key={label} className="flex items-start justify-between gap-3 py-1.5">
+                    <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>{label}</span>
+                    {/* Wraps rather than truncating — a long list of gameweeks
+                        here means a good season, and is worth reading. */}
+                    <span className="text-xs font-medium text-right" style={{ color: colour }}>{value}</span>
                   </div>
                 ))}
 
-                {badges.length > 0 && (
-                  <div className="flex items-start justify-between gap-3 py-1.5">
-                    <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>
-                      Full house{badges.length !== 1 ? 's' : ''}
-                    </span>
-                    {/* Wraps rather than truncating — a long list here is a good
-                        season, and worth reading. */}
-                    <span className="text-xs font-medium text-right" style={{ color: 'var(--gold)' }}>
-                      {badges.join(', ')}
-                    </span>
-                  </div>
-                )}
               </div>
             )}
           </Card>
