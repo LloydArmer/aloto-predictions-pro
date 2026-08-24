@@ -388,33 +388,38 @@ export default function Dashboard() {
               groupTop3.length === 0
                 ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No group games completed yet — points appear once a gameweek is marked completed and its group fixtures are resolved.</p>
                 : groupTop3.map((p,i) => (
-                    <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+                    <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 gap-2" style={{ borderColor: 'var(--border)' }}>
                       <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
                         <span className="text-sm font-semibold flex items-center justify-center" style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--bg-elevated)', color: ptColors[i] }}>{i+1}</span>
                         <div style={{ minWidth: 0 }}>
-                          <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+                          <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                             {p.profiles?.display_name}
                             {p.user_id === user?.id && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
                           </p>
                           <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.wins||0}W {p.draws||0}D {p.losses||0}L</p>
                         </div>
                       </div>
-                      <span className="text-base font-medium" style={{ color: ptColors[i] }}>{p.league_points} pts</span>
+                      {/* Fixed width and tabular figures so 260, 131 and 100 all
+                          end at the same point. Without it each total starts at a
+                          different offset and reads as a different size. */}
+                      <span className="text-base font-medium num text-right flex-shrink-0"
+                        style={{ color: ptColors[i], minWidth: 74 }}>{p.league_points} pts</span>
                     </div>
                   ))
             ) : overall.slice(0,3).map((p,i) => (
-              <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
+              <div key={p.user_id} className="flex items-center justify-between py-2.5 border-b last:border-0 gap-2" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
                   <span className="text-sm font-semibold flex items-center justify-center" style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--bg-elevated)', color: ptColors[i] }}>{i+1}</span>
                   <div style={{ minWidth: 0 }}>
-                    <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
+                    <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                       {p.display_name}
                       {p.user_id === user?.id && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
                     </p>
                     <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{p.exact_scores||0} exact · {p.correct_results||0} results{(p.tp1_gameweek_id || p.tp2_gameweek_id) ? ' · ⚡ TP used' : ''}</p>
                   </div>
                 </div>
-                <span className="text-base font-medium" style={{ color: ptColors[i] }}>{p.total_points} pts</span>
+                <span className="text-base font-medium num text-right flex-shrink-0"
+                  style={{ color: ptColors[i], minWidth: 74 }}>{p.total_points} pts</span>
               </div>
             ))}
             </Card>

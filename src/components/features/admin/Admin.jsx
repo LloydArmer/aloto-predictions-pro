@@ -1060,7 +1060,7 @@ function GroupStageTab({ competitionId, competitions }) {
         <Card className="overflow-hidden p-0 mb-4">
           <p className="text-sm font-semibold p-4 pb-3" style={{ color: 'var(--txt-primary)' }}>Group table</p>
           <div className="overflow-x-auto">
-            <table className="data-table w-full" style={{ minWidth: 420 }}>
+            <table className="data-table w-full sm:min-w-[420px]">
               <thead><tr>
                 <th style={{ paddingLeft: 14 }}>Participant</th>
                 <th style={{ textAlign: 'right' }}>P</th>
@@ -1072,7 +1072,9 @@ function GroupStageTab({ competitionId, competitions }) {
               <tbody>
                 {standings.map((s,i) => (
                   <tr key={s.user_id}>
-                    <td style={{ paddingLeft: 14 }}><span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{i+1}. {s.profiles?.display_name}</span></td>
+                    <td className="name-cell" style={{ paddingLeft: 14 }}>
+                      <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{i+1}. {s.profiles?.display_name}</span>
+                    </td>
                     <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.played}</td>
                     <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.points_for}</td>
                     <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.points_against}</td>

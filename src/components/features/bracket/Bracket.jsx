@@ -149,7 +149,7 @@ function GroupTable({ competitionId, userId }) {
     <Card className="overflow-hidden p-0 mb-5">
       <p className="text-sm font-semibold p-4 pb-3" style={{ color: 'var(--txt-primary)' }}>Group table</p>
       <div className="overflow-x-auto">
-        <table className="data-table w-full" style={{ minWidth: 420 }}>
+        <table className="data-table w-full sm:min-w-[420px]">
           <thead><tr>
             <th style={{ paddingLeft: 14 }}>Participant</th>
             <th style={{ textAlign: 'right' }}>P</th>
@@ -163,7 +163,9 @@ function GroupTable({ competitionId, userId }) {
               <tr key={s.user_id} className={s.user_id === userId ? 'highlight' : ''}>
                 <td style={{ paddingLeft: 14 }}>
                   <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>
-                    {i+1}. {s.profiles?.display_name}{s.user_id === userId && <span className="ml-1 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
+                    <span style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {i+1}. {s.profiles?.display_name}{s.user_id === userId && <span className="ml-1 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
+                    </span>
                   </span>
                 </td>
                 <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.played}</td>

@@ -51,7 +51,9 @@ function WinnerBanner({ player, label }) {
     <div className="winner-banner mb-4">
       <i className="ti ti-crown text-2xl flex-shrink-0" style={{ color:'var(--gold)' }} aria-hidden="true"/>
       <div>
-        <p className="text-sm font-medium" style={{ color:'var(--gold)' }}>{player.display_name||player.profiles?.display_name} wins {label}</p>
+        <p className="text-sm font-medium" style={{ color:'var(--gold)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {player.display_name||player.profiles?.display_name} wins {label}
+        </p>
         <p className="text-xs" style={{ color:'var(--amber)' }}>
           {player.exact_scores??0} exact · {player.correct_results??0} correct · {player.total_points??player.points} pts
         </p>
@@ -264,7 +266,7 @@ function MonthlyPane({ competitionId, months, userId }) {
       </Select>
       <Card raised className="p-4 mb-4">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{sel?.label} — gameweeks</p>
+          <p className="text-sm font-medium" style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sel?.label} — gameweeks</p>
           <span className="text-xs" style={{ color: completedGWs.length===gameweeksInMonth.length&&gameweeksInMonth.length>0?'var(--green)':'var(--amber)' }}>
             {completedGWs.length===gameweeksInMonth.length&&gameweeksInMonth.length>0?'Complete':'In progress'}
           </span>

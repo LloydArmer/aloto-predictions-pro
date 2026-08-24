@@ -599,7 +599,8 @@ function CompletionTracker({ competitionId, tableConfig, pickConfig, picks }) {
 
       {open && (loading ? <div className="py-4"><Spinner/></div> : (
         <div className="mt-3 rounded-md overflow-hidden" style={{ border: '0.5px solid var(--border-med)' }}>
-          <table className="data-table">
+          <div style={{ overflowX: 'auto' }}>
+          <table className="data-table w-full">
             <thead><tr>
               <th className="name-cell" style={{ paddingLeft: 12 }}>Player</th>
               {tableConfig && <th style={{ width: 74, textAlign: 'right' }}>Table</th>}
@@ -629,6 +630,7 @@ function CompletionTracker({ competitionId, tableConfig, pickConfig, picks }) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       ))}
     </Card>
