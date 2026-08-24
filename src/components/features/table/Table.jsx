@@ -360,8 +360,27 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
 
   return (
     <div>
+      {/* Column labels. The list dropped the table's headings along with the
+          table, leaving a bare number on the right with nothing to say what it
+          was. Aligned to the same padding as the rows below. */}
+      <div className="flex items-center gap-3 px-3 pb-1.5">
+        <span className="flex-shrink-0" style={{ width: 20 }}>
+          <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>#</span>
+        </span>
+        <span style={{ flex: '1 1 auto' }}>
+          <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Player</span>
+        </span>
+        <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>Pts</span>
+        {/* Matches the chevron's width so "Pts" sits over the number, not over
+            the chevron. */}
+        <span className="flex-shrink-0" style={{ width: 13 }} aria-hidden="true"/>
+      </div>
+
       {overall.map((p, i) => {
         const isMe = p.user_id === userId
+        // One open at a time. A set would let every card be expanded at once,
+        // turning a six-row standings table into a page of scrolling — which is
+        // the problem this layout exists to solve.
         const open = expanded === p.user_id
         const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
         const scoresBonusPts  = (p.full_house_scores_count  || 0) * (rules?.full_house_scores_bonus  || 0)
