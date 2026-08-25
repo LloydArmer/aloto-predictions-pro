@@ -78,34 +78,26 @@ end; $$;
 ALTER FUNCTION "public"."admin_update_participant"("target_id" "uuid", "new_display_name" "text", "new_phone" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."auto_join_new_profile_to_competitions"() RETURNS "trigger"
-    LANGUAGE "plpgsql" SECURITY DEFINER
+CREATE OR REPLACE FUNCTION "public"."competition_notification_status"("p_competition_id" "uuid") RETURNS TABLE("user_id" "uuid", "display_name" "text", "notify_push" boolean, "device_count" bigint)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
     AS $$
-begin
-  insert into participants (competition_id, user_id, role)
-  select id, new.id, 'player' from competitions
-  on conflict (competition_id, user_id) do nothing;
-  return new;
-end; $$;
+  select
+    pr.id,
+    pr.display_name,
+    coalesce(pr.notify_push, true),
+    (select count(*) from push_tokens t where t.user_id = pr.id)
+  from participants pa
+  join profiles pr on pr.id = pa.user_id
+  where pa.competition_id = p_competition_id
+    -- The admin check lives inside the function: security definer bypasses RLS,
+    -- so without this any participant could call it for any competition.
+    and is_competition_admin(p_competition_id)
+  order by pr.display_name;
+$$;
 
 
-ALTER FUNCTION "public"."auto_join_new_profile_to_competitions"() OWNER TO "postgres";
-
-
-CREATE OR REPLACE FUNCTION "public"."auto_join_profiles_to_new_competition"() RETURNS "trigger"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
-    AS $$
-begin
-  insert into participants (competition_id, user_id, role)
-  select new.id, id, 'player' from profiles
-  on conflict (competition_id, user_id) do nothing;
-  return new;
-end; $$;
-
-
-ALTER FUNCTION "public"."auto_join_profiles_to_new_competition"() OWNER TO "postgres";
+ALTER FUNCTION "public"."competition_notification_status"("p_competition_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."create_admin_participant"() RETURNS "trigger"
@@ -171,6 +163,36 @@ $$;
 ALTER FUNCTION "public"."enforce_triple_points_complete_predictions"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."generate_join_code"() RETURNS "text"
+    LANGUAGE "plpgsql"
+    AS $$
+declare
+  alphabet constant text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  candidate text;
+  attempts  int := 0;
+begin
+  loop
+    candidate := '';
+    for i in 1..6 loop
+      candidate := candidate || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+    end loop;
+
+    exit when not exists (select 1 from competitions where upper(join_code) = candidate);
+
+    attempts := attempts + 1;
+    if attempts > 50 then
+      raise exception 'Could not generate a unique join code';
+    end if;
+  end loop;
+
+  return candidate;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."generate_join_code"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -187,6 +209,149 @@ end; $$;
 
 
 ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_competition_admin"("p_competition_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+  select
+    -- Admin of this specific competition
+    exists (
+      select 1 from participants
+      where competition_id = p_competition_id
+        and user_id = auth.uid()
+        and role = 'admin'
+    )
+    -- ...or a global admin, which is what the app itself checks
+    or exists (
+      select 1 from profiles
+      where id = auth.uid() and role = 'admin'
+    );
+$$;
+
+
+ALTER FUNCTION "public"."is_competition_admin"("p_competition_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_participant"("p_competition_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+  select exists (
+    select 1 from participants
+    where competition_id = p_competition_id and user_id = auth.uid()
+  );
+$$;
+
+
+ALTER FUNCTION "public"."is_participant"("p_competition_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."join_competition_with_code"("p_code" "text") RETURNS json
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  comp record;
+begin
+  if auth.uid() is null then
+    return json_build_object('ok', false, 'error', 'not_signed_in');
+  end if;
+
+  select id, name, status into comp
+  from competitions
+  where upper(join_code) = upper(trim(p_code));
+
+  if not found then
+    return json_build_object('ok', false, 'error', 'not_found');
+  end if;
+
+  if comp.status = 'completed' then
+    return json_build_object('ok', false, 'error', 'completed', 'name', comp.name);
+  end if;
+
+  if exists (select 1 from participants where competition_id = comp.id and user_id = auth.uid()) then
+    return json_build_object('ok', true, 'already', true, 'competition_id', comp.id, 'name', comp.name);
+  end if;
+
+  insert into participants (competition_id, user_id, role)
+  values (comp.id, auth.uid(), 'player');
+
+  return json_build_object('ok', true, 'already', false, 'competition_id', comp.id, 'name', comp.name);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."join_competition_with_code"("p_code" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."mark_pick_answer"("p_answer_id" "uuid", "p_correct" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  comp_id uuid;
+begin
+  select c.competition_id into comp_id
+  from season_pick_answers a
+  join season_picks p        on p.id = a.pick_id
+  join season_pick_configs c on c.id = p.config_id
+  where a.id = p_answer_id;
+
+  if comp_id is null then
+    raise exception 'No such answer';
+  end if;
+
+  if not is_competition_admin(comp_id) then
+    raise exception 'Only an admin of this competition can mark answers';
+  end if;
+
+  update season_pick_answers set is_correct = p_correct where id = p_answer_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."mark_pick_answer"("p_answer_id" "uuid", "p_correct" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."regenerate_join_code"("p_competition_id" "uuid") RETURNS "text"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  new_code text;
+begin
+  if not exists (
+    select 1 from participants
+    where competition_id = p_competition_id and user_id = auth.uid() and role = 'admin'
+  ) then
+    raise exception 'Only an admin of this competition can change its join code';
+  end if;
+
+  new_code := generate_join_code();
+  update competitions set join_code = new_code where id = p_competition_id;
+  return new_code;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."regenerate_join_code"("p_competition_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_join_code_on_insert"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+begin
+  if new.join_code is null then
+    new.join_code := generate_join_code();
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_join_code_on_insert"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."touch_prediction_submitted_at"() RETURNS "trigger"
@@ -294,6 +459,7 @@ CREATE TABLE IF NOT EXISTS "public"."competitions" (
     "group_target_round" "text",
     "rules_source_competition_id" "uuid",
     "triple_points_blocked" boolean DEFAULT false NOT NULL,
+    "join_code" "text",
     CONSTRAINT "competitions_format_check" CHECK (("format" = ANY (ARRAY['league'::"text", 'knockout'::"text", 'group_knockout'::"text"]))),
     CONSTRAINT "competitions_status_check" CHECK (("status" = ANY (ARRAY['active'::"text", 'paused'::"text", 'completed'::"text"])))
 );
@@ -348,11 +514,21 @@ CREATE TABLE IF NOT EXISTS "public"."gameweeks" (
     "deadline" timestamp with time zone,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "triple_points_blocked" boolean DEFAULT false NOT NULL,
+    "full_house_results_bonus" integer,
+    "full_house_scores_bonus" integer,
     CONSTRAINT "gameweeks_status_check" CHECK (("status" = ANY (ARRAY['upcoming'::"text", 'active'::"text", 'completed'::"text"])))
 );
 
 
 ALTER TABLE "public"."gameweeks" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."gameweeks"."full_house_results_bonus" IS 'Overrides point_rules.full_house_results_bonus for this gameweek only. Null = use the competition rule.';
+
+
+
+COMMENT ON COLUMN "public"."gameweeks"."full_house_scores_bonus" IS 'Overrides point_rules.full_house_scores_bonus for this gameweek only. Null = use the competition rule.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."group_fixtures" (
@@ -614,6 +790,133 @@ CREATE TABLE IF NOT EXISTS "public"."reminder_log" (
 ALTER TABLE "public"."reminder_log" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."season_pick_answers" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "pick_id" "uuid" NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "option_id" "uuid",
+    "answer_text" "text",
+    "is_correct" boolean,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "season_pick_answers_one_form" CHECK (((("option_id" IS NOT NULL) AND ("answer_text" IS NULL)) OR (("option_id" IS NULL) AND ("answer_text" IS NOT NULL))))
+);
+
+
+ALTER TABLE "public"."season_pick_answers" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."season_pick_configs" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "competition_id" "uuid" NOT NULL,
+    "deadline" timestamp with time zone,
+    "is_open" boolean DEFAULT false NOT NULL,
+    "settled_gameweek_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."season_pick_configs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."season_pick_options" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "pick_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "sort_order" integer DEFAULT 0 NOT NULL
+);
+
+
+ALTER TABLE "public"."season_pick_options" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."season_picks" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "config_id" "uuid" NOT NULL,
+    "label" "text" NOT NULL,
+    "points" integer DEFAULT 10 NOT NULL,
+    "sort_order" integer DEFAULT 0 NOT NULL,
+    "correct_option_id" "uuid",
+    "allow_free_text" boolean DEFAULT false NOT NULL,
+    "correct_answer" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."season_picks" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."season_scores" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "competition_id" "uuid" NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "table_points" integer DEFAULT 0 NOT NULL,
+    "table_correct" integer DEFAULT 0 NOT NULL,
+    "picks_points" integer DEFAULT 0 NOT NULL,
+    "picks_correct" integer DEFAULT 0 NOT NULL,
+    "settled_gameweek_id" "uuid",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."season_scores" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."season_table_configs" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "competition_id" "uuid" NOT NULL,
+    "league_name" "text" NOT NULL,
+    "team_count" integer NOT NULL,
+    "points_per_position" integer DEFAULT 3 NOT NULL,
+    "deadline" timestamp with time zone,
+    "is_open" boolean DEFAULT false NOT NULL,
+    "results_entered" boolean DEFAULT false NOT NULL,
+    "settled_gameweek_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "season_table_configs_team_count_check" CHECK ((("team_count" >= 2) AND ("team_count" <= 32)))
+);
+
+
+ALTER TABLE "public"."season_table_configs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."season_table_predictions" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "config_id" "uuid" NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "team_id" "uuid" NOT NULL,
+    "position" integer NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "season_table_predictions_position_check" CHECK (("position" > 0))
+);
+
+
+ALTER TABLE "public"."season_table_predictions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."season_table_results" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "config_id" "uuid" NOT NULL,
+    "team_id" "uuid" NOT NULL,
+    "position" integer NOT NULL,
+    CONSTRAINT "season_table_results_position_check" CHECK (("position" > 0))
+);
+
+
+ALTER TABLE "public"."season_table_results" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."season_table_teams" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "config_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "short_name" "text",
+    "sort_order" integer DEFAULT 0 NOT NULL
+);
+
+
+ALTER TABLE "public"."season_table_teams" OWNER TO "postgres";
+
+
 ALTER TABLE ONLY "public"."bracket_matches"
     ADD CONSTRAINT "bracket_matches_pkey" PRIMARY KEY ("id");
 
@@ -769,6 +1072,101 @@ ALTER TABLE ONLY "public"."reminder_log"
 
 
 
+ALTER TABLE ONLY "public"."season_pick_answers"
+    ADD CONSTRAINT "season_pick_answers_pick_id_user_id_key" UNIQUE ("pick_id", "user_id");
+
+
+
+ALTER TABLE ONLY "public"."season_pick_answers"
+    ADD CONSTRAINT "season_pick_answers_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."season_pick_configs"
+    ADD CONSTRAINT "season_pick_configs_competition_id_key" UNIQUE ("competition_id");
+
+
+
+ALTER TABLE ONLY "public"."season_pick_configs"
+    ADD CONSTRAINT "season_pick_configs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."season_pick_options"
+    ADD CONSTRAINT "season_pick_options_pick_id_name_key" UNIQUE ("pick_id", "name");
+
+
+
+ALTER TABLE ONLY "public"."season_pick_options"
+    ADD CONSTRAINT "season_pick_options_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."season_picks"
+    ADD CONSTRAINT "season_picks_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."season_scores"
+    ADD CONSTRAINT "season_scores_competition_id_user_id_key" UNIQUE ("competition_id", "user_id");
+
+
+
+ALTER TABLE ONLY "public"."season_scores"
+    ADD CONSTRAINT "season_scores_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."season_table_configs"
+    ADD CONSTRAINT "season_table_configs_competition_id_key" UNIQUE ("competition_id");
+
+
+
+ALTER TABLE ONLY "public"."season_table_configs"
+    ADD CONSTRAINT "season_table_configs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."season_table_predictions"
+    ADD CONSTRAINT "season_table_predictions_config_id_user_id_position_key" UNIQUE ("config_id", "user_id", "position");
+
+
+
+ALTER TABLE ONLY "public"."season_table_predictions"
+    ADD CONSTRAINT "season_table_predictions_config_id_user_id_team_id_key" UNIQUE ("config_id", "user_id", "team_id");
+
+
+
+ALTER TABLE ONLY "public"."season_table_predictions"
+    ADD CONSTRAINT "season_table_predictions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."season_table_results"
+    ADD CONSTRAINT "season_table_results_config_id_position_key" UNIQUE ("config_id", "position");
+
+
+
+ALTER TABLE ONLY "public"."season_table_results"
+    ADD CONSTRAINT "season_table_results_config_id_team_id_key" UNIQUE ("config_id", "team_id");
+
+
+
+ALTER TABLE ONLY "public"."season_table_results"
+    ADD CONSTRAINT "season_table_results_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."season_table_teams"
+    ADD CONSTRAINT "season_table_teams_config_id_name_key" UNIQUE ("config_id", "name");
+
+
+
+ALTER TABLE ONLY "public"."season_table_teams"
+    ADD CONSTRAINT "season_table_teams_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."triple_points_plays"
     ADD CONSTRAINT "triple_points_plays_competition_id_user_id_half_key" UNIQUE ("competition_id", "user_id", "half");
 
@@ -780,6 +1178,10 @@ ALTER TABLE ONLY "public"."triple_points_plays"
 
 
 CREATE INDEX "idx_bracket_comp" ON "public"."bracket_matches" USING "btree" ("competition_id");
+
+
+
+CREATE UNIQUE INDEX "idx_competitions_join_code" ON "public"."competitions" USING "btree" ("upper"("join_code")) WHERE ("join_code" IS NOT NULL);
 
 
 
@@ -831,6 +1233,34 @@ CREATE INDEX "idx_reminder_user" ON "public"."reminder_log" USING "btree" ("user
 
 
 
+CREATE INDEX "idx_sp_config" ON "public"."season_picks" USING "btree" ("config_id");
+
+
+
+CREATE INDEX "idx_spa_user" ON "public"."season_pick_answers" USING "btree" ("pick_id", "user_id");
+
+
+
+CREATE INDEX "idx_spo_pick" ON "public"."season_pick_options" USING "btree" ("pick_id");
+
+
+
+CREATE INDEX "idx_ss_comp" ON "public"."season_scores" USING "btree" ("competition_id");
+
+
+
+CREATE INDEX "idx_stp_user" ON "public"."season_table_predictions" USING "btree" ("config_id", "user_id");
+
+
+
+CREATE INDEX "idx_str_config" ON "public"."season_table_results" USING "btree" ("config_id");
+
+
+
+CREATE INDEX "idx_stt_config" ON "public"."season_table_teams" USING "btree" ("config_id");
+
+
+
 CREATE OR REPLACE TRIGGER "on_competition_created" AFTER INSERT ON "public"."competitions" FOR EACH ROW EXECUTE FUNCTION "public"."create_default_rules"();
 
 
@@ -839,11 +1269,7 @@ CREATE OR REPLACE TRIGGER "on_competition_created_add_admin" AFTER INSERT ON "pu
 
 
 
-CREATE OR REPLACE TRIGGER "trg_auto_join_new_profile" AFTER INSERT ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."auto_join_new_profile_to_competitions"();
-
-
-
-CREATE OR REPLACE TRIGGER "trg_auto_join_profiles_to_new_competition" AFTER INSERT ON "public"."competitions" FOR EACH ROW EXECUTE FUNCTION "public"."auto_join_profiles_to_new_competition"();
+CREATE OR REPLACE TRIGGER "trg_set_join_code" BEFORE INSERT ON "public"."competitions" FOR EACH ROW EXECUTE FUNCTION "public"."set_join_code_on_insert"();
 
 
 
@@ -1045,6 +1471,101 @@ ALTER TABLE ONLY "public"."reminder_log"
 
 
 
+ALTER TABLE ONLY "public"."season_pick_answers"
+    ADD CONSTRAINT "season_pick_answers_option_id_fkey" FOREIGN KEY ("option_id") REFERENCES "public"."season_pick_options"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_pick_answers"
+    ADD CONSTRAINT "season_pick_answers_pick_id_fkey" FOREIGN KEY ("pick_id") REFERENCES "public"."season_picks"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_pick_answers"
+    ADD CONSTRAINT "season_pick_answers_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_pick_configs"
+    ADD CONSTRAINT "season_pick_configs_competition_id_fkey" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_pick_configs"
+    ADD CONSTRAINT "season_pick_configs_settled_gameweek_id_fkey" FOREIGN KEY ("settled_gameweek_id") REFERENCES "public"."gameweeks"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."season_pick_options"
+    ADD CONSTRAINT "season_pick_options_pick_id_fkey" FOREIGN KEY ("pick_id") REFERENCES "public"."season_picks"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_picks"
+    ADD CONSTRAINT "season_picks_config_id_fkey" FOREIGN KEY ("config_id") REFERENCES "public"."season_pick_configs"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_picks"
+    ADD CONSTRAINT "season_picks_correct_option_fk" FOREIGN KEY ("correct_option_id") REFERENCES "public"."season_pick_options"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."season_scores"
+    ADD CONSTRAINT "season_scores_competition_id_fkey" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_scores"
+    ADD CONSTRAINT "season_scores_settled_gameweek_id_fkey" FOREIGN KEY ("settled_gameweek_id") REFERENCES "public"."gameweeks"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."season_scores"
+    ADD CONSTRAINT "season_scores_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_table_configs"
+    ADD CONSTRAINT "season_table_configs_competition_id_fkey" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_table_configs"
+    ADD CONSTRAINT "season_table_configs_settled_gameweek_id_fkey" FOREIGN KEY ("settled_gameweek_id") REFERENCES "public"."gameweeks"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."season_table_predictions"
+    ADD CONSTRAINT "season_table_predictions_config_id_fkey" FOREIGN KEY ("config_id") REFERENCES "public"."season_table_configs"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_table_predictions"
+    ADD CONSTRAINT "season_table_predictions_team_id_fkey" FOREIGN KEY ("team_id") REFERENCES "public"."season_table_teams"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_table_predictions"
+    ADD CONSTRAINT "season_table_predictions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_table_results"
+    ADD CONSTRAINT "season_table_results_config_id_fkey" FOREIGN KEY ("config_id") REFERENCES "public"."season_table_configs"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_table_results"
+    ADD CONSTRAINT "season_table_results_team_id_fkey" FOREIGN KEY ("team_id") REFERENCES "public"."season_table_teams"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."season_table_teams"
+    ADD CONSTRAINT "season_table_teams_config_id_fkey" FOREIGN KEY ("config_id") REFERENCES "public"."season_table_configs"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."triple_points_plays"
     ADD CONSTRAINT "triple_points_plays_competition_id_fkey" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE CASCADE;
 
@@ -1235,9 +1756,11 @@ CREATE POLICY "participants_delete" ON "public"."participants" FOR DELETE USING 
 
 
 
-CREATE POLICY "participants_insert" ON "public"."participants" FOR INSERT WITH CHECK ((("auth"."uid"() = "user_id") OR (EXISTS ( SELECT 1
+CREATE POLICY "participants_insert" ON "public"."participants" FOR INSERT WITH CHECK (((EXISTS ( SELECT 1
    FROM "public"."participants" "p2"
-  WHERE (("p2"."competition_id" = "participants"."competition_id") AND ("p2"."user_id" = "auth"."uid"()) AND ("p2"."role" = 'admin'::"text"))))));
+  WHERE (("p2"."competition_id" = "participants"."competition_id") AND ("p2"."user_id" = "auth"."uid"()) AND ("p2"."role" = 'admin'::"text")))) OR (EXISTS ( SELECT 1
+   FROM "public"."competitions" "c"
+  WHERE (("c"."id" = "participants"."competition_id") AND ("c"."created_by" = "auth"."uid"()))))));
 
 
 
@@ -1317,6 +1840,147 @@ CREATE POLICY "rules_all" ON "public"."point_rules" USING ((EXISTS ( SELECT 1
 
 
 CREATE POLICY "rules_select" ON "public"."point_rules" FOR SELECT USING (true);
+
+
+
+ALTER TABLE "public"."season_pick_answers" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."season_pick_configs" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."season_pick_options" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."season_picks" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."season_scores" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."season_table_configs" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."season_table_predictions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."season_table_results" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."season_table_teams" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "sp_read" ON "public"."season_picks" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM "public"."season_pick_configs" "c"
+  WHERE (("c"."id" = "season_picks"."config_id") AND "public"."is_participant"("c"."competition_id")))));
+
+
+
+CREATE POLICY "sp_write" ON "public"."season_picks" USING ((EXISTS ( SELECT 1
+   FROM "public"."season_pick_configs" "c"
+  WHERE (("c"."id" = "season_picks"."config_id") AND "public"."is_competition_admin"("c"."competition_id"))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."season_pick_configs" "c"
+  WHERE (("c"."id" = "season_picks"."config_id") AND "public"."is_competition_admin"("c"."competition_id")))));
+
+
+
+CREATE POLICY "spa_read" ON "public"."season_pick_answers" FOR SELECT USING ((("user_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+   FROM ("public"."season_picks" "p"
+     JOIN "public"."season_pick_configs" "c" ON (("c"."id" = "p"."config_id")))
+  WHERE (("p"."id" = "season_pick_answers"."pick_id") AND "public"."is_participant"("c"."competition_id") AND ((("c"."deadline" IS NOT NULL) AND ("c"."deadline" < "now"())) OR ("c"."is_open" = false)))))));
+
+
+
+CREATE POLICY "spa_write" ON "public"."season_pick_answers" USING ((("user_id" = "auth"."uid"()) AND (EXISTS ( SELECT 1
+   FROM ("public"."season_picks" "p"
+     JOIN "public"."season_pick_configs" "c" ON (("c"."id" = "p"."config_id")))
+  WHERE (("p"."id" = "season_pick_answers"."pick_id") AND "c"."is_open" AND (("c"."deadline" IS NULL) OR ("c"."deadline" > "now"()))))))) WITH CHECK ((("user_id" = "auth"."uid"()) AND (EXISTS ( SELECT 1
+   FROM ("public"."season_picks" "p"
+     JOIN "public"."season_pick_configs" "c" ON (("c"."id" = "p"."config_id")))
+  WHERE (("p"."id" = "season_pick_answers"."pick_id") AND "c"."is_open" AND (("c"."deadline" IS NULL) OR ("c"."deadline" > "now"())))))));
+
+
+
+CREATE POLICY "spc_read" ON "public"."season_pick_configs" FOR SELECT USING ("public"."is_participant"("competition_id"));
+
+
+
+CREATE POLICY "spc_write" ON "public"."season_pick_configs" USING ("public"."is_competition_admin"("competition_id")) WITH CHECK ("public"."is_competition_admin"("competition_id"));
+
+
+
+CREATE POLICY "spo_read" ON "public"."season_pick_options" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM ("public"."season_picks" "p"
+     JOIN "public"."season_pick_configs" "c" ON (("c"."id" = "p"."config_id")))
+  WHERE (("p"."id" = "season_pick_options"."pick_id") AND "public"."is_participant"("c"."competition_id")))));
+
+
+
+CREATE POLICY "spo_write" ON "public"."season_pick_options" USING ((EXISTS ( SELECT 1
+   FROM ("public"."season_picks" "p"
+     JOIN "public"."season_pick_configs" "c" ON (("c"."id" = "p"."config_id")))
+  WHERE (("p"."id" = "season_pick_options"."pick_id") AND "public"."is_competition_admin"("c"."competition_id"))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM ("public"."season_picks" "p"
+     JOIN "public"."season_pick_configs" "c" ON (("c"."id" = "p"."config_id")))
+  WHERE (("p"."id" = "season_pick_options"."pick_id") AND "public"."is_competition_admin"("c"."competition_id")))));
+
+
+
+CREATE POLICY "ss_read" ON "public"."season_scores" FOR SELECT USING ("public"."is_participant"("competition_id"));
+
+
+
+CREATE POLICY "ss_write" ON "public"."season_scores" USING ("public"."is_competition_admin"("competition_id")) WITH CHECK ("public"."is_competition_admin"("competition_id"));
+
+
+
+CREATE POLICY "stc_read" ON "public"."season_table_configs" FOR SELECT USING ("public"."is_participant"("competition_id"));
+
+
+
+CREATE POLICY "stc_write" ON "public"."season_table_configs" USING ("public"."is_competition_admin"("competition_id")) WITH CHECK ("public"."is_competition_admin"("competition_id"));
+
+
+
+CREATE POLICY "stp_read" ON "public"."season_table_predictions" FOR SELECT USING ((("user_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_predictions"."config_id") AND "public"."is_participant"("c"."competition_id") AND ((("c"."deadline" IS NOT NULL) AND ("c"."deadline" < "now"())) OR ("c"."is_open" = false)))))));
+
+
+
+CREATE POLICY "stp_write" ON "public"."season_table_predictions" USING ((("user_id" = "auth"."uid"()) AND (EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_predictions"."config_id") AND "c"."is_open" AND (("c"."deadline" IS NULL) OR ("c"."deadline" > "now"()))))))) WITH CHECK ((("user_id" = "auth"."uid"()) AND (EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_predictions"."config_id") AND "c"."is_open" AND (("c"."deadline" IS NULL) OR ("c"."deadline" > "now"())))))));
+
+
+
+CREATE POLICY "str_read" ON "public"."season_table_results" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_results"."config_id") AND "public"."is_participant"("c"."competition_id")))));
+
+
+
+CREATE POLICY "str_write" ON "public"."season_table_results" USING ((EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_results"."config_id") AND "public"."is_competition_admin"("c"."competition_id"))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_results"."config_id") AND "public"."is_competition_admin"("c"."competition_id")))));
+
+
+
+CREATE POLICY "stt_read" ON "public"."season_table_teams" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_teams"."config_id") AND "public"."is_participant"("c"."competition_id")))));
+
+
+
+CREATE POLICY "stt_write" ON "public"."season_table_teams" USING ((EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_teams"."config_id") AND "public"."is_competition_admin"("c"."competition_id"))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."season_table_configs" "c"
+  WHERE (("c"."id" = "season_table_teams"."config_id") AND "public"."is_competition_admin"("c"."competition_id")))));
 
 
 
@@ -1530,6 +2194,30 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."competition_notification_status"("p_competition_id" "uuid") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."is_competition_admin"("p_competition_id" "uuid") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."is_participant"("p_competition_id" "uuid") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."join_competition_with_code"("p_code" "text") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."mark_pick_answer"("p_answer_id" "uuid", "p_correct" boolean) TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."regenerate_join_code"("p_competition_id" "uuid") TO "authenticated";
+
+
+
 
 
 
@@ -1674,6 +2362,60 @@ GRANT ALL ON TABLE "public"."push_tokens" TO "service_role";
 GRANT ALL ON TABLE "public"."reminder_log" TO "anon";
 GRANT ALL ON TABLE "public"."reminder_log" TO "authenticated";
 GRANT ALL ON TABLE "public"."reminder_log" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_pick_answers" TO "anon";
+GRANT ALL ON TABLE "public"."season_pick_answers" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_pick_answers" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_pick_configs" TO "anon";
+GRANT ALL ON TABLE "public"."season_pick_configs" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_pick_configs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_pick_options" TO "anon";
+GRANT ALL ON TABLE "public"."season_pick_options" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_pick_options" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_picks" TO "anon";
+GRANT ALL ON TABLE "public"."season_picks" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_picks" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_scores" TO "anon";
+GRANT ALL ON TABLE "public"."season_scores" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_scores" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_table_configs" TO "anon";
+GRANT ALL ON TABLE "public"."season_table_configs" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_table_configs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_table_predictions" TO "anon";
+GRANT ALL ON TABLE "public"."season_table_predictions" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_table_predictions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_table_results" TO "anon";
+GRANT ALL ON TABLE "public"."season_table_results" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_table_results" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."season_table_teams" TO "anon";
+GRANT ALL ON TABLE "public"."season_table_teams" TO "authenticated";
+GRANT ALL ON TABLE "public"."season_table_teams" TO "service_role";
 
 
 
