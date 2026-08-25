@@ -1,17 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { supabase } from '../../../lib/supabase'
-import { Card, Input, Button } from '../../ui'
+import { Card, Button } from '../../ui'
 import { pushCapability, enablePush, disablePush, resetPush, isIOS, rememberedDeviceToken } from '../../../lib/push'
 import JoinCompetition from '../competitions/JoinCompetition'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
   const { user, profile, isAdmin, fetchProfile } = useAuth()
-  const [phone, setPhone] = useState(profile?.phone_number||'')
-  const [wa,    setWa]    = useState(profile?.notify_whatsapp ?? true)
-  const [sms,   setSms]   = useState(profile?.notify_sms ?? false)
-  const [saving, setSaving] = useState(false)
+  // WhatsApp and SMS were removed from this screen. Nothing sent them — there
+  // is no Twilio account, and native push covers everyone once the app is on
+  // the stores. Leaving the toggles would have been worse than useless: people
+  // tick a box, expect messages, and get nothing.
+  //
+  // The profiles columns (phone_number, notify_whatsapp, notify_sms) are left
+  // in the database. They cost nothing, they hold numbers people already
+  // entered, and dropping them would need a migration to undo if SMS is ever
+  // wanted as a paid extra.
 
   // Push state.
   //
@@ -138,18 +143,6 @@ export default function Settings() {
     } catch {
       toast.error('Could not reset notifications')
     } finally { setResetting(false) }
-  }
-
-  async function save() {
-    if (phone && !phone.startsWith('+')) { toast.error('Use international format e.g. +447700900123'); return }
-    setSaving(true)
-    try {
-      const { error } = await supabase.from('profiles').update({ phone_number:phone, notify_whatsapp:wa, notify_sms:sms }).eq('id', user.id)
-      if (error) throw error
-      await fetchProfile(user.id)
-      toast.success('Settings saved!')
-    } catch { toast.error('Could not save settings') }
-    finally { setSaving(false) }
   }
 
   async function claimAdmin() {
@@ -283,27 +276,7 @@ export default function Settings() {
         </Card>
       )}
 
-      <Card className="p-4 mb-4">
-        <p className="text-xs font-medium mb-3" style={{ color:'var(--txt-muted)' }}>Phone number (optional)</p>
-        <Input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+447700900123" type="tel"/>
-        <p className="text-xs mt-1.5" style={{ color:'var(--txt-muted)' }}>Include country code — UK numbers start with +44</p>
-      </Card>
-      <Card className="p-4 mb-4">
-        <p className="text-xs font-medium mb-3" style={{ color:'var(--txt-muted)' }}>Backup reminder channels</p>
-        {[{label:'WhatsApp',sub:'Requires opt-in — see below',val:wa,set:setWa},{label:'SMS text message',sub:'Works on any phone, no app needed',val:sms,set:setSms}].map(s=>(
-          <div key={s.label} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor:'var(--border)' }}>
-            <div><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{s.label}</p><p className="text-xs" style={{ color:'var(--txt-muted)' }}>{s.sub}</p></div>
-            <input type="checkbox" checked={s.val} onChange={e=>s.set(e.target.checked)} style={{ width:16,height:16,cursor:'pointer',accentColor:'var(--accent)' }}/>
-          </div>
-        ))}
-      </Card>
-      <Card className="p-4 mb-5" style={{ background:'var(--amber-dim)', borderColor:'rgba(245,166,35,0.3)' }}>
-        <p className="text-xs font-medium mb-1" style={{ color:'var(--amber)' }}>WhatsApp opt-in required</p>
-        <p className="text-xs" style={{ color:'var(--amber)' }}>To receive WhatsApp reminders, send <strong>join [your-code]</strong> to the ALOTO sandbox number from WhatsApp. Ask your league admin for the join code.</p>
-      </Card>
-      <Button variant="primary" onClick={save} disabled={saving} className="w-full justify-center">
-        {saving ? 'Saving…' : 'Save notification settings'}
-      </Button>
+
     </div>
   )
 }
