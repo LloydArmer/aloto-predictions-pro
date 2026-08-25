@@ -1,5 +1,12 @@
 import { supabase } from './supabase'
 
+// Native (Capacitor) support is deliberately absent until the app is wrapped —
+// importing nativePush.js before that file exists breaks the build, and its
+// dynamic import of @capacitor/push-notifications can't resolve without the
+// package installed. When the wrap happens, this becomes an import again and
+// the three isNative() branches below come back.
+const isNative = () => false
+
 // Push notifications via Firebase Cloud Messaging.
 //
 // The firebase SDK is ~350kB and is only needed by someone actually turning
@@ -19,6 +26,9 @@ const firebaseConfig = {
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY
 
 let messagingPromise = null
+
+/** Drops the cached instance so the next call rebuilds against a fresh worker. */
+function resetMessagingInstance() { messagingPromise = null }
 
 // Resolves to a messaging instance, or null if this device can't do push.
 //
@@ -173,4 +183,58 @@ export async function onForegroundPush(handler) {
     const { title, body } = payload.notification || {}
     handler({ title, body, url: payload.data?.url })
   })
+}
+
+/**
+ * Clears everything about this account's push setup and registers afresh.
+ *
+ * For the case where the numbers stop making sense: someone shows two devices
+ * but owns one, or reminders arrive erratically. That happens when two token
+ * rows point at the same phone — one dead, one alive — which the automatic
+ * dedupe misses because it matches on the user_agent string, and that string
+ * changes after an iOS update or between Safari and the installed app.
+ *
+ * Deliberately heavy-handed, in this order:
+ *
+ *   1. every token row for the account, not just this device's — orphans from
+ *      a changed user_agent are the whole problem, and they can't be matched
+ *   2. the FCM token itself, so a refresh can't resurrect the old one
+ *   3. the service worker registration — a stale one is its own cause of
+ *      erratic delivery, and unregistering forces a clean copy
+ *   4. the local marker
+ *
+ * Then it registers again from nothing. Other devices on the account will need
+ * reminders switched back on, which is why the UI asks first.
+ */
+export async function resetPush(userId) {
+  // 1. Clear the account's tokens.
+  await supabase.from('push_tokens').delete().eq('user_id', userId)
+
+  // 2. Delete the FCM token so a refresh can't resurrect the old one.
+  rememberDeviceToken(null)
+  try {
+    const instance = await getMessagingInstance()
+    if (instance) await instance.mod.deleteToken(instance.messaging).catch(() => {})
+  } catch { /* nothing to delete */ }
+
+  // 3. Unregister the service worker. A stale one is its own cause of erratic
+  //    delivery, and it's why untick-and-retick often doesn't fix anything.
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(
+      regs
+        .filter(r => r.active?.scriptURL?.includes('firebase-messaging-sw'))
+        .map(r => r.unregister()),
+    )
+  } catch { /* not supported, or already gone */ }
+
+  // The messaging instance holds a reference to the worker just unregistered.
+  resetMessagingInstance()
+
+  // Clearing the last device sets notify_push false, which would leave them
+  // muted after a reset they asked for.
+  await supabase.from('profiles').update({ notify_push: true }).eq('id', userId)
+
+  // 4. Register again from scratch.
+  return enablePush(userId)
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { supabase } from '../../../lib/supabase'
 import { Card, Input, Button } from '../../ui'
-import { pushCapability, enablePush, disablePush, isIOS, rememberedDeviceToken } from '../../../lib/push'
+import { pushCapability, enablePush, disablePush, resetPush, isIOS, rememberedDeviceToken } from '../../../lib/push'
 import JoinCompetition from '../competitions/JoinCompetition'
 import toast from 'react-hot-toast'
 
@@ -27,6 +27,7 @@ export default function Settings() {
   const [capability, setCapability] = useState(null)
   const [deviceOn, setDeviceOn] = useState(false)
   const [pushBusy, setPushBusy] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [deviceCount, setDeviceCount] = useState(0)
 
   const [adminExists, setAdminExists] = useState(true) // assume true until checked, so the button never flashes on
@@ -105,6 +106,38 @@ export default function Settings() {
     } catch {
       toast.error('Could not update reminder settings')
     } finally { setPushBusy(false) }
+  }
+
+  /**
+   * Last resort when the numbers stop making sense — more devices listed than
+   * the person owns, or reminders arriving erratically. Clears everything and
+   * registers this device again from nothing.
+   */
+  async function doReset() {
+    const ok = window.confirm(
+      'Reset notifications?\n\n' +
+      'This clears every device on your account and sets this one up again. ' +
+      'Any other device will need reminders switched back on.\n\n' +
+      'Use this if reminders arrive twice, arrive erratically, or the device count looks wrong.'
+    )
+    if (!ok) return
+
+    setResetting(true)
+    try {
+      const result = await resetPush(user.id)
+      await fetchProfile(user.id)
+
+      const { count } = await supabase.from('push_tokens')
+        .select('id', { count: 'exact', head: true }).eq('user_id', user.id)
+      setDeviceCount(count ?? 0)
+      setDeviceOn(!!result?.ok)
+
+      if (result?.ok) toast.success('Reset — this device is registered again')
+      else if (result?.reason === 'denied') toast.error('Cleared, but notification permission is blocked. Allow it in your browser or phone settings, then switch reminders on.')
+      else toast.error('Cleared, but could not re-register. Switch reminders on above to try again.')
+    } catch {
+      toast.error('Could not reset notifications')
+    } finally { setResetting(false) }
   }
 
   async function save() {
@@ -188,6 +221,21 @@ export default function Settings() {
           <p className="text-xs mt-2" style={{ color:'var(--green)' }}>
             This device is registered{deviceCount > 1 ? ` — ${deviceCount} in total on your account` : ''}
           </p>
+        )}
+
+        {/* Only offered once something is registered — there is nothing to
+            reset otherwise, and an always-visible reset button invites people
+            to press it instead of the toggle. */}
+        {capability?.supported && deviceCount > 0 && (
+          <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+            <p className="text-xs mb-2" style={{ color:'var(--txt-muted)' }}>
+              Reminders arriving twice, arriving erratically, or more devices listed than you own?
+            </p>
+            <Button onClick={doReset} disabled={resetting} className="btn-sm">
+              <i className="ti ti-refresh text-sm mr-1" aria-hidden="true"/>
+              {resetting ? 'Resetting…' : 'Reset notifications'}
+            </Button>
+          </div>
         )}
 
         {/* Registered elsewhere but not here. Without this, someone who set it up
