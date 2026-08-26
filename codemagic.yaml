@@ -142,15 +142,17 @@ workflows:
 
       # Uploads the build to TestFlight automatically.
       #
-      # auth: api-key, not "integration" — signing here comes from the
-      # APP_STORE_CONNECT_* environment variables rather than a connection set
-      # up in the Codemagic UI, and this has to match.
+      # "integration" is the only value Codemagic accepts here, and it does NOT
+      # mean a connection set up in the UI — the credentials are read from the
+      # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER and
+      # APP_STORE_CONNECT_PRIVATE_KEY environment variables either way. The
+      # label is misleading; the behaviour is what you want.
       #
       # submit_to_testflight only puts the build in front of testers. It does
       # NOT submit for App Store review — that stays a deliberate action in App
       # Store Connect when you're ready.
       app_store_connect:
-        auth: api-key
+        auth: integration
         submit_to_testflight: true
 
   # ═════════════════════════════════════════════════════════════════════════
