@@ -1,0 +1,17 @@
+{
+  "appId": "com.alotoprediction.app",
+  "appName": "ALOTO Prediction Pro",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  },
+  "android": {
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}
