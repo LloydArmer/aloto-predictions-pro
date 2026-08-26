@@ -87,21 +87,34 @@ workflows:
       - name: Sync web build into the native project
         script: npx cap sync ios
 
+      - name: Prepare the keychain
+        # Must run before fetching, or there's nowhere to put the certificate.
+        script: keychain initialize
+
       - name: Fetch signing files from Apple
-        # Reads APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER
-        # and APP_STORE_CONNECT_PRIVATE_KEY from the environment, so no
-        # integration needs setting up in the Codemagic UI. It creates the
-        # certificate and provisioning profile in your Apple account if they
-        # don't already exist.
+        # Reads four variables from the environment, so nothing needs setting up
+        # in the Codemagic UI:
+        #
+        #   APP_STORE_CONNECT_ISSUER_ID       who is asking
+        #   APP_STORE_CONNECT_KEY_IDENTIFIER
+        #   APP_STORE_CONNECT_PRIVATE_KEY
+        #   CERTIFICATE_PRIVATE_KEY           signs the certificate being made
+        #
+        # That last one is the reason this step failed before. --create has to
+        # CREATE a distribution certificate, and a certificate can't exist
+        # without a private key behind it.
+        #
+        # It's supplied as a stored variable rather than generated here on
+        # purpose: a new key each build means a new certificate each build, and
+        # Apple allows only three distribution certificates per account. Three
+        # builds and you'd be locked out.
         script: |
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create
 
-      - name: Add the certificate to the build machine's keychain
-        script: |
-          keychain initialize
-          keychain add-certificates
+      - name: Add the certificate to the keychain
+        script: keychain add-certificates
 
       - name: Apply the profiles to the Xcode project
         script: xcode-project use-profiles
