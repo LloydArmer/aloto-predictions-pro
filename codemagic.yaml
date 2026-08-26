@@ -9,6 +9,11 @@
 # generated Gradle and Xcode scaffolding in git, and no chance of it drifting out
 # of step with the web build.
 #
+# The shared steps are written out in full in each workflow rather than shared
+# through a YAML anchor. An anchor holding a list, referenced inside another
+# list, nests one inside the other — valid YAML, rejected by Codemagic with
+# "str type expected".
+#
 # Before the first run, set these in the Codemagic UI (Environment variables),
 # marking each group "secure":
 #
@@ -27,14 +32,6 @@
 #     VITE_FIREBASE_SENDER_ID
 #     VITE_FIREBASE_APP_ID
 #     VITE_FIREBASE_VAPID_KEY
-
-definitions:
-  base_scripts: &base_scripts
-    - name: Install dependencies
-      script: npm ci
-
-    - name: Build the web app
-      script: npm run build
 
 workflows:
 
@@ -63,7 +60,11 @@ workflows:
         bundle_identifier: com.alotoprediction.app
 
     scripts:
-      - *base_scripts
+      - name: Install dependencies
+        script: npm ci
+
+      - name: Build the web app
+        script: npm run build
 
       - name: Add the iOS platform
         # Regenerated every build rather than committed, so ios/ never drifts
@@ -71,7 +72,7 @@ workflows:
         script: npx cap add ios || npx cap sync ios
 
       - name: Drop in GoogleService-Info.plist
-        script: echo $GOOGLE_SERVICE_INFO_PLIST > ios/App/App/GoogleService-Info.plist
+        script: echo "$GOOGLE_SERVICE_INFO_PLIST" > ios/App/App/GoogleService-Info.plist
 
       - name: Sync web build into the native project
         script: npx cap sync ios
@@ -134,13 +135,17 @@ workflows:
         PACKAGE_NAME: "com.alotoprediction.app"
 
     scripts:
-      - *base_scripts
+      - name: Install dependencies
+        script: npm ci
+
+      - name: Build the web app
+        script: npm run build
 
       - name: Add the Android platform
         script: npx cap add android || npx cap sync android
 
       - name: Drop in google-services.json
-        script: echo $GOOGLE_SERVICES_JSON > android/app/google-services.json
+        script: echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
 
       - name: Sync web build into the native project
         script: npx cap sync android
