@@ -140,11 +140,18 @@ workflows:
           success: true
           failure: true
 
-      # Uncomment once App Store Connect is connected. TestFlight first —
-      # never straight to review.
-      # app_store_connect:
-      #   auth: integration
-      #   submit_to_testflight: true
+      # Uploads the build to TestFlight automatically.
+      #
+      # auth: api-key, not "integration" — signing here comes from the
+      # APP_STORE_CONNECT_* environment variables rather than a connection set
+      # up in the Codemagic UI, and this has to match.
+      #
+      # submit_to_testflight only puts the build in front of testers. It does
+      # NOT submit for App Store review — that stays a deliberate action in App
+      # Store Connect when you're ready.
+      app_store_connect:
+        auth: api-key
+        submit_to_testflight: true
 
   # ═════════════════════════════════════════════════════════════════════════
   # Android is parked until an Android phone is available: Google Play requires
