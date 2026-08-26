@@ -1,11 +1,5 @@
 import { supabase } from './supabase'
-
-// Native (Capacitor) support is deliberately absent until the app is wrapped —
-// importing nativePush.js before that file exists breaks the build, and its
-// dynamic import of @capacitor/push-notifications can't resolve without the
-// package installed. When the wrap happens, this becomes an import again and
-// the three isNative() branches below come back.
-const isNative = () => false
+import { isNative, enableNativePush, disableNativePush, nativePlatform } from './nativePush'
 
 // Push notifications via Firebase Cloud Messaging.
 //
@@ -88,6 +82,13 @@ export function isIOS() {
  * than offering a button that cannot work.
  */
 export async function pushCapability() {
+  // Inside the native shell there's no service worker and no Push API — the
+  // plugin talks to APNs/FCM directly. Crucially there's also no "add to Home
+  // Screen" requirement on iOS, which is the main reason for wrapping at all.
+  if (isNative()) {
+    return { supported: true, native: true, platform: nativePlatform(), permission: 'default' }
+  }
+
   if (!('serviceWorker' in navigator) || !('Notification' in window)) {
     return { supported: false, reason: 'unsupported' }
   }
@@ -105,6 +106,9 @@ export async function pushCapability() {
  * device that already registered simply refreshes its last_seen_at.
  */
 export async function enablePush(userId) {
+  // One entry point for both paths, so Settings needs no platform branching.
+  if (isNative()) return enableNativePush(userId)
+
   const cap = await pushCapability()
   if (!cap.supported) return { ok: false, reason: cap.reason }
 
@@ -151,6 +155,8 @@ export async function enablePush(userId) {
  * the device means a routine token refresh could silently re-register it.
  */
 export async function disablePush(userId) {
+  if (isNative()) return disableNativePush(userId)
+
   rememberDeviceToken(null)
   try {
     const instance = await getMessagingInstance()
@@ -209,6 +215,12 @@ export async function onForegroundPush(handler) {
 export async function resetPush(userId) {
   // 1. Clear the account's tokens.
   await supabase.from('push_tokens').delete().eq('user_id', userId)
+
+  if (isNative()) {
+    await disableNativePush(userId).catch(() => {})
+    await supabase.from('profiles').update({ notify_push: true }).eq('id', userId)
+    return enablePush(userId)
+  }
 
   // 2. Delete the FCM token so a refresh can't resurrect the old one.
   rememberDeviceToken(null)

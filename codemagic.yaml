@@ -1,0 +1,174 @@
+# codemagic.yaml
+#
+# Cloud builds for the native apps. Nothing here needs Android Studio or a Mac
+# on your machine — Codemagic provides both, which is what makes iOS possible
+# from Windows at all.
+#
+# The native projects are NOT committed to the repo. `npx cap add` regenerates
+# them on every build from capacitor.config.ts and dist/, so there's no 200MB of
+# generated Gradle and Xcode scaffolding in git, and no chance of it drifting out
+# of step with the web build.
+#
+# Before the first run, set these in the Codemagic UI (Environment variables),
+# marking each group "secure":
+#
+#   group: firebase
+#     GOOGLE_SERVICE_INFO_PLIST  contents of GoogleService-Info.plist (iOS)
+#     GOOGLE_SERVICES_JSON       contents of google-services.json — Android only,
+#                                not needed until you come back to that platform
+#
+#   group: supabase          the same values as Netlify
+#     VITE_SUPABASE_URL
+#     VITE_SUPABASE_ANON_KEY
+#     VITE_FIREBASE_API_KEY
+#     VITE_FIREBASE_AUTH_DOMAIN
+#     VITE_FIREBASE_PROJECT_ID
+#     VITE_FIREBASE_STORAGE_BUCKET
+#     VITE_FIREBASE_SENDER_ID
+#     VITE_FIREBASE_APP_ID
+#     VITE_FIREBASE_VAPID_KEY
+
+definitions:
+  base_scripts: &base_scripts
+    - name: Install dependencies
+      script: npm ci
+
+    - name: Build the web app
+      script: npm run build
+
+workflows:
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # iOS is first. It's the platform being launched on, and it has no
+  # device-verification hurdle — Apple lets you build and distribute through
+  # TestFlight as soon as the Developer account is approved.
+  # ═════════════════════════════════════════════════════════════════════════
+  ios:
+    name: iOS
+    # Apple's toolchain only runs on macOS, so this has to be a mac instance
+    # whether you own a Mac or not. That's the point of building in the cloud.
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      node: 20
+      xcode: latest
+      cocoapods: default
+      groups:
+        - firebase
+        - supabase
+      ios_signing:
+        # Codemagic: Teams -> Code signing identities -> iOS.
+        # Needs the Apple Developer account ($99/year) approved first.
+        distribution_type: app_store
+        bundle_identifier: com.alotoprediction.app
+
+    scripts:
+      - *base_scripts
+
+      - name: Add the iOS platform
+        # Regenerated every build rather than committed, so ios/ never drifts
+        # out of step with the web build.
+        script: npx cap add ios || npx cap sync ios
+
+      - name: Drop in GoogleService-Info.plist
+        script: echo $GOOGLE_SERVICE_INFO_PLIST > ios/App/App/GoogleService-Info.plist
+
+      - name: Sync web build into the native project
+        script: npx cap sync ios
+
+      - name: Install pods
+        script: |
+          cd ios/App
+          pod install
+
+      - name: Set up code signing
+        script: xcode-project use-profiles
+
+      - name: Build the archive
+        script: |
+          xcode-project build-ipa \
+            --workspace "ios/App/App.xcworkspace" \
+            --scheme "App"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+
+    publishing:
+      email:
+        recipients:
+          - admin@alotopredictionpro.co.uk
+        notify:
+          success: true
+          failure: true
+
+      # Uncomment once App Store Connect is connected. TestFlight first —
+      # never straight to review.
+      # app_store_connect:
+      #   auth: integration
+      #   submit_to_testflight: true
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # Android is parked until an Android phone is available: Google Play requires
+  # device verification from a real handset before an app can be published, and
+  # there'd be nothing to install the APK on to test it. The workflow is left
+  # here ready — it just isn't run.
+  # ═════════════════════════════════════════════════════════════════════════
+  android:
+    name: Android (parked)
+    # Linux is cheaper and faster than mac for Android, and the free tier goes
+    # further on it.
+    instance_type: linux_x2
+    max_build_duration: 45
+    environment:
+      node: 20
+      java: 17
+      groups:
+        - firebase
+        - supabase
+      android_signing:
+        # Created in Codemagic: Teams -> Code signing identities -> Android.
+        # Keep the keystore safe — losing it means you can never update the
+        # listing, only publish a new app.
+        - aloto_keystore
+      vars:
+        PACKAGE_NAME: "com.alotoprediction.app"
+
+    scripts:
+      - *base_scripts
+
+      - name: Add the Android platform
+        script: npx cap add android || npx cap sync android
+
+      - name: Drop in google-services.json
+        script: echo $GOOGLE_SERVICES_JSON > android/app/google-services.json
+
+      - name: Sync web build into the native project
+        script: npx cap sync android
+
+      - name: Set up signing
+        script: |
+          cat >> android/key.properties <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=$CM_KEYSTORE_PATH
+          EOF
+
+      - name: Build the release bundle
+        # An .aab is what Play Store wants; the .apk is for sideloading onto a
+        # phone to test before you upload anything.
+        script: |
+          cd android
+          ./gradlew bundleRelease assembleRelease
+
+    artifacts:
+      - android/app/build/outputs/**/*.aab
+      - android/app/build/outputs/**/*.apk
+
+    publishing:
+      email:
+        recipients:
+          - admin@alotopredictionpro.co.uk
+        notify:
+          success: true
+          failure: true

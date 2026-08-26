@@ -185,7 +185,7 @@ on conflict (user_id) do nothing;
 insert into pro_entitlements (user_id, source, notes)
 select id, 'granted', 'Owner'
 from profiles
-where display_name = 'lloyd.armer'
+where display_name = 'Lloyd Armer'
 on conflict (user_id) do update
   set source = 'granted', expires_at = null, notes = 'Owner';
 
