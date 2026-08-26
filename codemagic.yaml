@@ -53,11 +53,11 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
-      # Capacitor 8's CLI requires Node >=22 and exits immediately on
-      # anything older.
+      # Capacitor 8's CLI requires Node >=22 and exits immediately on anything
+      # older. No cocoapods entry either — Capacitor 8 uses Swift Package
+      # Manager, so there's no Podfile to install.
       node: 22
       xcode: latest
-      cocoapods: default
       groups:
         - firebase
         - supabase
@@ -87,11 +87,6 @@ workflows:
       - name: Sync web build into the native project
         script: npx cap sync ios
 
-      - name: Install pods
-        script: |
-          cd ios/App
-          pod install
-
       - name: Fetch signing files from Apple
         # Reads APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER
         # and APP_STORE_CONNECT_PRIVATE_KEY from the environment, so no
@@ -112,9 +107,13 @@ workflows:
         script: xcode-project use-profiles
 
       - name: Build the archive
+        # --project, not --workspace. Capacitor 8 uses Swift Package Manager
+        # rather than CocoaPods, so there's no Podfile and no .xcworkspace —
+        # only App.xcodeproj and a Package.swift. Xcode resolves the packages
+        # itself during the build.
         script: |
           xcode-project build-ipa \
-            --workspace "ios/App/App.xcworkspace" \
+            --project "ios/App/App.xcodeproj" \
             --scheme "App"
 
     artifacts:
