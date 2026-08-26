@@ -17,6 +17,12 @@
 # Before the first run, set these in the Codemagic UI (Environment variables),
 # marking each group "secure":
 #
+#   group: appstore         from App Store Connect -> Users and Access ->
+#                           Integrations -> App Store Connect API
+#     APP_STORE_CONNECT_ISSUER_ID
+#     APP_STORE_CONNECT_KEY_IDENTIFIER
+#     APP_STORE_CONNECT_PRIVATE_KEY    the whole .p8 file contents
+#
 #   group: firebase
 #     GOOGLE_SERVICE_INFO_PLIST  contents of GoogleService-Info.plist (iOS)
 #     GOOGLE_SERVICES_JSON       contents of google-services.json — Android only,
@@ -53,11 +59,13 @@ workflows:
       groups:
         - firebase
         - supabase
-      ios_signing:
-        # Codemagic: Teams -> Code signing identities -> iOS.
-        # Needs the Apple Developer account ($99/year) approved first.
-        distribution_type: app_store
-        bundle_identifier: com.alotoprediction.app
+        - appstore
+      vars:
+        # Read by the signing step below. Kept here rather than in an
+        # ios_signing block so nothing needs configuring in the Codemagic UI —
+        # that screen moves around and differs by account type, whereas
+        # environment variables are the same everywhere.
+        BUNDLE_ID: "com.alotoprediction.app"
 
     scripts:
       - name: Install dependencies
@@ -82,7 +90,23 @@ workflows:
           cd ios/App
           pod install
 
-      - name: Set up code signing
+      - name: Fetch signing files from Apple
+        # Reads APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER
+        # and APP_STORE_CONNECT_PRIVATE_KEY from the environment, so no
+        # integration needs setting up in the Codemagic UI. It creates the
+        # certificate and provisioning profile in your Apple account if they
+        # don't already exist.
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+
+      - name: Add the certificate to the build machine's keychain
+        script: |
+          keychain initialize
+          keychain add-certificates
+
+      - name: Apply the profiles to the Xcode project
         script: xcode-project use-profiles
 
       - name: Build the archive
