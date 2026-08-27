@@ -68,6 +68,10 @@ workflows:
         # that screen moves around and differs by account type, whereas
         # environment variables are the same everywhere.
         BUNDLE_ID: "com.alotoprediction.app"
+        # Apple's numeric id for the app, from the App Store Connect URL:
+        # appstoreconnect.apple.com/apps/6805768246/... — used to look up the
+        # last build number so this one can be higher.
+        APP_ID: "6805768246"
 
     scripts:
       - name: Install dependencies
@@ -118,6 +122,24 @@ workflows:
 
       - name: Apply the profiles to the Xcode project
         script: xcode-project use-profiles
+
+      - name: Set the build number
+        # Every upload to Apple needs a build number higher than the last, or
+        # it's rejected as a duplicate — a confusing failure that only appears
+        # on the SECOND submission, long after the config looked correct.
+        #
+        # Taken from the highest build number already in App Store Connect
+        # rather than from Codemagic's own counter: the counter resets if the
+        # app is ever recreated in Codemagic, and Apple's number never goes
+        # backwards. `|| echo 0` covers the first ever build, when there is
+        # nothing in App Store Connect to read.
+        script: |
+          LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_ID" 2>/dev/null || echo 0)
+          if [ -z "$LATEST" ]; then LATEST=0; fi
+          NEXT=$((LATEST + 1))
+          echo "Latest in App Store Connect: $LATEST — building $NEXT"
+          cd ios/App
+          agvtool new-version -all "$NEXT"
 
       - name: Build the archive
         # --project, not --workspace. Capacitor 8 uses Swift Package Manager
