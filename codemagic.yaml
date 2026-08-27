@@ -136,13 +136,17 @@ workflows:
         # same APP_STORE_CONNECT_* environment variables the signing steps
         # already use, so nothing needs setting up there.
         #
-        # This puts the build in front of TestFlight testers only. It does NOT
-        # submit for App Store review — that stays a deliberate action in App
-        # Store Connect when you're ready.
+        # Uploads only. --testflight is deliberately absent: it submits the
+        # build for EXTERNAL beta review, which needs Test Information (feedback
+        # email, contact details) filled in first, and fails the build until it
+        # is. The upload on its own makes the build available to internal
+        # testers immediately, which is all that's needed to install it.
+        #
+        # Add --testflight later, once Test Information is complete and you want
+        # your league testing it.
         script: |
           app-store-connect publish \
-            --path "build/ios/ipa/*.ipa" \
-            --testflight
+            --path "build/ios/ipa/*.ipa"
 
     artifacts:
       - build/ios/ipa/*.ipa

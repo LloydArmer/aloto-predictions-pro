@@ -4,6 +4,7 @@ import { supabase } from '../../../lib/supabase'
 import { Card, Button } from '../../ui'
 import { pushCapability, enablePush, disablePush, resetPush, isIOS, rememberedDeviceToken } from '../../../lib/push'
 import JoinCompetition from '../competitions/JoinCompetition'
+import HowToPlay from '../help/HowToPlay'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
@@ -171,6 +172,18 @@ export default function Settings() {
       <div className="mb-5">
         <JoinCompetition onJoined={() => window.location.reload()} />
       </div>
+
+      <div className="mb-5">
+        <HowToPlay isAdmin={isAdmin} />
+      </div>
+
+      <Card className="p-4 mb-5">
+        <p className="text-xs font-medium mb-2.5" style={{ color: 'var(--txt-muted)' }}>About</p>
+        <div className="flex flex-col gap-2.5">
+          <a href="/support" className="text-sm" style={{ color: 'var(--accent)' }}>Support and FAQs</a>
+          <a href="/privacy" className="text-sm" style={{ color: 'var(--accent)' }}>Privacy policy</a>
+        </div>
+      </Card>
 
       {!isAdmin && !checkingAdmin && !adminExists && (
         <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'rgba(79,142,247,0.35)' }}>
