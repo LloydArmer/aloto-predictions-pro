@@ -30,7 +30,7 @@ function Podium({ rankings, userId }) {
                 points total down and leave the three podium cards misaligned. */}
             <p className="text-sm font-medium mb-0.5" title={p.display_name}
               style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-              {p.display_name}
+              {fitName(p.display_name, 11)}
             </p>
             {/* Rendered for everyone, blank when it isn't you, so all three
                 podium cards keep their totals on the same line. */}
@@ -156,7 +156,7 @@ function OverallPane({ competitionId, userId }) {
                           <td style={{ paddingLeft:14 }}><Pos n={i+1}/></td>
                           <td className="name-cell">
                             <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>
-                              {p.display_name}{isMe&&<span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+                              {p.display_name}
                             </p>
                           </td>
                           <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{correctResults}</td>
@@ -339,7 +339,16 @@ function MonthlyPane({ competitionId, months, userId }) {
                     return (
                     <tr key={p.user_id} className={p.user_id===userId?'highlight':''}>
                       <td style={{ paddingLeft:14 }}><span style={{ fontSize:12,fontWeight:500,color:i===0?'var(--gold)':i===1?'#b4b2a9':i===2?'#f0997b':'var(--txt-muted)' }}>{i+1}</span></td>
-                      <td className="name-cell"><p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>{p.display_name}{p.user_id===userId&&<span className="ml-1 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}</p></td>
+                      {/* Shortened, and no "(you)" — the row is already
+                          highlighted, so the label was costing four characters
+                          to repeat something visible, which is what pushed
+                          "Lloyd Armer (you)" into "Lloyd Armer (…". */}
+                      <td className="name-cell">
+                        <p className="text-sm font-medium" title={p.display_name}
+                          style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {fitName(p.display_name)}
+                        </p>
+                      </td>
                       <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{p.correct_results||0}</td>
                       <td className="text-xs text-right" style={{ color:'var(--green)' }}>{p.exact_scores||0}</td>
                       <td className="text-xs text-right hidden sm:table-cell" style={{ color: resultsBonusPts>0?'var(--amber)':'var(--txt-muted)' }}>{resultsBonusPts>0?`+${resultsBonusPts}`:'\u2013'}</td>
@@ -439,7 +448,7 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
 
               <span style={{ flex: '1 1 auto', minWidth: 0 }}>
                 <span className="text-sm font-medium block" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {p.display_name}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
+                  {fitName(p.display_name)}
                   {/* A COUNT, not one chip per full house. Someone with a good
                       season could have a dozen, and a dozen chips would push the
                       name off the row entirely. The gameweeks themselves are in
