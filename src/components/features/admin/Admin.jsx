@@ -95,6 +95,19 @@ export default function Admin() {
 function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
+  const [isPro, setIsPro] = useState(null)   // null while unknown
+
+  // Told before they fill the form in, not after they submit it. Being stopped
+  // at the last step by a rule nobody mentioned is the worst way to meet a
+  // paywall.
+  useEffect(() => {
+    supabase.rpc('has_pro').then(({ data }) => setIsPro(data === true))
+  }, [user?.id])
+
+  const cupCount = competitions.filter(
+    c => c.created_by === user?.id && (c.format === 'knockout' || c.format === 'group_knockout')
+  ).length
+  const cupLimitReached = isPro === false && cupCount >= 1
   // No longer editable: the icon is derived from `format`. The column is still
   // written (blank) so nothing downstream has to change.
   const emoji = ''
@@ -113,7 +126,16 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
       setSelectedComp(comp.id)
       setName(''); setFormat('league')
       toast.success('Competition created!')
-    } catch (err) { toast.error(err.message || 'Could not create competition') }
+    } catch (err) {
+      // The database raises a named exception when a free-tier limit is hit.
+      // Translated here so the person is told what the rule is and how to lift
+      // it, rather than being shown a raw Postgres error.
+      if (String(err.message || '').includes('FREE_TIER_CUP_LIMIT')) {
+        toast.error('Free accounts can run one cup competition. Upgrade to Pro for unlimited cups and season predictions.')
+      } else {
+        toast.error(err.message || 'Could not create competition')
+      }
+    }
     finally { setSaving(false) }
   }
 
@@ -145,8 +167,8 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
               <CompetitionIcon format={format} size="md" />
               <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
                 <option value="league">League</option>
-                <option value="knockout">Knockout</option>
-                <option value="group_knockout">Group + Knockout</option>
+                <option value="knockout">Knockout{cupLimitReached ? ' — Pro' : ''}</option>
+                <option value="group_knockout">Group + Knockout{cupLimitReached ? ' — Pro' : ''}</option>
               </Select>
             </div>
           </div>
@@ -199,7 +221,7 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
     try {
       if (comp?.format !== 'league') {
         // Knockout/Group+Knockout don't run their own separate rules —
-        // they borrow whichever League's rules the admin picks below.
+        // they use the scoring from whichever League the admin picks below.
         setSourceId(comp?.rules_source_competition_id || '')
         const resolved = await resolvePointRules(supabase, competitionId)
         setRules(resolved)
@@ -276,7 +298,7 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
             <option value="">— Select a League competition —</option>
             {leagueOptions.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
           </Select>
-          {leagueOptions.length === 0 && <p className="text-xs mt-1" style={{ color: 'var(--amber)' }}>No League-format competitions exist yet to borrow rules from.</p>}
+          {leagueOptions.length === 0 && <p className="text-xs mt-1" style={{ color: 'var(--amber)' }}>No League-format competitions exist yet to take scoring from.</p>}
         </div>
         <div className="mt-4 pt-4" style={{ borderTop: '0.5px solid var(--border)' }}>
           <SectionLabel className="mb-2">Triple Points</SectionLabel>
@@ -532,64 +554,97 @@ function GameweeksTab({ competitionId, competitions }) {
               const linkedElsewhere = (linksByGw[gw.id] || []).filter(id => id !== competitionId)
             return (
             <Card key={gw.id} className="p-3 mb-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>{gw.number}</span>
-                  <Badge variant={gw.status === 'active' ? 'result' : gw.status === 'completed' ? 'exact' : 'upcoming'}>{gw.status}</Badge>
-                  {gw.status !== 'active' && <Button size="sm" onClick={() => setActive(gw)}>Set as current gameweek</Button>}
-                  {gw.status === 'active' && <Button size="sm" onClick={() => updateGw(gw.id, { status: 'completed' })}>Mark completed</Button>}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Month:</span>
-                    <input type="month" value={gw.month_key || ''} style={{ width: 140, background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }}
+              {/* Three bands rather than one wrapping row.
+                  Previously every control — status, month, checkbox, two bonus
+                  boxes, four buttons — sat in a single flex-wrap, so on a phone
+                  they landed wherever they fitted and nothing lined up with
+                  anything. Now: what this gameweek IS, then its settings on a
+                  labelled grid, then what you can DO with it. */}
+
+              {/* Band 1 — identity and status */}
+              <div className="flex items-center gap-2 flex-wrap mb-3">
+                <span className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>{gw.number}</span>
+                <Badge variant={gw.status === 'active' ? 'result' : gw.status === 'completed' ? 'exact' : 'upcoming'}>{gw.status}</Badge>
+                <span style={{ flex: '1 1 auto' }} />
+                {gw.status !== 'active' && <Button size="sm" onClick={() => setActive(gw)}>Set as current</Button>}
+                {gw.status === 'active' && <Button size="sm" onClick={() => updateGw(gw.id, { status: 'completed' })}>Mark completed</Button>}
+                <button onClick={() => deleteGameweek(gw)} title="Delete gameweek"
+                  className="flex items-center justify-center flex-shrink-0" style={{ width: 28, height: 28, color: 'var(--txt-muted)' }}>
+                  <i className="ti ti-trash text-sm" aria-hidden="true" />
+                </button>
+              </div>
+
+              {/* Band 2 — settings, each with a label above it so the fields
+                  line up in a column instead of trailing off a wrapped row. */}
+              <div className="mb-3 p-2.5 rounded-md" style={{ background: 'var(--bg-elevated)' }}>
+                <div className="flex flex-wrap gap-x-4 gap-y-2.5">
+                  <div>
+                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Month</p>
+                    <input type="month" value={gw.month_key || ''}
+                      style={{ width: 150, background:'var(--bg-surface)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }}
                       onChange={e => { setGws(prev => prev.map(g => g.id === gw.id ? { ...g, month_key: e.target.value } : g)); updateGw(gw.id, { month_key: e.target.value }) }} />
                   </div>
-                  <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--txt-muted)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={gw.triple_points_blocked || false} onChange={e => updateGw(gw.id, { triple_points_blocked: e.target.checked })} />
-                    Block Triple Points this GW
-                  </label>
 
                   {/* Full house bonus overrides. Blank means the competition's
-                      normal rule — which is what every gameweek should use
-                      unless it's unusual, like a 10-fixture final round where a
-                      full house is far harder to hit. */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }} title="Leave blank to use the competition's normal bonus">FH bonus:</span>
-                    <input type="number" min="0" placeholder="Res"
-                      value={gw.full_house_results_bonus ?? ''}
-                      onChange={e => {
-                        const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
-                        setGws(prev => prev.map(g => g.id === gw.id ? { ...g, full_house_results_bonus: v } : g))
-                        updateGw(gw.id, { full_house_results_bonus: v })
-                      }}
-                      style={{ width: 62, background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
-                    <input type="number" min="0" placeholder="Sc"
-                      value={gw.full_house_scores_bonus ?? ''}
-                      onChange={e => {
-                        const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
-                        setGws(prev => prev.map(g => g.id === gw.id ? { ...g, full_house_scores_bonus: v } : g))
-                        updateGw(gw.id, { full_house_scores_bonus: v })
-                      }}
-                      style={{ width: 62, background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
+                      normal rule — which is what almost every gameweek should
+                      use, so the placeholder says so rather than showing a
+                      cryptic "Res" / "Sc". */}
+                  <div>
+                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>
+                      Full house bonus for this gameweek
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs" style={{ color: 'var(--txt-second)', width: 46 }}>Results</span>
+                        <input type="number" min="0" placeholder="default"
+                          value={gw.full_house_results_bonus ?? ''}
+                          onChange={e => {
+                            const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
+                            setGws(prev => prev.map(g => g.id === gw.id ? { ...g, full_house_results_bonus: v } : g))
+                            updateGw(gw.id, { full_house_results_bonus: v })
+                          }}
+                          style={{ width: 76, background:'var(--bg-surface)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs" style={{ color: 'var(--txt-second)', width: 44 }}>Scores</span>
+                        <input type="number" min="0" placeholder="default"
+                          value={gw.full_house_scores_bonus ?? ''}
+                          onChange={e => {
+                            const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
+                            setGws(prev => prev.map(g => g.id === gw.id ? { ...g, full_house_scores_bonus: v } : g))
+                            updateGw(gw.id, { full_house_scores_bonus: v })
+                          }}
+                          style={{ width: 76, background:'var(--bg-surface)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
+                      </div>
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>
+                      Leave blank to use the competition's normal bonus
+                    </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  {otherComps.length > 0 && (
-                    <Button size="sm" onClick={() => setOpenLinks(openLinks === gw.id ? null : gw.id)}>
-                      {linkedElsewhere.length > 0 ? `Also in ${linkedElsewhere.length} other comp${linkedElsewhere.length !== 1 ? 's' : ''}` : 'Use in other competitions'}
-                    </Button>
-                  )}
-                  <a href={gameweekShareLink(gw, comp?.name)} target="_blank" rel="noreferrer"
-                    className="text-xs px-2 py-1.5 rounded flex items-center gap-1" style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '0.5px solid rgba(52,208,122,0.3)' }}>
-                    <i className="ti ti-brand-whatsapp text-xs" aria-hidden="true"/>Share
-                  </a>
-                  <Button size="sm" onClick={() => setOpenGw(openGw === gw.id ? null : gw.id)}>
-                    {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
+
+                <label className="flex items-center gap-2 text-xs mt-2.5" style={{ color: 'var(--txt-second)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={gw.triple_points_blocked || false}
+                    onChange={e => updateGw(gw.id, { triple_points_blocked: e.target.checked })}
+                    style={{ accentColor: 'var(--accent)' }} />
+                  Block Triple Points this gameweek
+                </label>
+              </div>
+
+              {/* Band 3 — actions */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {otherComps.length > 0 && (
+                  <Button size="sm" onClick={() => setOpenLinks(openLinks === gw.id ? null : gw.id)}>
+                    {linkedElsewhere.length > 0 ? `In ${linkedElsewhere.length} other comp${linkedElsewhere.length !== 1 ? 's' : ''}` : 'Use elsewhere'}
                   </Button>
-                  <button onClick={() => deleteGameweek(gw)} title="Delete gameweek"
-                    className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
-                    <i className="ti ti-trash text-sm" aria-hidden="true" />
-                  </button>
-                </div>
+                )}
+                <a href={gameweekShareLink(gw, comp?.name)} target="_blank" rel="noreferrer"
+                  className="text-xs px-2.5 py-1.5 rounded flex items-center gap-1" style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '0.5px solid rgba(52,208,122,0.3)' }}>
+                  <i className="ti ti-brand-whatsapp text-xs" aria-hidden="true"/>Share
+                </a>
+                <Button size="sm" onClick={() => setOpenGw(openGw === gw.id ? null : gw.id)}>
+                  {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
+                </Button>
               </div>
 
               {openLinks === gw.id && (
@@ -747,10 +802,25 @@ function FixturesPanel({ gameweekId }) {
 
   return (
     <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
-      <form onSubmit={addFixture} className="flex flex-wrap gap-2 mb-3">
-        <Input placeholder="Home team" value={home} onChange={e => setHome(e.target.value)} style={{ flex: '1 1 120px' }} />
-        <Input placeholder="Away team" value={away} onChange={e => setAway(e.target.value)} style={{ flex: '1 1 120px' }} />
-        <Input type="datetime-local" value={kickoff} onChange={e => setKickoff(e.target.value)} style={{ flex: '1 1 170px' }} />
+      {/* Labelled fields on a grid rather than a wrapping row of placeholders.
+          Three inputs and a button in one flex-wrap landed differently at every
+          width, and a placeholder disappears the moment you start typing — so
+          on a narrow screen you couldn't tell which box was the away team. */}
+      <form onSubmit={addFixture} className="mb-3">
+        <div className="flex flex-wrap gap-2 mb-2">
+          <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Home team</p>
+            <Input value={home} onChange={e => setHome(e.target.value)} className="w-full" />
+          </div>
+          <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Away team</p>
+            <Input value={away} onChange={e => setAway(e.target.value)} className="w-full" />
+          </div>
+          <div style={{ flex: '1 1 190px', minWidth: 0 }}>
+            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Kick-off</p>
+            <Input type="datetime-local" value={kickoff} onChange={e => setKickoff(e.target.value)} className="w-full" />
+          </div>
+        </div>
         <Button type="submit" variant="primary" size="sm">Add fixture</Button>
       </form>
       <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Kickoff times are treated as UK local time (GMT/BST automatically) and locked for predictions exactly at kickoff.</p>
@@ -1762,7 +1832,12 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [channel, setChannel] = useState('whatsapp_share')
+  // Fixed, not chosen. The SMS and WhatsApp auto-send options needed a Twilio
+  // account that doesn't exist, so offering them meant an admin could pick a
+  // channel that silently did nothing. Sharing via your own WhatsApp works, and
+  // is now the only path. Kept as state so the send and resend code below reads
+  // unchanged.
+  const [channel] = useState('whatsapp_share')
   const [adding, setAdding] = useState(false)
   const [sendingId, setSendingId] = useState(null)
 
@@ -1895,16 +1970,27 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
 
       <Card className="p-4 mb-4">
         <SectionLabel className="mb-3">Add a player manually</SectionLabel>
-        <form onSubmit={addParticipant} className="flex flex-wrap gap-2 items-center">
-          <Input placeholder="Name (required)" value={name} onChange={e => setName(e.target.value)} style={{ flex: '1 1 130px' }} />
-          <Input type="email" placeholder="Email (optional)" value={email} onChange={e => setEmail(e.target.value)} style={{ flex: '1 1 160px' }} />
-          <Input type="tel" placeholder="Phone (optional)" value={phone} onChange={e => setPhone(e.target.value)} style={{ flex: '1 1 140px' }} />
-          <Select value={channel} onChange={e => setChannel(e.target.value)} style={{ width: 150 }}>
-            <option value="whatsapp_share">Share via my WhatsApp</option>
-            <option value="sms">Auto-send SMS</option>
-            <option value="whatsapp">Auto-send WhatsApp</option>
-          </Select>
-          <Button type="submit" variant="primary" disabled={adding}>{adding ? 'Adding…' : 'Add'}</Button>
+        {/* Labelled fields, and the channel picker is gone. It offered
+            "Auto-send SMS" and "Auto-send WhatsApp", neither of which works —
+            there is no Twilio account, so choosing them sent nothing and said
+            nothing. Sharing through your own WhatsApp is the only route that
+            functions, so it's now simply what happens. */}
+        <form onSubmit={addParticipant}>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name (required)</p>
+              <Input value={name} onChange={e => setName(e.target.value)} className="w-full" />
+            </div>
+            <div style={{ flex: '1 1 170px', minWidth: 0 }}>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Email (optional)</p>
+              <Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full" />
+            </div>
+            <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Phone (optional)</p>
+              <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="w-full" />
+            </div>
+          </div>
+          <Button type="submit" variant="primary" disabled={adding}>{adding ? 'Adding…' : 'Add player'}</Button>
         </form>
         <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Only a name is required — send them the signup link via <strong>Share via my WhatsApp</strong>, which works for anyone with just a phone number. If you also give an email and they've already signed up, they're added straight away.</p>
       </Card>
