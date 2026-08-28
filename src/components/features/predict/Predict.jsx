@@ -8,6 +8,7 @@ import { resolvePointRules } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import SeasonPredictions from '../season/SeasonPredictions'
+import { fitName } from '../../../lib/names'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
 
@@ -345,8 +346,14 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                     {/* Pinned: scrolling the grid sideways used to take the names
                         off screen, leaving numbers with nothing to attach them to. */}
                     <td className="sticky-col" style={{ paddingLeft: 14, maxWidth: 0 }}>
-                      <p className="text-sm font-medium" style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {p.profiles?.display_name}
+                      {/* Shortened rather than truncated. A 110px column can't
+                          hold "Gavin Whiteside", and letting CSS cut it gives
+                          "Gavin Whit…" — which spends the whole column on a
+                          surname nobody can read. "Gavin W." says more in less
+                          space. Short names are left alone. */}
+                      <p className="text-sm font-medium" title={p.profiles?.display_name}
+                        style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {fitName(p.profiles?.display_name)}
                       </p>
                     </td>
                     {fixtures.map(f => {

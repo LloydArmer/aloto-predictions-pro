@@ -5,6 +5,7 @@ import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard, useMonthlyLeaderboard } from '../../../hooks/useLeaderboard'
 import { supabase } from '../../../lib/supabase'
 import { resolvePointRules } from '../../../lib/scoring'
+import { fitName } from '../../../lib/names'
 import { Card, SectionLabel, StatCard, Spinner, EmptyState, Select } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import { buildMonthlyMessage, openWhatsApp } from '../../../lib/whatsapp'
@@ -575,9 +576,14 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
                 {/* Position folded into the pinned cell — a separate # column
                     would eat a third of the width that stays on screen. */}
                 <td className="sticky-col" style={{ paddingLeft: 12, maxWidth: 0 }}>
-                  <p className="text-sm font-medium" style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {/* Shortened, and no "(you)" label — the row is already
+                      highlighted in blue, so the label was costing four
+                      characters to repeat something you can see. That's what
+                      pushed "Lloyd Armer (you)" into "Lloyd Armer (…". */}
+                  <p className="text-sm font-medium" title={s.profiles?.display_name}
+                    style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                     <span className="mr-1.5" style={{ color:'var(--txt-muted)', fontSize:11 }}>{i+1}</span>
-                    {s.profiles?.display_name}{s.user_id === userId && <span className="ml-1 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+                    {fitName(s.profiles?.display_name)}
                   </p>
                 </td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.played}</td>
