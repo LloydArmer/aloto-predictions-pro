@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { Card, SectionLabel, EmptyState, Spinner } from '../../ui'
 import { looksCorrect } from '../../../lib/fuzzyMatch'
+import { fitName } from '../../../lib/names'
 
 /**
  * Who got what right, once the season predictions have been scored.
@@ -116,7 +117,8 @@ export default function SeasonResults({ competitionId, userId }) {
       {/* ---------------- Summary ---------------- */}
       <SectionLabel className="mb-2">Season points</SectionLabel>
       <Card className="p-0 mb-5 overflow-hidden">
-        <table className="data-table">
+        <div style={{ overflowX: 'auto' }}>
+        <table className="data-table w-full">
           <thead><tr>
             <th style={{ width: 30, paddingLeft: 12 }}>#</th>
             <th className="name-cell">Player</th>
@@ -134,8 +136,11 @@ export default function SeasonResults({ competitionId, userId }) {
                     <span className="text-xs font-medium" style={{ color: i === 0 ? 'var(--gold)' : 'var(--txt-muted)' }}>{i + 1}</span>
                   </td>
                   <td className="name-cell">
-                    <p className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>
-                      {p.name}{p.user_id === userId && <span className="ml-1 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
+                    {/* Shortened, and no "(you)" — the row is already
+                        highlighted, so the label repeated something visible at
+                        the cost of four characters. */}
+                    <p className="text-sm font-medium" title={p.name} style={{ color: 'var(--txt-primary)' }}>
+                      {fitName(p.name)}
                     </p>
                   </td>
                   {table && (
@@ -156,6 +161,7 @@ export default function SeasonResults({ competitionId, userId }) {
             })}
           </tbody>
         </table>
+        </div>
       </Card>
 
       {/* ---------------- Final table detail ---------------- */}

@@ -8,6 +8,7 @@ import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/grou
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
 import CompetitionIcon, { FORMAT_MARK } from '../../ui/CompetitionIcon'
+import { fitName } from '../../../lib/names'
 import SeasonTab from './SeasonTab'
 import toast from 'react-hot-toast'
 
@@ -816,9 +817,14 @@ function FixturesPanel({ gameweekId }) {
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Away team</p>
             <Input value={away} onChange={e => setAway(e.target.value)} className="w-full" />
           </div>
-          <div style={{ flex: '1 1 190px', minWidth: 0 }}>
+          <div style={{ flex: '0 1 210px', minWidth: 0 }}>
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Kick-off</p>
-            <Input type="datetime-local" value={kickoff} onChange={e => setKickoff(e.target.value)} className="w-full" />
+            {/* Capped rather than full-width. A datetime-local input stretches
+                to whatever it's given, and at full width its picker controls
+                sat marooned at the far right of an otherwise empty box. It only
+                needs room for "28/08/2026, 15:00". */}
+            <Input type="datetime-local" value={kickoff} onChange={e => setKickoff(e.target.value)}
+              style={{ width: '100%', maxWidth: 210 }} />
           </div>
         </div>
         <Button type="submit" variant="primary" size="sm">Add fixture</Button>
@@ -1803,7 +1809,8 @@ function NotificationStatus({ competitionId }) {
       {open && (loading ? <div className="py-4"><Spinner/></div> : (
         <div className="mt-3">
           <div className="rounded-md overflow-hidden" style={{ border: '0.5px solid var(--border-med)' }}>
-            <table className="data-table">
+            <div style={{ overflowX: 'auto' }}>
+            <table className="data-table w-full">
               <thead><tr>
                 <th className="name-cell" style={{ paddingLeft: 12 }}>Player</th>
                 <th style={{ width: 130, textAlign: 'right', paddingRight: 12 }}>Status</th>
@@ -1821,7 +1828,7 @@ function NotificationStatus({ competitionId }) {
                   return (
                     <tr key={r.user_id}>
                       <td className="name-cell" style={{ paddingLeft: 12 }}>
-                        <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{r.display_name}</p>
+                        <p className="text-sm" title={r.display_name} style={{ color: 'var(--txt-primary)' }}>{fitName(r.display_name)}</p>
                       </td>
                       <td className="text-xs" style={{ textAlign: 'right', paddingRight: 12, color: colour }}>
                         {label}
@@ -1831,6 +1838,7 @@ function NotificationStatus({ competitionId }) {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
           {rows.some(r => r.notify_push && r.device_count === 0) && (

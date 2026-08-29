@@ -384,7 +384,21 @@ export default function Bracket({ embedded = false }) {
       setGwNames(names)
 
       visibleRounds.forEach(r => {
-        r.gwLabel = (roundGwMap[r.round] || []).map(id => names[id]).filter(Boolean).join(', ') || null
+        // A round's gameweek can be set two ways: once for the whole round, or
+        // individually on each tie. Only the round mapping was read here, so a
+        // round whose ties each carry their own gameweek showed "Gameweek TBC"
+        // even after every one of them had been played and decided.
+        const fromRound = (roundGwMap[r.round] || [])
+
+        const fromMatches = [...new Set(
+          (r.matches || []).map(m => m.gameweek_id).filter(Boolean)
+        )]
+
+        // Prefer the round mapping when it exists — it's the admin's explicit
+        // statement about the round. Fall back to whatever the ties say.
+        const ids = fromRound.length ? fromRound : fromMatches
+
+        r.gwLabel = ids.map(id => names[id]).filter(Boolean).join(', ') || null
       })
 
       setRounds(visibleRounds)
