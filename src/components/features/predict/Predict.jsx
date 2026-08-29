@@ -353,7 +353,11 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                           space. Short names are left alone. */}
                       <p className="text-sm font-medium" title={p.profiles?.display_name}
                         style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {fitName(p.profiles?.display_name)}
+                        {/* 10, not the default 13. This column is the narrowest
+                            in the app — roughly 140px — and a 12-character name
+                            like "Mark Haworth" still overflowed it. Anything
+                            longer than ten characters shortens here. */}
+                        {fitName(p.profiles?.display_name, 10)}
                       </p>
                     </td>
                     {fixtures.map(f => {

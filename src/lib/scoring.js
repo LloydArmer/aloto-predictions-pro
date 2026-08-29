@@ -37,7 +37,7 @@ export function outcomeLabel(prediction, fixture) {
 }
 
 // A Knockout/Group+Knockout competition doesn't run its own separate
-// scoring rules — it borrows whichever League competition's rules the
+// scoring rules — it uses the scoring from whichever League competition the
 // admin has chosen, via competitions.rules_source_competition_id. This
 // resolves the actual rules to use for a given competition, following
 // that reference if one is set.
@@ -178,7 +178,10 @@ export async function resolveBracketRound(supabase, competitionId, round) {
 
   const { data: matches } = await supabase.from('bracket_matches').select('*').eq('competition_id', competitionId).eq('round', round)
   const all = matches || []
-  const results = { resolved: 0, replaysScheduled: 0, notReady: 0, surplusRemoved: 0 }
+  // notScored is counted separately from notReady so the admin can be told
+  // WHY nothing happened — "run Recalculate first" is actionable, whereas
+  // "not ready" leaves them guessing.
+  const results = { resolved: 0, replaysScheduled: 0, notReady: 0, surplusRemoved: 0, notScored: 0 }
 
   const samePair = (x, y) =>
     (x.home_user_id === y.home_user_id && x.away_user_id === y.away_user_id) ||
@@ -262,6 +265,22 @@ export async function resolveBracketRound(supabase, competitionId, round) {
 
     const { data: scores } = await supabase.from('gameweek_scores').select('user_id, gameweek_id, points')
       .in('gameweek_id', gwIds).in('user_id', [m.home_user_id, m.away_user_id])
+
+    // A gameweek marked 'completed' has NOT necessarily been scored. The status
+    // is set by the admin; the scores are written by Recalculate, and nothing
+    // forces the second to follow the first.
+    //
+    // Without this check, an unscored gameweek gives both participants 0, which
+    // is indistinguishable from a genuine draw — so the tie "draws", schedules
+    // a replay, and the replay does the same. That's how one round became
+    // "Quarter-final replay 2" with everyone on 0pts.
+    //
+    // A real 0-0 draw is possible: two participants who both scored nothing.
+    // The difference is whether gameweek_scores holds rows for them at all. No
+    // rows means not yet scored, which is "not ready", not "drawn".
+    const scoredGwIds = new Set((scores || []).map(x => x.gameweek_id))
+    const everyGwScored = gwIds.every(id => scoredGwIds.has(id))
+    if (!everyGwScored) { results.notScored++; results.notReady++; continue }
 
     const totals = { [m.home_user_id]: 0, [m.away_user_id]: 0 }
     // Keep max points per user+gameweek (same score may exist under

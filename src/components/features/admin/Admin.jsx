@@ -1022,8 +1022,12 @@ function GroupStageTab({ competitionId, competitions }) {
   async function resolveRound(roundNumber) {
     setResolving(roundNumber)
     try {
-      const { resolved, notReady } = await resolveGroupRound(supabase, competitionId, roundNumber)
-      if (notReady > 0) toast.error(`${resolved} resolved, ${notReady} not ready yet (gameweek not assigned or not completed)`)
+      const { resolved, notReady, notScored } = await resolveGroupRound(supabase, competitionId, roundNumber)
+      // "Not scored" gets its own message because the fix is a specific action.
+      // Told only "not ready", an admin checks the gameweek is marked completed
+      // — sees that it is — and has no idea what else to try.
+      if (notScored > 0) toast.error(`${notScored} fixture${notScored !== 1 ? 's' : ''} can't be resolved — their gameweek hasn't been scored yet. Run Recalculate on it first.`)
+      else if (notReady > 0) toast.error(`${resolved} resolved, ${notReady} not ready yet (gameweek not assigned or not completed)`)
       else toast.success(`Round ${roundNumber} resolved — ${resolved} fixture${resolved !== 1 ? 's' : ''}`)
     } catch { toast.error('Could not resolve round') }
     finally { setResolving(null); load() }
@@ -1457,6 +1461,10 @@ function BracketTab({ competitionId, competitions }) {
       if (result.surplusRemoved) parts.push(`${result.surplusRemoved} surplus replay${result.surplusRemoved !== 1 ? 's' : ''} cleared`)
       if (result.notReady) parts.push(`${result.notReady} not ready`)
       if (!parts.length) toast.success('Nothing to resolve — every match in this round is already settled')
+      // Unscored gets its own message because the fix is one specific action.
+      // Told only "not ready", an admin checks the gameweek is marked completed
+      // — sees that it is — and has nothing else to try.
+      else if (result.notScored) toast.error(`${result.notScored} tie${result.notScored !== 1 ? 's' : ''} can't be resolved — the gameweek hasn't been scored yet. Run Recalculate on it first, then resolve.`)
       else if (result.notReady && !result.resolved) toast.error(`${parts.join(', ')} — check the gameweek is marked completed, and that any replay has its own gameweek set`)
       else toast.success(parts.join(', '))
       load()

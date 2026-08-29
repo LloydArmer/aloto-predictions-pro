@@ -52,12 +52,14 @@ export function generateRoundRobinFixtures(participantUserIds, timesEachPairPlay
 // even for fixtures already marked completed — otherwise a fixture's
 // result would freeze permanently the first time it's resolved, and
 // never reflect a later change (e.g. switching which League's rules
-// this competition borrows, or a late correction to a real result).
+// this competition uses, or a late correction to a real result).
 export async function resolveGroupRound(supabase, competitionId, roundNumber) {
   const { data: fixtures } = await supabase.from('group_fixtures').select('*')
     .eq('competition_id', competitionId).eq('round_number', roundNumber)
 
-  let resolved = 0, notReady = 0
+  // notScored is tracked separately so the admin can be told to run Recalculate
+  // rather than just "not ready", which leaves them guessing.
+  let resolved = 0, notReady = 0, notScored = 0
   for (const fx of (fixtures || [])) {
     if (!fx.gameweek_id) { notReady++; continue }
     const { data: gw } = await supabase.from('gameweeks').select('status').eq('id', fx.gameweek_id).single()
@@ -65,12 +67,23 @@ export async function resolveGroupRound(supabase, competitionId, roundNumber) {
 
     const { data: scores } = await supabase.from('gameweek_scores').select('user_id, points')
       .eq('competition_id', competitionId).eq('gameweek_id', fx.gameweek_id).in('user_id', [fx.home_user_id, fx.away_user_id])
-    const homePoints = scores?.find(s => s.user_id === fx.home_user_id)?.points ?? 0
-    const awayPoints = scores?.find(s => s.user_id === fx.away_user_id)?.points ?? 0
+    // A gameweek marked 'completed' has NOT necessarily been scored. The status
+    // is set by the admin; the scores come from Recalculate, and nothing forces
+    // the second to follow the first.
+    //
+    // `?? 0` quietly turned "no score row" into a legitimate zero, so an
+    // unscored gameweek resolved every fixture as a 0-0 draw. Absence of a row
+    // means not yet scored — which is "not ready", not "drew nil-nil".
+    const homeRow = scores?.find(s => s.user_id === fx.home_user_id)
+    const awayRow = scores?.find(s => s.user_id === fx.away_user_id)
+    if (!homeRow || !awayRow) { notReady++; notScored++; continue }
+
+    const homePoints = homeRow.points || 0
+    const awayPoints = awayRow.points || 0
     const result = homePoints > awayPoints ? 'home' : awayPoints > homePoints ? 'away' : 'draw'
 
     await supabase.from('group_fixtures').update({ home_points: homePoints, away_points: awayPoints, result, status: 'completed' }).eq('id', fx.id)
     resolved++
   }
-  return { resolved, notReady }
+  return { resolved, notReady, notScored }
 }

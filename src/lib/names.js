@@ -30,7 +30,11 @@ export function shortName(name) {
 /**
  * The same, but only shortens when the full name is longer than the column can
  * take. Below the threshold the full name is kept — "Joe" and "Carl" shouldn't
- * be touched, and neither should "Lewis Armer" if it fits.
+ * be touched, and neither should "Lewis Armer" where it fits.
+ *
+ * The default suits a name cell of roughly 40% of screen width. Narrower
+ * columns should pass a lower number: the predictions grid uses 10, because 13
+ * still let "Mark Haworth" overflow it.
  */
 export function fitName(name, maxChars = 13) {
   if (!name) return ''
