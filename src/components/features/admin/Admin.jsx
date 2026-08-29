@@ -1262,18 +1262,39 @@ function GroupStageTab({ competitionId, competitions }) {
 
 // ───────────────────────── Bracket ─────────────────────────
 /**
- * "Demo League — 1" rather than a bare "1".
+ * Initials, so a dropdown option stays short.
+ *
+ *   "Demo League"                    -> DL
+ *   "Demo Group + Knockout"          -> DGK
+ *   "ALOTO Predictions League 26/27" -> APL
+ *
+ * The full name would be accurate but unreadable in a 110px select on a phone,
+ * where it truncates to "Demo Grou…" and tells you nothing.
+ */
+function compAbbrev(name) {
+  if (!name) return ''
+  return name
+    .replace(/[^A-Za-z0-9 ]/g, ' ')       // drop "+", "-", "/" and so on
+    .split(/\s+/)
+    .filter(w => w && !/^\d+$/.test(w))   // skip bare numbers like "26 27"
+    .map(w => w[0].toUpperCase())
+    .join('')
+    .slice(0, 3)
+}
+
+/**
+ * "DL 1" rather than a bare "1".
  *
  * These dropdowns list gameweeks from EVERY competition, because a cup usually
- * runs on the league's gameweeks. Without the competition name, three
- * competitions each having a gameweek called "1" produced three identical
- * options and no way to choose correctly.
+ * runs on the league's gameweeks. Without a prefix, three competitions each
+ * having a gameweek called "1" produced three identical options and no way to
+ * choose correctly.
  */
 function gwLabel(gw, currentCompetitionId) {
   const comp = gw.competitions?.name
   // The competition being edited needs no prefix — everything else does.
   if (!comp || gw.competition_id === currentCompetitionId) return gw.number
-  return `${comp} — ${gw.number}`
+  return `${compAbbrev(comp)} ${gw.number}`
 }
 
 function BracketTab({ competitionId, competitions }) {
@@ -1581,6 +1602,15 @@ function BracketTab({ competitionId, competitions }) {
         }
         return displayRounds.map(r => {
           const rMatches = matches.filter(m => m.round === r && !m.is_replay)
+
+          // The gameweeks this ROUND is decided by. A tie with no gameweek of
+          // its own inherits these, and that inheritance was invisible — which
+          // made setting the round look as though it had silently filled in
+          // every tie's dropdown.
+          const roundGwNames = (roundGwMap[r] || [])
+            .map(id => gameweeks.find(g => g.id === id))
+            .filter(Boolean)
+            .map(g => gwLabel(g, competitionId))
           const rReplays = matches.filter(m => m.round === r && m.is_replay)
           const rResolved = rMatches.length > 0 && rMatches.every(m => m.status === 'completed') && rReplays.every(m => m.status === 'completed')
           return (
@@ -1623,10 +1653,26 @@ function BracketTab({ competitionId, competitions }) {
                         {m.status === 'replay_scheduled' && <p className="text-xs mt-0.5" style={{ color: 'var(--amber)' }}>Drawn — replay scheduled</p>}
                       </div>
                       {!isBye && m.home_user_id && m.away_user_id && (
-                        <Select value={m.gameweek_id || ''} onChange={e => assignMatchGameweek(m.id, e.target.value)} style={{ width: 110 }}>
-                          <option value="">Set GW…</option>
-                          {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gwLabel(gw, competitionId)}</option>)}
-                        </Select>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <Select value={m.gameweek_id || ''} onChange={e => assignMatchGameweek(m.id, e.target.value)} style={{ width: 118 }}>
+                            <option value="">Set GW…</option>
+                            {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gwLabel(gw, competitionId)}</option>)}
+                          </Select>
+
+                          {/* A tie with no gameweek of its own is decided by the
+                              round's. That inheritance was invisible, so setting
+                              the round looked like it had silently changed every
+                              tie's dropdown — it hadn't; they were all empty and
+                              all inheriting. */}
+                          {!m.gameweek_id && roundGwNames.length > 0 && (
+                            <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+                              using round: {roundGwNames.join(', ')}
+                            </span>
+                          )}
+                          {!m.gameweek_id && roundGwNames.length === 0 && (
+                            <span className="text-xs" style={{ color: 'var(--amber)' }}>no gameweek set</span>
+                          )}
+                        </div>
                       )}
                     </div>
                     {replays.map((replay, i) => (
