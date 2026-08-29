@@ -955,7 +955,10 @@ function GroupStageTab({ competitionId, competitions }) {
       // this competition — the whole point of shared gameweeks is picking
       // from real-world ones created anywhere, and assigning one here
       // links it automatically (see assignRoundGameweek/assignFixtureGameweek).
-      const { data: gws } = await supabase.from('gameweeks').select('*, competition_gameweeks(competition_id)').order('number')
+      // competitions(name) is needed so gwLabel can prefix the option with the
+      // competition it belongs to — without it three competitions each having a
+      // gameweek "1" give three identical, unchoosable options.
+      const { data: gws } = await supabase.from('gameweeks').select('*, competition_gameweeks(competition_id), competitions(name)').order('number')
       setGameweeks(gws || [])
       // Live "points so far" for every gameweek currently in use by an
       // unresolved fixture — this is a display-only running total from
@@ -1178,7 +1181,7 @@ function GroupStageTab({ competitionId, competitions }) {
                 </Badge>
                 <Select value={allSameGw ? roundGw : ''} onChange={e => assignRoundGameweek(rn, e.target.value)} style={{ width: 130 }}>
                   <option value="">Set GW for round…</option>
-                  {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                  {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gwLabel(gw, competitionId)}</option>)}
                 </Select>
               </div>
               <div className="flex items-center gap-1.5">
@@ -1217,7 +1220,7 @@ function GroupStageTab({ competitionId, competitions }) {
                     ) : (
                       <Select value={fx.gameweek_id || ''} onChange={e => assignFixtureGameweek(fx.id, e.target.value)} style={{ width: 110 }}>
                         <option value="">Set GW for Fixture…</option>
-                        {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                        {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gwLabel(gw, competitionId)}</option>)}
                       </Select>
                     )}
                   </div>
@@ -1258,6 +1261,21 @@ function GroupStageTab({ competitionId, competitions }) {
 }
 
 // ───────────────────────── Bracket ─────────────────────────
+/**
+ * "Demo League — 1" rather than a bare "1".
+ *
+ * These dropdowns list gameweeks from EVERY competition, because a cup usually
+ * runs on the league's gameweeks. Without the competition name, three
+ * competitions each having a gameweek called "1" produced three identical
+ * options and no way to choose correctly.
+ */
+function gwLabel(gw, currentCompetitionId) {
+  const comp = gw.competitions?.name
+  // The competition being edited needs no prefix — everything else does.
+  if (!comp || gw.competition_id === currentCompetitionId) return gw.number
+  return `${comp} — ${gw.number}`
+}
+
 function BracketTab({ competitionId, competitions }) {
   const comp = competitions.find(c => c.id === competitionId)
   const [matches, setMatches] = useState([])
@@ -1283,7 +1301,12 @@ function BracketTab({ competitionId, competitions }) {
         // created under this competition — gameweeks are shared across
         // competitions, so a Knockout competition relying entirely on
         // another competition's gameweeks would otherwise see none at all.
-        supabase.from('gameweeks').select('*').order('number'),
+        //
+        // The competition name comes too, because showing the number alone
+        // made three competitions each with a gameweek "1" indistinguishable:
+        // the dropdown read "1, 1, 1, 2, 2, 2, 3, 4" with no way to tell which
+        // was which.
+        supabase.from('gameweeks').select('*, competitions(name)').order('number'),
         supabase.from('participants').select('user_id, profiles(display_name, email)').eq('competition_id', competitionId),
         supabase.from('bracket_round_gameweeks').select('*').eq('competition_id', competitionId),
       ])
@@ -1602,7 +1625,7 @@ function BracketTab({ competitionId, competitions }) {
                       {!isBye && m.home_user_id && m.away_user_id && (
                         <Select value={m.gameweek_id || ''} onChange={e => assignMatchGameweek(m.id, e.target.value)} style={{ width: 110 }}>
                           <option value="">Set GW…</option>
-                          {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                          {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gwLabel(gw, competitionId)}</option>)}
                         </Select>
                       )}
                     </div>
@@ -1625,7 +1648,7 @@ function BracketTab({ competitionId, competitions }) {
                             ? <span className="text-xs" style={{ color: 'var(--green)' }}>{replay.home_points} – {replay.away_points} · {replay.winner?.display_name} advances</span>
                             : <Select value={replay.gameweek_id || ''} onChange={e => assignMatchGameweek(replay.id, e.target.value)} style={{ width: 110 }}>
                                 <option value="">Set GW…</option>
-                                {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}</option>)}
+                                {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gwLabel(gw, competitionId)}</option>)}
                               </Select>
                           }
                         </div>
