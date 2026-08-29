@@ -124,22 +124,65 @@ workflows:
         script: xcode-project use-profiles
 
       - name: Set the build number
-        # Every upload to Apple needs a build number higher than the last, or
-        # it's rejected as a duplicate — a confusing failure that only appears
-        # on the SECOND submission, long after the config looked correct.
+        # Every upload needs a build number higher than the last, or Apple
+        # rejects it as a duplicate.
         #
-        # Taken from the highest build number already in App Store Connect
-        # rather than from Codemagic's own counter: the counter resets if the
-        # app is ever recreated in Codemagic, and Apple's number never goes
-        # backwards. `|| echo 0` covers the first ever build, when there is
-        # nothing in App Store Connect to read.
+        # Two sources, in order of preference:
+        #
+        #   1. The highest build number App Store Connect already has. Apple's
+        #      number never goes backwards, so +1 is always safe.
+        #   2. Codemagic's own build counter, if the lookup fails.
+        #
+        # The previous version fell back to `|| echo 0`, which turned a failed
+        # lookup into "latest is 0, so build 1" — the same number as last time,
+        # and a guaranteed rejection. A fallback that silently produces a wrong
+        # answer is worse than no fallback, so this one is loud and refuses to
+        # emit a number it knows is stale.
         script: |
-          LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_ID" 2>/dev/null || echo 0)
-          if [ -z "$LATEST" ]; then LATEST=0; fi
-          NEXT=$((LATEST + 1))
-          echo "Latest in App Store Connect: $LATEST — building $NEXT"
+          set -e
+
+          LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_ID" 2>/dev/null || true)
+          echo "App Store Connect reports latest build: '${LATEST:-<lookup failed>}'"
+
+          # Only trust it if it's actually a number.
+          if echo "$LATEST" | grep -qE '^[0-9]+$'; then
+            NEXT=$((LATEST + 1))
+            echo "Using App Store Connect + 1"
+          else
+            # CM_BUILD_NUMBER / BUILD_NUMBER is Codemagic's own counter, which
+            # increments on every build and so can't repeat.
+            COUNTER="${CM_BUILD_NUMBER:-${BUILD_NUMBER:-0}}"
+            NEXT=$((COUNTER + 1))
+            echo "Lookup failed — falling back to Codemagic build counter ($COUNTER) + 1"
+          fi
+
+          # 1 has already been used. Anything at or below it is certain to be
+          # rejected, so fail here with a clear reason rather than after a
+          # fifteen-minute build and an opaque Apple error.
+          if [ "$NEXT" -le 1 ]; then
+            echo "Refusing to build: computed build number $NEXT has already been uploaded."
+            echo "Set APP_ID correctly, or set BUILD_NUMBER_OVERRIDE to something higher."
+            exit 1
+          fi
+
+          # An explicit override, for getting unstuck by hand.
+          if [ -n "$BUILD_NUMBER_OVERRIDE" ]; then
+            NEXT="$BUILD_NUMBER_OVERRIDE"
+            echo "Overridden to $NEXT"
+          fi
+
+          echo "Building version $NEXT"
           cd ios/App
           agvtool new-version -all "$NEXT"
+
+          # Confirm it actually took. agvtool can report success while leaving
+          # the project untouched if the build settings aren't where it expects.
+          APPLIED=$(agvtool what-version -terse)
+          echo "Project now reports build number: $APPLIED"
+          if [ "$APPLIED" != "$NEXT" ]; then
+            echo "agvtool did not apply the version — aborting rather than uploading a duplicate."
+            exit 1
+          fi
 
       - name: Build the archive
         # --project, not --workspace. Capacitor 8 uses Swift Package Manager
