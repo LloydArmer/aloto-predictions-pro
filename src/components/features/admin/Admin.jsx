@@ -439,7 +439,10 @@ function GameweeksTab({ competitionId, competitions }) {
       const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', competitionId)
       const gwIds = (links || []).map(l => l.gameweek_id)
       const { data } = gwIds.length
-        ? await supabase.from('gameweeks').select('*').in('id', gwIds).order('number')
+        // competitions(name) so a gameweek belonging to ANOTHER competition can
+        // be labelled as such. This list includes linked gameweeks, and three
+        // competitions each having a "1" showed as three identical cards.
+        ? await supabase.from('gameweeks').select('*, competitions(name)').in('id', gwIds).order('number')
         : { data: [] }
       setGws(data || [])
 
@@ -565,6 +568,17 @@ function GameweeksTab({ competitionId, competitions }) {
               {/* Band 1 — identity and status */}
               <div className="flex items-center gap-2 flex-wrap mb-3">
                 <span className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>{gw.number}</span>
+
+                {/* Whose gameweek this actually is. Only shown when it belongs
+                    to another competition — assigning a gameweek to a cup tie
+                    links it here automatically, so this list can hold three
+                    gameweeks all called "1" from three different competitions. */}
+                {gw.competition_id !== competitionId && gw.competitions?.name && (
+                  <span className="text-xs px-1.5 py-0.5 rounded" title={gw.competitions.name}
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--txt-muted)', border: '0.5px solid var(--border)' }}>
+                    from {compAbbrev(gw.competitions.name)}
+                  </span>
+                )}
                 <Badge variant={gw.status === 'active' ? 'result' : gw.status === 'completed' ? 'exact' : 'upcoming'}>{gw.status}</Badge>
                 <span style={{ flex: '1 1 auto' }} />
                 {gw.status !== 'active' && <Button size="sm" onClick={() => setActive(gw)}>Set as current</Button>}
