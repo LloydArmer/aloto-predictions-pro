@@ -92,9 +92,12 @@ export default function AppLayout({ children }) {
             <button onClick={handleSignOut} className="btn btn-ghost btn-sm hidden md:inline-flex" title="Sign out">
               <i className="ti ti-logout text-sm" aria-hidden="true" />
             </button>
-            {/* Mobile: show admin link + sign out in a tiny menu */}
-            {(isAdmin) && (
-              <div className="md:hidden relative">
+            {/* Mobile: sign out, plus the admin link for admins.
+                This menu used to be wrapped in `isAdmin`, and the sign-out
+                button beside it is desktop-only — so an ordinary player on a
+                phone had no way to sign out at all. It shows for everyone now;
+                only the Admin link inside it is still gated. */}
+            <div className="md:hidden relative">
                 <button className="btn btn-ghost btn-sm" onClick={() => setMenuOpen(o => !o)}>
                   <i className={`ti ${menuOpen ? 'ti-x' : 'ti-dots-vertical'} text-sm`} />
                 </button>
@@ -115,8 +118,7 @@ export default function AppLayout({ children }) {
                     </button>
                   </div>
                 )}
-              </div>
-            )}
+            </div>
           </div>
         </div>
       </nav>
