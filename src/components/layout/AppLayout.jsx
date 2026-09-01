@@ -41,8 +41,11 @@ export default function AppLayout({ children }) {
     <div className="min-h-screen" style={{ background: 'var(--bg-base)' }}>
 
       {/* ── Top nav bar ── */}
-      <nav className="sticky top-0 z-40"
-        style={{ background: 'var(--bg-surface)', borderBottom: '0.5px solid var(--border)' }}>
+      {/* app-top-nav adds the status-bar inset. In a browser that's 0, so
+          nothing changes; inside the native shell it stops the bar rendering
+          underneath the clock and battery. */}
+      <nav className="sticky top-0 z-40 app-top-nav"
+        style={{ borderBottom: '0.5px solid var(--border)' }}>
         {/* 46px on mobile rather than 52 — with a tab bar at the bottom too,
             every pixel of chrome is one less of content. */}
         <div className="max-w-5xl mx-auto px-4 flex items-center h-[46px] md:h-[52px]">
@@ -128,7 +131,7 @@ export default function AppLayout({ children }) {
           content clears the bar exactly and no dead band is left below it. */}
       <main
         className="max-w-5xl mx-auto px-4 pt-4 md:pt-6 md:pb-6"
-        style={{ paddingBottom: 'calc(var(--tab-bar-h) + env(safe-area-inset-bottom) + 12px)' }}
+        style={{ paddingBottom: 'calc(var(--tab-bar-h) + var(--safe-bottom) + 12px)' }}
       >
         {children}
       </main>

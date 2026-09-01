@@ -268,17 +268,20 @@ export async function resolveBracketRound(supabase, competitionId, round) {
 
     // A gameweek marked 'completed' has NOT necessarily been scored. The status
     // is set by the admin; the scores are written by Recalculate, and nothing
-    // forces the second to follow the first.
+    // forces the second to follow the first. An unscored gameweek would give
+    // both participants 0, which reads as a draw, schedules a replay, and the
+    // replay does the same — the runaway chain this guard exists to prevent.
     //
-    // Without this check, an unscored gameweek gives both participants 0, which
-    // is indistinguishable from a genuine draw — so the tie "draws", schedules
-    // a replay, and the replay does the same. That's how one round became
-    // "Quarter-final replay 2" with everyone on 0pts.
-    //
-    // A real 0-0 draw is possible: two participants who both scored nothing.
-    // The difference is whether gameweek_scores holds rows for them at all. No
-    // rows means not yet scored, which is "not ready", not "drawn".
-    const scoredGwIds = new Set((scores || []).map(x => x.gameweek_id))
+    // But the question is whether the GAMEWEEK has been scored, not whether
+    // these two particular players have rows in it. A player who entered no
+    // predictions scores nothing and gets no row, which is entirely legitimate
+    // — they lose the tie. Checking per-player made a missing row look like an
+    // unscored gameweek and refused to resolve a tie that should simply have
+    // been won by the other side.
+    const { data: gwScored } = await supabase.from('gameweek_scores')
+      .select('gameweek_id').in('gameweek_id', gwIds)
+
+    const scoredGwIds = new Set((gwScored || []).map(x => x.gameweek_id))
     const everyGwScored = gwIds.every(id => scoredGwIds.has(id))
     if (!everyGwScored) { results.notScored++; results.notReady++; continue }
 

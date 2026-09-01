@@ -31,6 +31,13 @@
        derived from this, so the two can never drift apart — previously the
        padding was a hard-coded guess and left a visible dead band. */
     --tab-bar-h:   56px;
+
+    /* The strip iOS reserves for the clock, signal and battery. Zero in a
+       browser and on Android, so these rules cost nothing there. Inside the
+       Capacitor shell the web view starts at the very top of the screen, and
+       without this the top nav renders underneath the status bar. */
+    --safe-top:    env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   *, *::before, *::after { box-sizing: border-box; }
@@ -113,6 +120,15 @@
 
   .section-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; color: var(--txt-muted); }
 
+  /* Pushes the top nav below the status bar and paints the strip behind it in
+     the same colour, so it reads as part of the bar rather than a gap. Applied
+     to the nav rather than the body: the bar is sticky, and padding the body
+     would leave it scrolling under a transparent band. */
+  .app-top-nav {
+    padding-top: var(--safe-top);
+    background: var(--bg-surface);
+  }
+
   /* Tabular figures across every table. Proportional digits make 1 narrower
      than 8, so a column of totals never lines up and the numbers read as
      different sizes even at identical font size. This one rule fixes alignment
@@ -171,8 +187,8 @@
      with the labels. */
   .tab-bar {
     display: flex;
-    height: calc(var(--tab-bar-h) + env(safe-area-inset-bottom));
-    padding-bottom: env(safe-area-inset-bottom);
+    height: calc(var(--tab-bar-h) + var(--safe-bottom));
+    padding-bottom: var(--safe-bottom);
     background: rgba(22, 26, 35, 0.92);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);

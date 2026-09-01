@@ -69,17 +69,22 @@ export async function resolveGroupRound(supabase, competitionId, roundNumber) {
       .eq('competition_id', competitionId).eq('gameweek_id', fx.gameweek_id).in('user_id', [fx.home_user_id, fx.away_user_id])
     // A gameweek marked 'completed' has NOT necessarily been scored. The status
     // is set by the admin; the scores come from Recalculate, and nothing forces
-    // the second to follow the first.
+    // the second to follow the first. An unscored gameweek would resolve every
+    // fixture as a 0-0 draw, which is why this guard exists.
     //
-    // `?? 0` quietly turned "no score row" into a legitimate zero, so an
-    // unscored gameweek resolved every fixture as a 0-0 draw. Absence of a row
-    // means not yet scored — which is "not ready", not "drew nil-nil".
-    const homeRow = scores?.find(s => s.user_id === fx.home_user_id)
-    const awayRow = scores?.find(s => s.user_id === fx.away_user_id)
-    if (!homeRow || !awayRow) { notReady++; notScored++; continue }
+    // But the question is whether the GAMEWEEK has been scored, not whether
+    // these two players have rows in it. Someone who entered no predictions
+    // scores nothing and gets no row — that's a legitimate 0, and they lose.
+    // Checking per-player made a missing row look like an unscored gameweek and
+    // refused to resolve a fixture that should simply have been won.
+    const { data: anyScore } = await supabase.from('gameweek_scores')
+      .select('id').eq('gameweek_id', fx.gameweek_id).limit(1)
 
-    const homePoints = homeRow.points || 0
-    const awayPoints = awayRow.points || 0
+    if (!anyScore?.length) { notReady++; notScored++; continue }
+
+    // No row now means no points, which is correct: they didn't predict.
+    const homePoints = scores?.find(s => s.user_id === fx.home_user_id)?.points ?? 0
+    const awayPoints = scores?.find(s => s.user_id === fx.away_user_id)?.points ?? 0
     const result = homePoints > awayPoints ? 'home' : awayPoints > homePoints ? 'away' : 'draw'
 
     await supabase.from('group_fixtures').update({ home_points: homePoints, away_points: awayPoints, result, status: 'completed' }).eq('id', fx.id)

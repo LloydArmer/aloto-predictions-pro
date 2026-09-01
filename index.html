@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets the page use the full screen INCLUDING the areas
+         behind the notch and home indicator, and is what makes iOS report the
+         env(safe-area-inset-*) values at all. Without it those all read 0 and
+         the padding rules below do nothing — which is why the nav rendered
+         underneath the clock and battery in the native app. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>ALOTO Prediction Pro</title>
     <meta name="description" content="ALOTO Prediction Pro — football score predictions, league tables, weekly & monthly leaderboards" />
     <meta name="author" content="ALOTO" />
