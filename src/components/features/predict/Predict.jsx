@@ -4,10 +4,11 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
-import { resolvePointRules } from '../../../lib/scoring'
+import { resolvePointRules, scoreOnePrediction } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import SeasonPredictions from '../season/SeasonPredictions'
+import { effectiveScore, isInPlay, isFinished, liveLabel } from '../../../lib/livePoints'
 import { fitName } from '../../../lib/names'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
@@ -106,6 +107,24 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
   const isVoid   = fixture.status === 'void'
   const isLocked = isVoid || isPast(kickoff)
   const hasResult = !isVoid && fixture.home_score !== null
+
+  // Live data from the fixture feed, shown only while the admin hasn't
+  // confirmed a result. Once they have, hasResult takes over — the admin was
+  // watching, and a feed can be behind or simply wrong.
+  const inPlay   = !isVoid && !hasResult && isInPlay(fixture)
+  const liveDone = !isVoid && !hasResult && isFinished(fixture)
+  const live     = (inPlay || liveDone) ? effectiveScore(fixture) : null
+  const clock    = liveLabel(fixture)
+
+  // Provisional points from the live score, so a player can see what a goal has
+  // just done to them. Never written anywhere — see lib/livePoints.
+  const livePts = live && prediction
+    ? scoreOnePrediction(
+        { predicted_home: prediction.predicted_home, predicted_away: prediction.predicted_away },
+        { home_score: live.home, away_score: live.away },
+        rules,
+      ).points
+    : null
   const justSaved = !!prediction
   // Calculate points from actual scores at display time — don't rely on
   // points_earned in the DB which is only written after the GW is fully
@@ -145,6 +164,38 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
         {fixture.home_team} <span style={{ color:'var(--txt-muted)', fontWeight:400 }}>vs</span> {fixture.away_team}
       </p>
       <p className="text-xs mb-3" style={{ color:'var(--txt-muted)' }}>{gwLabel} · KO: {format(kickoff,'EEE d MMM')} at {format(kickoff,'HH:mm')}</p>
+
+      {/* In play: the live score, a clock, and what it's currently worth.
+          Amber and labelled provisional throughout, because a disallowed goal
+          can take it away again a second later. */}
+      {live && !hasResult && (
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <span className="text-base font-bold" style={{ color: inPlay ? 'var(--amber)' : 'var(--txt-primary)' }}>
+            {live.home}–{live.away}
+          </span>
+
+          {clock && (
+            <span className="text-xs font-medium px-2 py-1 rounded-md flex items-center gap-1"
+              style={{ background: inPlay ? 'var(--amber-dim)' : 'var(--bg-elevated)', color: inPlay ? 'var(--amber)' : 'var(--txt-muted)' }}>
+              {inPlay && <span className="live-dot" aria-hidden="true"/>}
+              {clock}
+            </span>
+          )}
+
+          {livePts != null && (
+            <span className="text-xs font-medium px-2.5 py-1 rounded-md"
+              style={{ background: 'var(--bg-elevated)', color: 'var(--txt-second)' }}>
+              {livePts}pts so far
+            </span>
+          )}
+
+          {liveDone && (
+            <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+              awaiting confirmation
+            </span>
+          )}
+        </div>
+      )}
 
       {hasResult ? (
         <div className="flex items-center gap-2 flex-wrap mb-2">

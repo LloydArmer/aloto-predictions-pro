@@ -146,3 +146,63 @@ export function useMonthlyLeaderboard(competitionId, monthKey) {
 
   return { monthly, gameweeksInMonth, loading, refetch: () => load(competitionId, monthKey) }
 }
+
+/**
+ * Provisional standings for a gameweek while its matches are being played.
+ *
+ * Computed in the browser from live scores rather than read from
+ * gameweek_scores, and never written back. A goal changes the table instantly;
+ * a disallowed goal changes it back just as instantly; and nobody's actual
+ * points move until an admin confirms the results. The live table can therefore
+ * be wrong for ten seconds with no lasting consequence — whereas if live data
+ * wrote to scores, a bad feed would corrupt the standings for good.
+ *
+ * Polls while anything is in play, and stops when nothing is. There is no point
+ * re-querying every fifteen seconds on a Tuesday.
+ */
+export function useLiveGameweek(competitionId, gameweekId, rules) {
+  const [rows, setRows] = useState([])
+  const [inPlay, setInPlay] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!competitionId || !gameweekId) { setRows([]); setInPlay(false); return }
+
+    let cancelled = false
+    let timer
+
+    async function load() {
+      const { liveStandings, anyInPlay } = await import('../lib/livePoints')
+
+      const [{ data: fixtures }, { data: preds }, { data: parts }] = await Promise.all([
+        supabase.from('fixtures')
+          .select('id, is_void, home_score, away_score, live_home_score, live_away_score, live_status, live_minute')
+          .eq('gameweek_id', gameweekId),
+        supabase.from('predictions')
+          .select('user_id, fixture_id, predicted_home, predicted_away')
+          .eq('gameweek_id', gameweekId),
+        supabase.from('participants')
+          .select('user_id, profiles(display_name)')
+          .eq('competition_id', competitionId),
+      ])
+
+      if (cancelled) return
+
+      const live = anyInPlay(fixtures || [])
+      setInPlay(live)
+      setRows(liveStandings(parts || [], fixtures || [], preds || [], rules))
+
+      // 45 seconds while matches are on. Frequent enough that a goal shows up
+      // before anyone refreshes by hand, infrequent enough not to hammer the
+      // database for the whole of a Saturday afternoon.
+      if (live && !cancelled) timer = setTimeout(load, 45000)
+    }
+
+    setLoading(true)
+    load().finally(() => { if (!cancelled) setLoading(false) })
+
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [competitionId, gameweekId, rules])
+
+  return { rows, inPlay, loading }
+}
