@@ -8,6 +8,7 @@ import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/grou
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
 import CompetitionIcon, { FORMAT_MARK } from '../../ui/CompetitionIcon'
+import GameweekFixtureLink from './GameweekFixtureLink'
 import { fitName } from '../../../lib/names'
 import SeasonTab from './SeasonTab'
 import toast from 'react-hot-toast'
@@ -661,6 +662,12 @@ function GameweeksTab({ competitionId, competitions }) {
                   {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
                 </Button>
               </div>
+
+              {/* Where results come from: typed in, or pulled from a real
+                  competition. Below the actions rather than among them — it's a
+                  setting for the gameweek, not something you do to it, and it
+                  states the current position even when collapsed. */}
+              <GameweekFixtureLink gameweek={gw} onLinked={load} />
 
               {openLinks === gw.id && (
                 <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
