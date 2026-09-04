@@ -10,22 +10,28 @@ function AuthShell({ title, subtitle, children }) {
     // Vertical padding rather than a forced centre, and the safe-area inset so
     // nothing sits under the notch. min-h-screen with justify-center pushed the
     // content taller than a phone screen, leaving it scrollable for no reason.
+    // 100dvh, not 100vh. On mobile Safari 100vh means the viewport WITHOUT the
+    // address bar, so a full-height element is taller than what you can see and
+    // the page scrolls even when the content fits. dvh tracks the actual
+    // visible height.
+    //
+    // Aligned to the top rather than centred: centring a short card on a tall
+    // screen is what put the large gap above the logo.
     <div className="flex flex-col items-center px-4"
       style={{
         background: 'var(--bg-base)',
-        minHeight: '100vh',
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
-        justifyContent: 'center',
+        minHeight: '100dvh',
+        justifyContent: 'flex-start',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)',
+        overflow: 'hidden',
       }}>
-      <div className="mb-6 flex flex-col items-center gap-3">
-        {/* Caps at 220px on a phone. At 300 the logo alone was most of the
-            screen above the fold. */}
+      <div className="mb-5 flex flex-col items-center gap-2">
         <img src="/logo.png" alt="ALOTO Prediction Pro"
-          style={{ width: 'min(220px, 70vw)', height: 'auto' }} />
+          style={{ width: 'min(190px, 60vw)', height: 'auto' }} />
         <p className="text-sm text-center" style={{ color: 'var(--txt-second)' }}>{subtitle}</p>
       </div>
-      <div className="w-full max-w-sm rounded-xl p-6"
+      <div className="w-full max-w-sm rounded-xl p-5"
         style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border-med)' }}>
         <h1 className="text-base font-medium mb-5" style={{ color: 'var(--txt-primary)' }}>{title}</h1>
         {children}

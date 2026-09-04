@@ -32,8 +32,28 @@ function wrap(Page) {
   )
 }
 
+/**
+ * Has this page been opened from a password reset email?
+ *
+ * The link carries ?reset=1 (our own marker) and a ?code= that has to be
+ * exchanged for a session before it expires. A signed-in user is normally
+ * bounced away from /login — but doing that here means the Login screen never
+ * mounts to perform the exchange, and signing out afterwards destroys the
+ * recovery session, so the link comes back as "no longer valid" every time.
+ *
+ * Read from window.location rather than a router hook because this decides
+ * whether the route renders at all.
+ */
+function isPasswordReset() {
+  const search = window.location.search || ''
+  const hash = window.location.hash || ''
+  return search.includes('reset=1') || search.includes('code=') || hash.includes('type=recovery')
+}
+
 function AppRoutes() {
   const { user } = useAuth()
+  const resetting = isPasswordReset()
+
   return (
     <Routes>
       {/* Public, outside the auth wrapper on purpose: Apple's reviewer opens
@@ -42,7 +62,10 @@ function AppRoutes() {
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/support" element={<Support />} />
 
-      <Route path="/login"  element={user ? <Navigate to="/" replace /> : <Login />} />
+      {/* Signed-in users go to the app — unless they're here to set a new
+          password, in which case Login has to render so the reset code can be
+          exchanged. */}
+      <Route path="/login"  element={(user && !resetting) ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
       <Route path="/"             element={wrap(Dashboard)} />
       <Route path="/predict"      element={wrap(Predict)} />
