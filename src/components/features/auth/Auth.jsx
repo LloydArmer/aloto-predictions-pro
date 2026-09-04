@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../../hooks/useAuth'
+import { supabase } from '../../../lib/supabase'
 import { Button, Input } from '../../ui'
 import toast from 'react-hot-toast'
 
@@ -24,14 +25,45 @@ function AuthShell({ title, subtitle, children }) {
   )
 }
 
+/**
+ * Sign in, forgotten password, and setting a new one — all on this screen.
+ *
+ * Three modes rather than three routes. Supabase's reset email sends the player
+ * back with a recovery token in the URL, and handling it here means no new
+ * route to register, no redirect URL to keep in step across two environments,
+ * and no chance of the link landing somewhere that doesn't know what to do with
+ * it.
+ */
 export function Login() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
+
+  const [mode, setMode] = useState('signin')   // 'signin' | 'forgot' | 'reset'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sent, setSent] = useState(false)
 
-  async function handleSubmit(e) {
+  // Supabase fires PASSWORD_RECOVERY when the page opens with a valid recovery
+  // token. At that point the player is briefly signed in for the sole purpose
+  // of setting a new password, so this switches to the reset form rather than
+  // dropping them into the app with no idea what happened.
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') setMode('reset')
+    })
+
+    // Also checked directly: the event can fire before this component mounts,
+    // in which case the listener alone would miss it and the player would see
+    // an ordinary sign-in screen.
+    const hash = window.location.hash
+    if (hash.includes('type=recovery')) setMode('reset')
+
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  async function handleSignIn(e) {
     e.preventDefault()
     if (!email || !password) { toast.error('Enter email and password'); return }
     setLoading(true)
@@ -40,17 +72,133 @@ export function Login() {
     finally { setLoading(false) }
   }
 
+  async function handleForgot(e) {
+    e.preventDefault()
+    if (!email) { toast.error('Enter your email address'); return }
+    setLoading(true)
+    try {
+      // Back to this same page, where the effect above picks up the recovery
+      // token and switches to the reset form.
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login`,
+      })
+      if (error) throw error
+
+      // Deliberately says "if there's an account" rather than confirming one
+      // exists. Confirming it would let anyone check whether a given address is
+      // registered.
+      setSent(true)
+    } catch (err) {
+      toast.error(err.message || 'Could not send the reset email')
+    } finally { setLoading(false) }
+  }
+
+  async function handleReset(e) {
+    e.preventDefault()
+    if (password.length < 6) { toast.error('Password must be at least 6 characters'); return }
+    if (password !== confirm) { toast.error('The two passwords don\'t match'); return }
+
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) throw error
+
+      toast.success('Password updated')
+      // Clears the recovery token out of the address bar, so a refresh or a
+      // shared link doesn't reopen the reset form.
+      window.history.replaceState(null, '', '/login')
+      navigate('/')
+    } catch (err) {
+      toast.error(err.message || 'Could not update the password')
+    } finally { setLoading(false) }
+  }
+
+  /* ---- Set a new password ---- */
+  if (mode === 'reset') {
+    return (
+      <AuthShell title="Set a new password" subtitle="Almost there">
+        <form onSubmit={handleReset}>
+          <div className="mb-3">
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--txt-muted)' }}>New password</label>
+            <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
+              placeholder="Min 6 characters" autoComplete="new-password" required />
+          </div>
+          <div className="mb-5">
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--txt-muted)' }}>Confirm password</label>
+            <Input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+              placeholder="Type it again" autoComplete="new-password" required />
+          </div>
+          <Button variant="primary" className="w-full justify-center" type="submit" disabled={loading}>
+            {loading ? 'Saving…' : 'Save and sign in'}
+          </Button>
+        </form>
+      </AuthShell>
+    )
+  }
+
+  /* ---- Forgotten password ---- */
+  if (mode === 'forgot') {
+    return (
+      <AuthShell title="Reset your password" subtitle="We'll email you a link">
+        {sent ? (
+          <>
+            <p className="text-sm mb-4" style={{ color: 'var(--txt-second)', lineHeight: 1.55 }}>
+              If there's an account for <strong style={{ color: 'var(--txt-primary)' }}>{email}</strong>,
+              a reset link is on its way. It's worth checking your spam folder.
+            </p>
+            <Button className="w-full justify-center"
+              onClick={() => { setMode('signin'); setSent(false) }}>
+              Back to sign in
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm mb-4" style={{ color: 'var(--txt-second)', lineHeight: 1.55 }}>
+              Enter the email address you signed up with and we'll send you a link to set a new
+              password.
+            </p>
+            <form onSubmit={handleForgot}>
+              <div className="mb-5">
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--txt-muted)' }}>Email</label>
+                <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="you@example.com" autoComplete="email" required />
+              </div>
+              <Button variant="primary" className="w-full justify-center" type="submit" disabled={loading}>
+                {loading ? 'Sending…' : 'Send reset link'}
+              </Button>
+            </form>
+            <p className="text-xs text-center mt-4" style={{ color: 'var(--txt-muted)' }}>
+              <button onClick={() => setMode('signin')} style={{ color: 'var(--accent)' }}>
+                Back to sign in
+              </button>
+            </p>
+          </>
+        )}
+      </AuthShell>
+    )
+  }
+
+  /* ---- Sign in ---- */
   return (
     <AuthShell title="Sign in" subtitle="Score predictions · League tables · Leaderboards">
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSignIn}>
         <div className="mb-3">
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--txt-muted)' }}>Email</label>
           <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required />
         </div>
-        <div className="mb-5">
+        <div className="mb-2">
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--txt-muted)' }}>Password</label>
           <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required />
         </div>
+
+        {/* Under the password field, where someone looks the moment they can't
+            remember it. */}
+        <p className="text-xs mb-5 text-right">
+          <button type="button" onClick={() => setMode('forgot')} style={{ color: 'var(--accent)' }}>
+            Forgotten your password?
+          </button>
+        </p>
+
         <Button variant="primary" className="w-full justify-center" type="submit" disabled={loading}>
           {loading ? 'Signing in…' : 'Sign in'}
         </Button>
