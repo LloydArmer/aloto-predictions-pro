@@ -57,6 +57,28 @@ async function apiGet(path: string, params: Record<string, string> = {}) {
   // API-Football returns 200 with an `errors` object rather than an HTTP error
   // code, so checking res.ok alone silently accepts failures.
   if (body.errors && Object.keys(body.errors).length) {
+    // Translated rather than passed through raw. The plan restriction in
+    // particular reads as a fault when it's a subscription limit, and an admin
+    // seeing a JSON blob has no idea whether to fix their fixtures, their key,
+    // or their wallet.
+    const plan = body.errors.plan
+    if (plan) {
+      const window = String(plan).match(/from ([\d-]+) to ([\d-]+)/)
+      throw new Error(
+        window
+          ? `The free API plan only covers ${window[1]} to ${window[2]}. These fixtures fall outside that. Either test with fixtures in that window, or upgrade the plan to cover any date.`
+          : `API plan limit: ${plan}`
+      )
+    }
+
+    if (body.errors.token || body.errors.key) {
+      throw new Error('The API key was rejected. Check API_FOOTBALL_KEY in this project\'s Edge Function secrets.')
+    }
+
+    if (body.errors.requests) {
+      throw new Error(`Daily request limit reached: ${body.errors.requests}`)
+    }
+
     throw new Error(`API error: ${JSON.stringify(body.errors)}`)
   }
   return body
@@ -190,11 +212,31 @@ async function syncFixturesForGameweek(gameweekId: string) {
  * City — and linking the wrong fixture imports the wrong score.
  */
 const TEAM_ALIASES: Record<string, string> = {
+  // English abbreviations admins type.
   utd: 'united', man: 'manchester', nottm: 'nottingham',
   spurs: 'tottenham hotspur', wolves: 'wolverhampton wanderers',
   brighton: 'brighton hove albion', bha: 'brighton hove albion',
   wba: 'west bromwich albion', qpr: 'queens park rangers',
   sheff: 'sheffield', boro: 'middlesbrough', palace: 'crystal palace',
+
+  // Anglicised city names. The provider uses the local spelling and admins type
+  // the English one — "München" against "Munich" is two characters different in
+  // seven after the umlaut is stripped, which is too far apart for fuzzy
+  // matching to bridge safely. Listing them is better than loosening the
+  // threshold, which would start matching clubs that genuinely differ.
+  munchen: 'munich', muenchen: 'munich', koln: 'cologne', koeln: 'cologne',
+  wien: 'vienna', praha: 'prague', milano: 'milan', roma: 'rome',
+  torino: 'turin', napoli: 'naples', firenze: 'florence', genova: 'genoa',
+  venezia: 'venice', sevilla: 'seville', lisboa: 'lisbon', moskva: 'moscow',
+  nurnberg: 'nuremberg', nuernberg: 'nuremberg', hannover: 'hanover',
+  braunschweig: 'brunswick',
+
+  // Initialisms, which share no letters in order with the full name and so can
+  // only be listed.
+  psg: 'paris saint germain', bvb: 'borussia dortmund',
+  asse: 'saint etienne', om: 'marseille', ol: 'lyon',
+  atleti: 'atletico madrid', barca: 'barcelona', juve: 'juventus',
+  inter: 'internazionale', napoly: 'napoli',
 }
 
 function normaliseTeam(s: string) {
@@ -206,7 +248,12 @@ function normaliseTeam(s: string) {
     .replace(/\b(fc|afc|cf|sc|ac|the|club)\b/g, ' ')
     .replace(/\s+/g, ' ').trim()
 
-  return base.split(' ').map(w => TEAM_ALIASES[w] ?? w).join(' ').replace(/\s+/g, ' ').trim()
+  return base.split(' ')
+    .map(w => TEAM_ALIASES[w] ?? w)
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function editDistance(a: string, b: string) {
@@ -304,6 +351,58 @@ async function syncLive() {
   return { updated }
 }
 
+/**
+ * Return every fixture on a given date, for the admin to choose from.
+ *
+ * This is the answer to name matching rather than an addition to it. Matching
+ * what an admin typed against what the provider calls a club will always fail
+ * eventually — "Bayern München" against "Bayern Munich", "1. FC Köln" against
+ * "Cologne" — and every alias added is a fixture that already failed for
+ * somebody. Picking from the real list removes the problem: the names come from
+ * the provider and the id is attached the moment the fixture is created, so
+ * there is nothing left to match.
+ *
+ * One request per date.
+ */
+async function browseFixtures(date: string, search?: string) {
+  const remaining = await quotaRemaining()
+  if (remaining <= 0) {
+    return { error: 'Daily API request limit reached. Try again tomorrow.' }
+  }
+
+  const body = await apiGet('/fixtures', { date })
+  const all = body.response ?? []
+
+  await logSync({ kind: 'browse', requests_used: 1, fixtures_seen: all.length })
+
+  // Filtering happens here rather than in another API call: one request has
+  // already fetched the day's fixtures worldwide, and narrowing them costs
+  // nothing more.
+  const term = (search ?? '').trim().toLowerCase()
+  const filtered = term
+    ? all.filter((f: any) =>
+        f.teams.home.name.toLowerCase().includes(term) ||
+        f.teams.away.name.toLowerCase().includes(term) ||
+        f.league.name.toLowerCase().includes(term) ||
+        (f.league.country ?? '').toLowerCase().includes(term))
+    : all
+
+  return {
+    date,
+    total: all.length,
+    fixtures: filtered.slice(0, 100).map((f: any) => ({
+      api_fixture_id: f.fixture.id,
+      home_team: f.teams.home.name,
+      away_team: f.teams.away.name,
+      kickoff_time: f.fixture.date,
+      league_name: f.league.name,
+      league_country: f.league.country,
+      league_logo: f.league.logo,
+    })),
+    truncated: filtered.length > 100,
+  }
+}
+
 /* ------------------------------------------------------------------ */
 
 Deno.serve(async (req) => {
@@ -311,10 +410,11 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
 
   try {
-    const { mode, gameweek_id } = await req.json().catch(() => ({ mode: 'live' }))
+    const { mode, gameweek_id, date, search } = await req.json().catch(() => ({ mode: 'live' }))
 
     let result
     if (mode === 'leagues') result = await syncLeagues()
+    else if (mode === 'browse') result = await browseFixtures(date, search)
     else if (mode === 'fixtures') result = await syncFixturesForGameweek(gameweek_id)
     else result = await syncLive()
 

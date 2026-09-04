@@ -9,6 +9,7 @@ import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
 import CompetitionIcon, { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import GameweekFixtureLink from './GameweekFixtureLink'
+import FixtureBrowser from './FixtureBrowser'
 import { fitName } from '../../../lib/names'
 import SeasonTab from './SeasonTab'
 import toast from 'react-hot-toast'
@@ -824,6 +825,11 @@ function FixturesPanel({ gameweekId }) {
 
   return (
     <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+      {/* Picking real fixtures comes first: it's the route that works without
+          anything having to match, and it fills in the official team names.
+          Typing them by hand stays below for anything not covered. */}
+      <FixtureBrowser gameweekId={gameweekId} onAdded={load} />
+
       {/* Labelled fields on a grid rather than a wrapping row of placeholders.
           Three inputs and a button in one flex-wrap landed differently at every
           width, and a placeholder disappears the moment you start typing — so
