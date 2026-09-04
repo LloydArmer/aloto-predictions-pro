@@ -45,20 +45,29 @@ export function Login() {
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
 
-  // Supabase fires PASSWORD_RECOVERY when the page opens with a valid recovery
-  // token. At that point the player is briefly signed in for the sole purpose
-  // of setting a new password, so this switches to the reset form rather than
-  // dropping them into the app with no idea what happened.
+  // Detecting that the player has arrived from a reset email.
+  //
+  // Three ways, because none is reliable alone:
+  //
+  //   1. ?reset=1 — our own marker, added to redirectTo below. The only one
+  //      fully under our control, so it's the one that actually works.
+  //   2. #type=recovery — the older implicit flow. Supabase now uses PKCE and
+  //      sends ?code=... in the query string instead, so this was missing it
+  //      entirely and the player landed on an ordinary sign-in screen.
+  //   3. The PASSWORD_RECOVERY event — correct when it fires, but it can fire
+  //      before this component mounts, in which case the listener never hears
+  //      it.
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const hash = window.location.hash || ''
+
+    if (params.get('reset') === '1' || hash.includes('type=recovery')) {
+      setMode('reset')
+    }
+
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setMode('reset')
     })
-
-    // Also checked directly: the event can fire before this component mounts,
-    // in which case the listener alone would miss it and the player would see
-    // an ordinary sign-in screen.
-    const hash = window.location.hash
-    if (hash.includes('type=recovery')) setMode('reset')
 
     return () => sub.subscription.unsubscribe()
   }, [])
@@ -77,10 +86,11 @@ export function Login() {
     if (!email) { toast.error('Enter your email address'); return }
     setLoading(true)
     try {
-      // Back to this same page, where the effect above picks up the recovery
-      // token and switches to the reset form.
+      // ?reset=1 is our own marker. Supabase's own indicators differ between
+      // the implicit and PKCE flows and can be reformatted or dropped; this one
+      // is ours and survives.
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login`,
+        redirectTo: `${window.location.origin}/login?reset=1`,
       })
       if (error) throw error
 
@@ -104,8 +114,8 @@ export function Login() {
       if (error) throw error
 
       toast.success('Password updated')
-      // Clears the recovery token out of the address bar, so a refresh or a
-      // shared link doesn't reopen the reset form.
+      // Clears the marker and any token out of the address bar, so a refresh
+      // or a shared link doesn't reopen the reset form.
       window.history.replaceState(null, '', '/login')
       navigate('/')
     } catch (err) {
