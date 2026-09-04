@@ -41,9 +41,25 @@ export default function GameweekFixtureLink({ gameweek, onLinked }) {
       const { data, error } = await supabase.functions.invoke('sync-football', {
         body: { mode: 'fixtures', gameweek_id: gameweek.id },
       })
-      if (error) throw error
 
-      if (data?.error) { toast.error(data.error); setLastRun(data); return }
+      // Transport failure — the function couldn't be reached at all. Usually
+      // means it isn't deployed to this project yet.
+      if (error) {
+        console.error('sync-football transport error:', error)
+        toast.error('Could not reach the fixture service. Is the function deployed to this project?')
+        return
+      }
+
+      // The function ran and reported a problem. Shown verbatim rather than
+      // replaced with something generic — "quota reached" and "API key
+      // rejected" need different responses from the admin, and hiding which is
+      // which leaves them guessing.
+      if (data?.ok === false || data?.error) {
+        console.error('sync-football error:', data)
+        toast.error(data.error || 'The fixture service reported a problem')
+        setLastRun(data)
+        return
+      }
 
       const matched = data?.matched ?? 0
       const unmatched = data?.unmatched ?? 0
@@ -55,8 +71,9 @@ export default function GameweekFixtureLink({ gameweek, onLinked }) {
       setLastRun(data)
       await loadFixtures()
       onLinked?.()
-    } catch {
-      toast.error('Could not reach the fixture service')
+    } catch (err) {
+      console.error('sync-football failed:', err)
+      toast.error(`Fixture lookup failed: ${err?.message || err}`)
     } finally { setMatching(false) }
   }
 

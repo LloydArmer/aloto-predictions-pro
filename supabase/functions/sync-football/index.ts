@@ -29,6 +29,17 @@ const DAILY_LIMIT = Number(Deno.env.get('API_FOOTBALL_DAILY_LIMIT') ?? '100')
 // by the scheduled job having spent the lot.
 const RESERVE = 10
 
+// Called from the browser via supabase.functions.invoke, which sends a
+// preflight OPTIONS request first. Without these headers and the OPTIONS
+// handler below, the browser blocks the call before it ever reaches this
+// code — and the only symptom is a generic "could not reach" error, with
+// nothing in the function logs because the function never ran.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -296,6 +307,9 @@ async function syncLive() {
 /* ------------------------------------------------------------------ */
 
 Deno.serve(async (req) => {
+  // The preflight. Must answer before any auth or body parsing.
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+
   try {
     const { mode, gameweek_id } = await req.json().catch(() => ({ mode: 'live' }))
 
@@ -305,7 +319,7 @@ Deno.serve(async (req) => {
     else result = await syncLive()
 
     return new Response(JSON.stringify({ ok: true, ...result }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...CORS, 'Content-Type': 'application/json' },
     })
   } catch (err) {
     // Logged as well as returned: a scheduled run has nobody watching the
@@ -313,9 +327,13 @@ Deno.serve(async (req) => {
     // fortnight without anyone noticing.
     await logSync({ kind: 'error', requests_used: 0, error: String(err) })
 
+    // 200 rather than 500 on purpose: supabase.functions.invoke turns a
+    // non-2xx into a generic transport error and discards the body, so the
+    // real reason never reaches the admin. Returning ok:false with the
+    // message means the UI can show what actually went wrong.
     return new Response(JSON.stringify({ ok: false, error: String(err) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      status: 200,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
     })
   }
 })
