@@ -95,21 +95,18 @@ async function syncLeagues() {
 /**
  * Find real matches for a gameweek's fixtures.
  *
- * Matches on team name and kick-off date rather than name alone: two clubs can
- * meet twice in a season, and "Arsenal" appears in several competitions on the
- * same weekend.
+ * Searches BY DATE across every competition, rather than within one league.
+ *
+ * The earlier version asked the admin to link a gameweek to a single
+ * competition, which was wrong twice over: a gameweek routinely mixes Premier
+ * League, Championship and a Champions League tie, and picking "Premier League"
+ * from a list where nearly every country has one was a chore. Searching by date
+ * needs no league at all — the fixtures identify themselves.
+ *
+ * Costs one request per distinct kick-off date, so a Saturday-to-Monday
+ * gameweek is three of the hundred.
  */
 async function syncFixturesForGameweek(gameweekId: string) {
-  const { data: gw } = await supabase
-    .from('gameweeks')
-    .select('id, api_league_id, api_season')
-    .eq('id', gameweekId)
-    .single()
-
-  if (!gw?.api_league_id) {
-    return { skipped: 'This gameweek is not linked to a competition — results stay manual.' }
-  }
-
   const { data: fixtures } = await supabase
     .from('fixtures')
     .select('id, home_team, away_team, kickoff_time, api_fixture_id')
@@ -118,44 +115,61 @@ async function syncFixturesForGameweek(gameweekId: string) {
   const unlinked = (fixtures ?? []).filter(f => !f.api_fixture_id)
   if (!unlinked.length) return { matched: 0, note: 'All fixtures already linked' }
 
-  // One request covering the whole date range, rather than one per fixture.
-  // Six fixtures would otherwise cost six of the hundred.
-  const dates = unlinked.map(f => new Date(f.kickoff_time)).sort((a, b) => +a - +b)
-  const from = dates[0].toISOString().slice(0, 10)
-  const to = dates[dates.length - 1].toISOString().slice(0, 10)
+  const remaining = await quotaRemaining()
 
-  const body = await apiGet('/fixtures', {
-    league: String(gw.api_league_id),
-    season: String(gw.api_season ?? new Date().getFullYear()),
-    from,
-    to,
-  })
+  // The distinct dates these fixtures kick off on.
+  const dates = [...new Set(
+    unlinked.map(f => new Date(f.kickoff_time).toISOString().slice(0, 10))
+  )].sort()
 
-  const candidates = body.response ?? []
+  if (dates.length > remaining) {
+    return {
+      matched: 0,
+      error: `Needs ${dates.length} requests but only ${remaining} remain today. Try again tomorrow, or match a smaller gameweek.`,
+    }
+  }
+
+  // Every fixture played on those dates, worldwide.
+  const candidates: any[] = []
+  for (const date of dates) {
+    const body = await apiGet('/fixtures', { date })
+    candidates.push(...(body.response ?? []))
+    await logSync({ kind: 'fixtures', requests_used: 1, fixtures_seen: (body.response ?? []).length })
+  }
+
   let matched = 0
+  const unmatched: string[] = []
 
   for (const f of unlinked) {
-    const hit = candidates.find((c: any) =>
+    const day = new Date(f.kickoff_time).toISOString().slice(0, 10)
+
+    // BOTH teams must match, and on the right day. One club name can appear in
+    // several countries — Arsenal in England and Arsenal de Sarandí in
+    // Argentina — but two same-named clubs playing identically-named opponents
+    // on the same date is vanishingly unlikely.
+    const hits = candidates.filter(c =>
+      c.fixture.date.slice(0, 10) === day &&
       similar(c.teams.home.name, f.home_team) &&
       similar(c.teams.away.name, f.away_team)
     )
-    if (!hit) continue
 
-    await supabase.from('fixtures')
-      .update({ api_fixture_id: hit.fixture.id })
-      .eq('id', f.id)
-    matched++
+    if (hits.length === 1) {
+      await supabase.from('fixtures')
+        .update({ api_fixture_id: hits[0].fixture.id })
+        .eq('id', f.id)
+      matched++
+    } else {
+      // Zero hits, or several. Several is worse than none: linking the wrong
+      // match imports the wrong score, so it's left for the admin.
+      unmatched.push(
+        hits.length > 1
+          ? `${f.home_team} v ${f.away_team} (several possible matches — left manual)`
+          : `${f.home_team} v ${f.away_team}`
+      )
+    }
   }
 
-  await logSync({
-    kind: 'fixtures',
-    api_league_id: gw.api_league_id,
-    requests_used: 1,
-    fixtures_seen: candidates.length,
-    fixtures_updated: matched,
-  })
-
-  return { matched, unmatched: unlinked.length - matched }
+  return { matched, unmatched: unmatched.length, unmatchedNames: unmatched, datesSearched: dates.length }
 }
 
 /**
