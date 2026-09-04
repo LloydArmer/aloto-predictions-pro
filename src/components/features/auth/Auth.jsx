@@ -7,18 +7,30 @@ import toast from 'react-hot-toast'
 
 function AuthShell({ title, subtitle, children }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4"
-      style={{ background: 'var(--bg-base)' }}>
-      <div className="mb-8 flex flex-col items-center gap-4">
-        <img src="/logo.png" alt="ALOTO Prediction Pro" style={{ width: 300, maxWidth: '100%', height: 'auto' }} />
-        <p className="text-sm" style={{ color: 'var(--txt-second)' }}>{subtitle}</p>
+    // Vertical padding rather than a forced centre, and the safe-area inset so
+    // nothing sits under the notch. min-h-screen with justify-center pushed the
+    // content taller than a phone screen, leaving it scrollable for no reason.
+    <div className="flex flex-col items-center px-4"
+      style={{
+        background: 'var(--bg-base)',
+        minHeight: '100vh',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+        justifyContent: 'center',
+      }}>
+      <div className="mb-6 flex flex-col items-center gap-3">
+        {/* Caps at 220px on a phone. At 300 the logo alone was most of the
+            screen above the fold. */}
+        <img src="/logo.png" alt="ALOTO Prediction Pro"
+          style={{ width: 'min(220px, 70vw)', height: 'auto' }} />
+        <p className="text-sm text-center" style={{ color: 'var(--txt-second)' }}>{subtitle}</p>
       </div>
       <div className="w-full max-w-sm rounded-xl p-6"
         style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border-med)' }}>
         <h1 className="text-base font-medium mb-5" style={{ color: 'var(--txt-primary)' }}>{title}</h1>
         {children}
       </div>
-      <p className="text-xs mt-5" style={{ color: 'var(--txt-muted)' }}>
+      <p className="text-xs mt-4 text-center" style={{ color: 'var(--txt-muted)' }}>
         ALOTO Prediction Pro · Built by ALOTO
       </p>
     </div>
@@ -44,6 +56,8 @@ export function Login() {
   const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
+  const [preparing, setPreparing] = useState(false)
+  const [resetError, setResetError] = useState(null)
 
   // Detecting that the player has arrived from a reset email.
   //
@@ -61,8 +75,25 @@ export function Login() {
     const params = new URLSearchParams(window.location.search)
     const hash = window.location.hash || ''
 
-    if (params.get('reset') === '1' || hash.includes('type=recovery')) {
+    const code = params.get('code')
+
+    if (params.get('reset') === '1' || hash.includes('type=recovery') || code) {
       setMode('reset')
+    }
+
+    // The PKCE code has to be exchanged for a session before the password can
+    // be changed — updateUser needs one, and without this step it fails with
+    // "Auth session missing", which reads like the link has expired when it
+    // hasn't. Doing it on arrival rather than on submit means a broken link is
+    // reported straight away instead of after they've typed a password twice.
+    if (code) {
+      setPreparing(true)
+      supabase.auth.exchangeCodeForSession(code)
+        .then(({ error }) => {
+          if (error) setResetError('This reset link has expired or has already been used. Request a new one.')
+        })
+        .catch(() => setResetError('This reset link could not be verified. Request a new one.'))
+        .finally(() => setPreparing(false))
     }
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
@@ -119,12 +150,44 @@ export function Login() {
       window.history.replaceState(null, '', '/login')
       navigate('/')
     } catch (err) {
-      toast.error(err.message || 'Could not update the password')
+      const msg = String(err?.message || err)
+      // "Auth session missing" means the link was never exchanged for a
+      // session — expired, already used, or opened in a different browser from
+      // the one that requested it. Said plainly rather than as a raw error.
+      toast.error(msg.includes('session')
+        ? 'This reset link is no longer valid. Request a new one.'
+        : msg || 'Could not update the password')
     } finally { setLoading(false) }
   }
 
   /* ---- Set a new password ---- */
   if (mode === 'reset') {
+    // Told as they type, not after they press the button. Discovering a typo
+    // only on submit means retyping both fields.
+    const mismatch = confirm.length > 0 && password !== confirm
+    const tooShort = password.length > 0 && password.length < 6
+    const canSave  = password.length >= 6 && password === confirm
+
+    if (preparing) {
+      return (
+        <AuthShell title="Checking your link" subtitle="One moment">
+          <p className="text-sm" style={{ color: 'var(--txt-second)' }}>Verifying…</p>
+        </AuthShell>
+      )
+    }
+
+    if (resetError) {
+      return (
+        <AuthShell title="Link expired" subtitle="Reset links are single use">
+          <p className="text-sm mb-4" style={{ color: 'var(--txt-second)', lineHeight: 1.55 }}>{resetError}</p>
+          <Button variant="primary" className="w-full justify-center"
+            onClick={() => { setResetError(null); setMode('forgot'); window.history.replaceState(null, '', '/login') }}>
+            Send a new link
+          </Button>
+        </AuthShell>
+      )
+    }
+
     return (
       <AuthShell title="Set a new password" subtitle="Almost there">
         <form onSubmit={handleReset}>
@@ -132,13 +195,25 @@ export function Login() {
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--txt-muted)' }}>New password</label>
             <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
               placeholder="Min 6 characters" autoComplete="new-password" required />
+            {tooShort && (
+              <p className="text-xs mt-1" style={{ color: 'var(--amber)' }}>At least 6 characters</p>
+            )}
           </div>
+
           <div className="mb-5">
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--txt-muted)' }}>Confirm password</label>
             <Input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
-              placeholder="Type it again" autoComplete="new-password" required />
+              placeholder="Type it again" autoComplete="new-password" required
+              style={mismatch ? { borderColor: 'var(--red)' } : undefined} />
+            {mismatch && (
+              <p className="text-xs mt-1" style={{ color: 'var(--red)' }}>These don't match</p>
+            )}
+            {canSave && (
+              <p className="text-xs mt-1" style={{ color: 'var(--green)' }}>Passwords match</p>
+            )}
           </div>
-          <Button variant="primary" className="w-full justify-center" type="submit" disabled={loading}>
+
+          <Button variant="primary" className="w-full justify-center" type="submit" disabled={loading || !canSave}>
             {loading ? 'Saving…' : 'Save and sign in'}
           </Button>
         </form>
