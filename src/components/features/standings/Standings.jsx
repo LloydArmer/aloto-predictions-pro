@@ -7,6 +7,7 @@ import CompetitionSelector from '../../layout/CompetitionSelector'
 import Table from '../table/Table'
 import Bracket from '../bracket/Bracket'
 import SeasonResults from '../season/SeasonResults'
+import LiveStandings from './LiveStandings'
 import { Spinner, EmptyState } from '../../ui'
 
 /**
@@ -87,6 +88,11 @@ export default function Standings() {
           ))}
         </div>
       )}
+
+      {/* Above the tabs, and only while matches are actually being played.
+          Someone opening Standings on a Saturday afternoon wants the live
+          picture first; the rest of the week this renders nothing at all. */}
+      <LiveStandings competitionId={comp} />
 
       {/* Table already handles Overall and Monthly internally, so it's given the
           view rather than duplicating its logic here. */}
