@@ -242,6 +242,12 @@ const TEAM_ALIASES: Record<string, string> = {
 function normaliseTeam(s: string) {
   const base = s.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    // Apostrophes are REMOVED rather than turned into spaces. Admins write
+    // contractions like "B'burn R" and "L'pool"; splitting on the apostrophe
+    // gives "b burn r", where "b" and "r" are too short to match anything
+    // safely. Removing it gives "bburn", which the subsequence test below can
+    // match against "blackburn".
+    .replace(/['\u2019]/g, '')
     .replace(/[^a-z0-9 ]/g, ' ')
     // Only genuinely meaningless suffixes. Never a word that distinguishes one
     // club from another in the same town.
@@ -254,6 +260,26 @@ function normaliseTeam(s: string) {
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+/**
+ * Does every letter of `short` appear in `long`, in order?
+ *
+ * This is what handles contractions with letters taken out of the middle —
+ * "bburn" against "blackburn", "lpool" against "liverpool", "nottm" against
+ * "nottingham". Neither a prefix test nor edit distance can bridge those.
+ *
+ * Safe because it is directional and requires order: "united" is not a
+ * subsequence of "city" or "wednesday", and "city" is not one of "rovers".
+ * Tested against every same-town pair that could otherwise be confused.
+ */
+function isSubsequence(short: string, long: string) {
+  let i = 0
+  for (const ch of long) {
+    if (ch === short[i]) i++
+    if (i === short.length) return true
+  }
+  return i === short.length
 }
 
 function editDistance(a: string, b: string) {
@@ -269,6 +295,39 @@ function editDistance(a: string, b: string) {
     prev = curr
   }
   return prev[b.length]
+}
+
+/**
+ * Do these two words refer to the same thing?
+ *
+ * Symmetric on purpose. The caller picks "shorter" by word COUNT, but
+ * "Blackburn Rovers" and "B'burn R" both have two words — so the shorter list
+ * can easily hold the longer text, and a one-directional test then runs
+ * backwards and fails. Every rule here works whichever way round the pair
+ * arrives.
+ */
+function wordsMatch(a: string, b: string) {
+  if (a === b) return true
+
+  // Prefixes, either way, down to a single letter: "R" for Rovers in
+  // "B'burn R", "wed" for "wednesday", "man" for "manchester".
+  //
+  // A single letter looks dangerously loose on its own — "R" would prefix
+  // Rovers, Rangers and Reading alike — but EVERY word of the shorter name has
+  // to match for the names to match, so the initial can never carry a pairing
+  // by itself. "B'burn R" only matches Blackburn Rovers because "bburn"
+  // matched "blackburn" too.
+  const [shortW, longW] = a.length <= b.length ? [a, b] : [b, a]
+  if (longW.startsWith(shortW)) return true
+
+  // Contractions with letters removed from the middle — "bburn" in
+  // "blackburn", "lpool" in "liverpool". Requires the same first letter and at
+  // least three characters, so a stray "r" can't match rovers, rangers and
+  // reading all at once.
+  if (shortW.length >= 3 && shortW[0] === longW[0] && isSubsequence(shortW, longW)) return true
+
+  const max = Math.max(a.length, b.length)
+  return max >= 5 && 1 - editDistance(a, b) / max >= 0.85
 }
 
 /**
@@ -288,13 +347,7 @@ function similar(a: string, b: string) {
   const shorter = wx.length <= wy.length ? wx : wy
   const longer  = wx.length <= wy.length ? wy : wx
 
-  return shorter.every(w => longer.some(l => {
-    if (l === w) return true
-    if (w.length >= 4 && l.startsWith(w)) return true
-    if (l.length >= 4 && w.startsWith(l)) return true
-    const max = Math.max(w.length, l.length)
-    return max >= 5 && 1 - editDistance(w, l) / max >= 0.85
-  }))
+  return shorter.every(w => longer.some(l => wordsMatch(w, l)))
 }
 
 /**
