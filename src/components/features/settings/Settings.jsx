@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../hooks/useAuth'
 import { supabase } from '../../../lib/supabase'
 import { Card, Button } from '../../ui'
@@ -8,7 +9,8 @@ import HowToPlay from '../help/HowToPlay'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
-  const { user, profile, isAdmin, fetchProfile } = useAuth()
+  const { user, profile, isAdmin, fetchProfile, signOut } = useAuth()
+  const navigate = useNavigate()
   // WhatsApp and SMS were removed from this screen. Nothing sent them — there
   // is no Twilio account, and native push covers everyone once the app is on
   // the stores. Leaving the toggles would have been worse than useless: people
@@ -35,6 +37,14 @@ export default function Settings() {
   const [pushBusy, setPushBusy] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [deviceCount, setDeviceCount] = useState(0)
+
+  // Account deletion. Apple requires this of any app allowing account
+  // creation, and the summary is fetched so the warning can say exactly what
+  // will be lost rather than a vague "all your data".
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [summary, setSummary] = useState(null)
+  const [confirmText, setConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   const [adminExists, setAdminExists] = useState(true) // assume true until checked, so the button never flashes on
   const [checkingAdmin, setCheckingAdmin] = useState(true)
@@ -158,6 +168,34 @@ export default function Settings() {
       setAdminExists(true)
       toast.error('An admin already exists for this league — ask them for access.')
     } finally { setClaiming(false) }
+  }
+
+  async function openDelete() {
+    setDeleteOpen(true)
+    setConfirmText('')
+    const { data } = await supabase.rpc('my_account_summary')
+    setSummary(Array.isArray(data) ? data[0] : data)
+  }
+
+  async function doDelete() {
+    setDeleting(true)
+    try {
+      const { error } = await supabase.rpc('delete_my_account')
+      if (error) throw error
+
+      // Signed out explicitly rather than relying on the session dying with
+      // the account: the local session would otherwise linger until it next
+      // fails a request, leaving a signed-in app with no account behind it.
+      await signOut().catch(() => {})
+      toast.success('Your account has been deleted')
+      navigate('/login')
+    } catch (err) {
+      // The one refusal worth reading properly: being the sole admin of a
+      // competition. The message from the database names which, so it's shown
+      // as-is rather than replaced with something generic.
+      toast.error(String(err?.message || err))
+      setDeleting(false)
+    }
   }
 
   const needsIosInstall = capability && !capability.supported && capability.reason === 'ios-needs-install'
@@ -289,6 +327,79 @@ export default function Settings() {
         </Card>
       )}
 
+      {/* ── Delete account ──────────────────────────────────────────────
+          Last on the page, and behind a typed confirmation. Required by
+          Apple in any app that allows account creation.
+
+          The warning names what will actually be lost — the number of
+          predictions, the competitions — rather than saying "all your data",
+          because the consequence for a league is real: their predictions and
+          scores go, so a competition loses that history and a bracket they
+          featured in is left with a gap. */}
+      <Card className="p-4 mb-4" style={{ borderColor: 'rgba(255,95,95,0.3)' }}>
+        <p className="text-xs font-medium mb-1" style={{ color: 'var(--red)' }}>Delete account</p>
+
+        {!deleteOpen ? (
+          <>
+            <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
+              Permanently deletes your account and everything in it. This can't be undone.
+            </p>
+            <Button onClick={openDelete} className="btn-sm"
+              style={{ background: 'var(--red-dim)', color: 'var(--red)', borderColor: 'rgba(255,95,95,0.25)' }}>
+              Delete my account
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="text-xs mb-2" style={{ color: 'var(--txt-second)', lineHeight: 1.55 }}>
+              This permanently deletes your account. It cannot be undone and there is no way to
+              recover it afterwards.
+            </p>
+
+            {summary && (
+              <div className="text-xs mb-3 p-2.5 rounded-md" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-second)' }}>
+                <p className="mb-1" style={{ color: 'var(--txt-primary)' }}>You'll lose:</p>
+                <p>· {summary.predictions} prediction{summary.predictions !== 1 ? 's' : ''}</p>
+                <p>· your points in {summary.competitions} competition{summary.competitions !== 1 ? 's' : ''}</p>
+                {summary.season_entries > 0 && <p>· {summary.season_entries} season prediction entries</p>}
+                {summary.admin_of && (
+                  <p className="mt-1.5" style={{ color: 'var(--amber)' }}>
+                    You're an admin of: {summary.admin_of}
+                  </p>
+                )}
+                <p className="mt-1.5">
+                  Your results disappear from the tables of any competition you played in.
+                </p>
+              </div>
+            )}
+
+            {/* Typed rather than a single tap. Deletion is irreversible and
+                cascades to other people's league history; a mis-tap should not
+                be able to do it. */}
+            <p className="text-xs mb-1.5" style={{ color: 'var(--txt-muted)' }}>
+              Type <strong style={{ color: 'var(--txt-primary)' }}>DELETE</strong> to confirm
+            </p>
+            <input
+              value={confirmText}
+              onChange={e => setConfirmText(e.target.value)}
+              className="input mb-3"
+              placeholder="DELETE"
+              autoCapitalize="characters"
+            />
+
+            <div className="flex gap-2">
+              <Button onClick={doDelete} disabled={deleting || confirmText.trim().toUpperCase() !== 'DELETE'}
+                className="btn-sm"
+                style={{ background: 'var(--red-dim)', color: 'var(--red)', borderColor: 'rgba(255,95,95,0.25)' }}>
+                {deleting ? 'Deleting…' : 'Delete permanently'}
+              </Button>
+              <Button onClick={() => setDeleteOpen(false)} disabled={deleting} className="btn-sm">
+                Cancel
+              </Button>
+            </div>
+          </>
+        )}
+      </Card>
 
     </div>
   )
