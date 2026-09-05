@@ -4,7 +4,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
-import { resolvePointRules, scoreOnePrediction } from '../../../lib/scoring'
+import { resolvePointRules, scoreOnePrediction, defaultRules } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import SeasonPredictions from '../season/SeasonPredictions'
@@ -608,6 +608,47 @@ export default function Predict() {
   useEffect(() => { if (comp) { loadGWs(); loadRules() } }, [comp])
   useEffect(() => { if (selectedGW) loadCounts() }, [selectedGW])
 
+  // Live scores, polled separately from the fixtures themselves.
+  //
+  // useFixtures loads once and never looks again, so a score arriving after the
+  // page opened was invisible until the whole app was reloaded — signing out
+  // and back in was the only reliable way to see it, which is no use to anyone
+  // watching a match.
+  //
+  // Polled rather than folded into useFixtures because only these five columns
+  // change during a match; re-fetching every fixture every 45 seconds to catch
+  // them would be wasteful and would fight with unsaved score inputs.
+  const [liveData, setLiveData] = useState({})
+
+  useEffect(() => {
+    if (!selectedGW?.id) { setLiveData({}); return }
+
+    let cancelled = false
+    let timer
+
+    async function poll() {
+      const { data } = await supabase.from('fixtures')
+        .select('id, live_home_score, live_away_score, live_status, live_minute, live_updated_at, home_score, away_score')
+        .eq('gameweek_id', selectedGW.id)
+
+      if (cancelled) return
+
+      const map = {}
+      ;(data || []).forEach(f => { map[f.id] = f })
+      setLiveData(map)
+
+      const inPlay = (data || []).some(f =>
+        ['1H', 'HT', '2H', 'ET', 'BT', 'P', 'LIVE'].includes(f.live_status))
+
+      // 45 seconds while something is in play, three minutes otherwise — the
+      // slower beat is what notices a kick-off without anyone reloading.
+      if (!cancelled) timer = setTimeout(poll, inPlay ? 45000 : 180000)
+    }
+
+    poll()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [selectedGW?.id])
+
   async function loadGWs() {
     // Gameweeks linked to this competition — whether created here or linked
     // in from another competition — via the join table.
@@ -623,7 +664,10 @@ export default function Predict() {
 
   async function loadRules() {
     const data = await resolvePointRules(supabase, comp)
-    setRules(data)
+    // Null when a competition has no point_rules row. Passing that into the
+    // scoring helpers throws on rules.correct_result_points, so the fallback
+    // is applied here once rather than guarded at every use.
+    setRules(data || defaultRules())
   }
 
   async function loadCounts() {
@@ -679,7 +723,7 @@ export default function Predict() {
       {tab === 'mine' && (
         lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg"/></div>
         : fixtures.length === 0 ? <EmptyState icon="ti-calendar-off" title="No fixtures this gameweek" description="Fixtures will appear when the admin adds them"/>
-        : fixtures.map(f => <FixtureCard key={f.id} fixture={f} prediction={predictions[f.id]} userId={user?.id} count={counts[f.id]} rules={rules} gwLabel={selectedGW?.number} onSave={(fid,h,a)=>savePrediction(fid,h,a,selectedGW.id,user.id)}/>)
+        : fixtures.map(f => <FixtureCard key={f.id} fixture={{ ...f, ...(liveData[f.id] || {}) }} prediction={predictions[f.id]} userId={user?.id} count={counts[f.id]} rules={rules} gwLabel={selectedGW?.number} onSave={(fid,h,a)=>savePrediction(fid,h,a,selectedGW.id,user.id)}/>)
       )}
 
       {tab === 'results' && (

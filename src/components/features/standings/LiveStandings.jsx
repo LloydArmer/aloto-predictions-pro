@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { Card, Spinner } from '../../ui'
-import { resolvePointRules } from '../../../lib/scoring'
+import { resolvePointRules, defaultRules } from '../../../lib/scoring'
 import { liveStandings, anyInPlay, liveLabel, effectiveScore } from '../../../lib/livePoints'
 import { fitName } from '../../../lib/names'
 
@@ -61,11 +61,17 @@ export default function LiveStandings({ competitionId }) {
 
       if (cancelled) return
 
+      // resolvePointRules returns NULL when a competition has no point_rules
+      // row, and passing null into the scoring function throws on
+      // rules.correct_result_points — which killed this component silently and
+      // left the panel invisible even when everything else was correct.
+      const activeRules = rules || defaultRules()
+
       const inPlay = anyInPlay(fx || [])
       setLive(inPlay)
       setGameweek(gw)
       setFixtures(fx || [])
-      setRows(liveStandings(parts || [], fx || [], preds || [], rules))
+      setRows(liveStandings(parts || [], fx || [], preds || [], activeRules))
       setUpdatedAt(new Date())
       setLoading(false)
 
@@ -74,7 +80,14 @@ export default function LiveStandings({ competitionId }) {
       if (inPlay && !cancelled) timer = setTimeout(load, 45000)
     }
 
-    load()
+    // Wrapped so a failure hides the panel rather than taking the whole
+    // Standings page down with it. A missing live table is a disappointment;
+    // a blank screen is a bug report.
+    load().catch(err => {
+      console.error('LiveStandings failed:', err)
+      if (!cancelled) { setLive(false); setLoading(false) }
+    })
+
     return () => { cancelled = true; clearTimeout(timer) }
   }, [competitionId])
 
