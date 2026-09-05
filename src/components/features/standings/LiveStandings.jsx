@@ -50,7 +50,10 @@ export default function LiveStandings({ competitionId }) {
 
       const [{ data: fx }, { data: preds }, { data: parts }, rules] = await Promise.all([
         supabase.from('fixtures')
-          .select('id, home_team, away_team, is_void, home_score, away_score, live_home_score, live_away_score, live_status, live_minute, live_updated_at, kickoff_time')
+          // `status`, not `is_void` — there is no is_void column, and asking
+          // for one made the whole query 400, which is why the panel never
+          // appeared however correct everything else was.
+          .select('id, home_team, away_team, status, home_score, away_score, live_home_score, live_away_score, live_status, live_minute, live_updated_at, kickoff_time')
           .eq('gameweek_id', gw.id).order('kickoff_time'),
         supabase.from('predictions')
           .select('user_id, fixture_id, predicted_home, predicted_away').eq('gameweek_id', gw.id),

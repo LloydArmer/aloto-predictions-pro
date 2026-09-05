@@ -88,8 +88,10 @@ export function livePointsFor(fixtures, predictionsByFixture, rules) {
   let exactScores = 0
 
   for (const fx of fixtures) {
-    // A voided fixture scores nothing for anyone, live or otherwise.
-    if (fx.is_void) continue
+    // A voided fixture scores nothing for anyone, live or otherwise. Void is a
+    // value of the status column; there is no is_void column, and testing one
+    // would silently never match — every voided fixture would keep scoring.
+    if (fx.status === 'void') continue
 
     const score = effectiveScore(fx)
     if (!score) continue

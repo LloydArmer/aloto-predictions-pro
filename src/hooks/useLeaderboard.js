@@ -176,7 +176,8 @@ export function useLiveGameweek(competitionId, gameweekId, rules) {
 
       const [{ data: fixtures }, { data: preds }, { data: parts }] = await Promise.all([
         supabase.from('fixtures')
-          .select('id, is_void, home_score, away_score, live_home_score, live_away_score, live_status, live_minute')
+          // `status`, not `is_void` — no such column exists.
+          .select('id, status, home_score, away_score, live_home_score, live_away_score, live_status, live_minute')
           .eq('gameweek_id', gameweekId),
         supabase.from('predictions')
           .select('user_id, fixture_id, predicted_home, predicted_away')
