@@ -272,4 +272,43 @@
 
   .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-right: 4px; animation: pulse 1.5s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+  /* ── Stop iOS zooming into form fields ─────────────────────────────────
+     Safari automatically zooms the page when you focus an input whose font
+     size is under 16px, and it does NOT zoom back out afterwards — leaving
+     the app enlarged and scrollable in both directions until the page is
+     reloaded.
+     
+     It only shows up once the app is wrapped natively; on the website
+     Safari's own chrome hides it.
+     
+     16px is the threshold, so every field that accepts typing is set to it.
+     The alternative is user-scalable=no in the viewport tag, which would stop
+     the zoom but also stop anyone pinching to enlarge text they can't read —
+     a poor trade for a prediction app used by all ages.
+     
+     Heights are nudged up to match, so a 16px value still sits comfortably
+     rather than filling the box edge to edge. */
+  @media (max-width: 640px) {
+    .input,
+    .select,
+    .score-box,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    input[type="tel"],
+    input[type="search"],
+    input[type="date"],
+    input[type="month"],
+    input[type="datetime-local"],
+    select,
+    textarea {
+      font-size: 16px;
+    }
+
+    .input  { height: 42px; }
+    .select { height: 40px; }
+    .score-box { width: 46px; height: 46px; font-size: 17px; }
+  }
 }
