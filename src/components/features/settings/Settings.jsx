@@ -7,6 +7,7 @@ import { pushCapability, enablePush, disablePush, resetPush, isIOS, rememberedDe
 import JoinCompetition from '../competitions/JoinCompetition'
 import HowToPlay from '../help/HowToPlay'
 import ProUpgrade from './ProUpgrade'
+import BadgePicker from './BadgePicker'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
@@ -215,6 +216,10 @@ export default function Settings() {
       <div className="mb-5">
         <HowToPlay isAdmin={isAdmin} />
       </div>
+
+      {/* Above Pro: it's a two-second choice with an immediate visible result,
+          which makes a better first thing to meet than a price. */}
+      <BadgePicker />
 
       {/* Near the top, above the housekeeping. Someone who has hit a limit is
           sent here, and hunting past reminder settings for the upgrade would be
