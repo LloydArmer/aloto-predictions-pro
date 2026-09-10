@@ -7,4 +7,4 @@ dist
 # capacitor.config.ts and dist/. Committing them would put ~200MB of Gradle and
 # Xcode scaffolding in git and invite it to drift out of step with the web build.
 android/
-ios/
+
