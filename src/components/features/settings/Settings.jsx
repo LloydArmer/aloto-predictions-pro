@@ -6,6 +6,7 @@ import { Card, Button } from '../../ui'
 import { pushCapability, enablePush, disablePush, resetPush, isIOS, rememberedDeviceToken } from '../../../lib/push'
 import JoinCompetition from '../competitions/JoinCompetition'
 import HowToPlay from '../help/HowToPlay'
+import ProUpgrade from './ProUpgrade'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
@@ -214,6 +215,11 @@ export default function Settings() {
       <div className="mb-5">
         <HowToPlay isAdmin={isAdmin} />
       </div>
+
+      {/* Near the top, above the housekeeping. Someone who has hit a limit is
+          sent here, and hunting past reminder settings for the upgrade would be
+          a poor way to treat the one screen that earns anything. */}
+      <ProUpgrade />
 
       <Card className="p-4 mb-5">
         <p className="text-xs font-medium mb-2.5" style={{ color: 'var(--txt-muted)' }}>About</p>
