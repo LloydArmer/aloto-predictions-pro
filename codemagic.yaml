@@ -4,10 +4,15 @@
 # on your machine — Codemagic provides both, which is what makes iOS possible
 # from Windows at all.
 #
-# The native projects are NOT committed to the repo. `npx cap add` regenerates
-# them on every build from capacitor.config.ts and dist/, so there's no 200MB of
-# generated Gradle and Xcode scaffolding in git, and no chance of it drifting out
-# of step with the web build.
+# The iOS project IS committed to the repo, and must stay that way.
+#
+# It began as generated-every-build, which is tidy while everything native is
+# generated. It stops working the moment there is hand-written Swift in the
+# project — a widget extension, a Capacitor plugin — because regenerating would
+# silently delete it. `cap sync` updates an existing project instead, keeping
+# custom targets and build settings intact.
+#
+# Android is still generated each build; there is nothing hand-written in it.
 #
 # The shared steps are written out in full in each workflow rather than shared
 # through a YAML anchor. An anchor holding a list, referenced inside another
@@ -80,16 +85,34 @@ workflows:
       - name: Build the web app
         script: npm run build
 
-      - name: Add the iOS platform
-        # Regenerated every build rather than committed, so ios/ never drifts
-        # out of step with the web build.
-        script: npx cap add ios || npx cap sync ios
+      - name: Check the iOS project is committed
+        # Deliberately fails rather than generating one. A missing ios/ folder
+        # used to mean "generate it"; now it means something is wrong, because
+        # the project holds hand-written Swift that cannot be regenerated.
+        #
+        # Silently creating a fresh project here would produce a build that
+        # works and is missing the widget extension — the worst kind of
+        # failure, since nothing looks broken until a feature is quietly absent.
+        script: |
+          if [ ! -d "ios/App/App.xcodeproj" ]; then
+            echo "ios/ is missing from the repository."
+            echo ""
+            echo "It is committed on purpose: it contains hand-written Swift"
+            echo "(the Live Activity widget and Capacitor plugins) which cannot"
+            echo "be regenerated. Restore it from git rather than running"
+            echo "'npx cap add ios', which would create an empty project and"
+            echo "produce a build quietly missing those features."
+            exit 1
+          fi
+          echo "iOS project present."
+
+      - name: Sync the web build into the native project
+        # sync, never add. Updates web assets and plugin registrations in the
+        # existing project, leaving custom targets and build settings alone.
+        script: npx cap sync ios
 
       - name: Drop in GoogleService-Info.plist
         script: echo "$GOOGLE_SERVICE_INFO_PLIST" > ios/App/App/GoogleService-Info.plist
-
-      - name: Sync web build into the native project
-        script: npx cap sync ios
 
       - name: Prepare the keychain
         # Must run before fetching, or there's nowhere to put the certificate.
