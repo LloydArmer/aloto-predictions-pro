@@ -9,6 +9,7 @@ import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../
 import JoinCompetition from '../competitions/JoinCompetition'
 import ReminderBanner from './ReminderBanner'
 import SeasonBanner from './SeasonBanner'
+import KitPrompt from './KitPrompt'
 import { outcomeLabel, resolvePointRules } from '../../../lib/scoring'
 import { buildWeeklyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import CompetitionSelector from '../../layout/CompetitionSelector'
@@ -235,6 +236,10 @@ export default function Dashboard() {
         <div className="flex justify-center py-20"><Spinner size="lg"/></div>
       ) : (
         <>
+          {/* Above the stats. High enough to be seen, and it disappears for a
+              week if dismissed rather than nagging on every visit. */}
+          <KitPrompt />
+
           {compObj?.format === 'league' && (
             <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-3">

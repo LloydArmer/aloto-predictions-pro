@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { PlayerMark } from '../../ui/Shirt'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
@@ -16,12 +17,18 @@ const ROUND_SEQUENCE = ['playoff', 'r64', 'r32', 'r16', 'qf', 'sf', 'f']
 // something read from an enclosing scope — a completed REPLAY nested inside a
 // still-unresolved parent match needs its own winner highlight, and reading the
 // parent's status meant that highlight never rendered.
-function ParticipantRow({ name, pts, isWinner, isMe, isLive, showWinnerHighlight }) {
+function ParticipantRow({ name, kit, pts, isWinner, isMe, isLive, showWinnerHighlight }) {
   return (
     <div className="flex items-center justify-between px-3 py-2.5"
       style={{ background: showWinnerHighlight && isWinner ? 'var(--accent-dim)' : isMe ? 'rgba(79,142,247,0.06)' : '' }}>
-      <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isWinner ? 600 : 400, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0 }}>
-        {name || 'TBD'}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+      {/* The kit matters most here. A cup tie is two names in a narrow card,
+          and initials collide — Matt and Mark Haworth are both "MH", which
+          tells you nothing about who you are actually playing. */}
+      <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+        {name && <PlayerMark kit={kit} displayName={name} size={22}/>}
+        <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isWinner ? 600 : 400, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0 }}>
+          {name || 'TBD'}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
+        </span>
       </span>
       {pts != null && (
         <span className="text-sm font-bold ml-2" style={{ color: isWinner ? 'var(--green)' : isLive ? 'var(--amber)' : 'var(--txt-second)', flexShrink:0 }}>
@@ -55,6 +62,7 @@ function MatchLeg({ match, userId, livePts = {} }) {
     <>
       <ParticipantRow
         name={match.home?.display_name}
+        kit={match.home?.badge_kit}
         pts={homePts}
         isWinner={isCompleted && match.winner_user_id === match.home_user_id}
         isMe={match.home_user_id === userId}
@@ -65,6 +73,7 @@ function MatchLeg({ match, userId, livePts = {} }) {
       {match.away_user_id
         ? <ParticipantRow
             name={match.away?.display_name}
+            kit={match.away?.badge_kit}
             pts={awayPts}
             isWinner={isCompleted && match.winner_user_id === match.away_user_id}
             isMe={match.away_user_id === userId}
@@ -135,9 +144,15 @@ function GroupTable({ competitionId, userId }) {
     // fetch and merge the names separately instead.
     const { data: rows } = await supabase.from('group_standings').select('*').eq('competition_id', competitionId)
     const userIds = [...new Set((rows || []).map(r => r.user_id))]
-    const { data: profs } = userIds.length ? await supabase.from('profiles').select('id, display_name').in('id', userIds) : { data: [] }
-    const nameMap = {}; (profs || []).forEach(p => { nameMap[p.id] = p.display_name })
-    const merged = (rows || []).map(r => ({ ...r, profiles: { display_name: nameMap[r.user_id] || 'Unknown' } }))
+    const { data: profs } = userIds.length ? await supabase.from('profiles').select('id, display_name, badge_kit').in('id', userIds) : { data: [] }
+    const nameMap = {}; (profs || []).forEach(p => { nameMap[p.id] = p })
+    const merged = (rows || []).map(r => ({
+      ...r,
+      profiles: {
+        display_name: nameMap[r.user_id]?.display_name || 'Unknown',
+        badge_kit: nameMap[r.user_id]?.badge_kit || null,
+      },
+    }))
     const sorted = merged.sort((a,b) => b.league_points - a.league_points || b.points_diff - a.points_diff || b.points_for - a.points_for)
     setStandings(sorted); setLoading(false)
   }
@@ -195,7 +210,7 @@ function GroupFixturesList({ competitionId, userId }) {
 
   async function load() {
     const [{ data: fx }, rules] = await Promise.all([
-      supabase.from('group_fixtures').select('*, home:home_user_id(display_name), away:away_user_id(display_name), gameweeks(number)')
+      supabase.from('group_fixtures').select('*, home:home_user_id(display_name, badge_kit), away:away_user_id(display_name, badge_kit), gameweeks(number)')
         .eq('competition_id', competitionId).order('round_number'),
       resolvePointRules(supabase, competitionId),
     ])
@@ -297,7 +312,7 @@ export default function Bracket({ embedded = false }) {
     setLoading(true)
     try {
       const { data: matches } = await supabase.from('bracket_matches')
-        .select('*, home:home_user_id(display_name), away:away_user_id(display_name), winner:winner_user_id(display_name)')
+        .select('*, home:home_user_id(display_name, badge_kit), away:away_user_id(display_name, badge_kit), winner:winner_user_id(display_name)')
         .eq('competition_id', comp).order('round_order')
 
       // Group matches by round, but exclude rounds where every match

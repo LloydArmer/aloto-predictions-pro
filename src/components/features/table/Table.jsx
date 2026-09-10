@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
+import { PlayerMark } from '../../ui/Shirt'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
@@ -346,7 +347,12 @@ function MonthlyPane({ competitionId, months, userId }) {
                       <td className="name-cell">
                         <p className="text-sm font-medium" title={p.display_name}
                           style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                          {fitName(p.display_name)}
+                          <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                    <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20}/>
+                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {fitName(p.display_name)}
+                    </span>
+                  </span>
                         </p>
                       </td>
                       <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{p.correct_results||0}</td>
@@ -448,7 +454,12 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
 
               <span style={{ flex: '1 1 auto', minWidth: 0 }}>
                 <span className="text-sm font-medium block" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {fitName(p.display_name)}
+                  <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                    <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20}/>
+                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {fitName(p.display_name)}
+                    </span>
+                  </span>
                   {/* A COUNT, not one chip per full house. Someone with a good
                       season could have a dozen, and a dozen chips would push the
                       name off the row entirely. The gameweeks themselves are in

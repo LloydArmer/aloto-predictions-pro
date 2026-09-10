@@ -52,6 +52,57 @@ export function kitSpec(pattern, primary, secondary) {
 const SHIRT_PATH =
   'M22 8 L32 4 Q40 10 40 10 L46 16 L40 24 L36 21 L36 44 Q32 46 24 46 Q16 46 12 44 L12 21 L8 24 L2 16 L8 10 Q8 10 16 4 L26 8 Z'
 
+/**
+ * A player's short mark, for when there is no kit.
+ *
+ * Never a single letter. "J" could be Joe, Jess or Jamie, and in a cup tie or
+ * on a lock screen the whole point is knowing who you are up against.
+ *
+ *   "Lloyd Armer"  -> LA    initials, since there are two words to work with
+ *   "Joe"          -> JOE   one word, so the first three letters
+ *   "Mickefc2103"  -> MIC
+ *   "Jess O'Neill" -> JO
+ */
+export function playerMark(displayName) {
+  if (!displayName) return '?'
+  const words = String(displayName).trim().split(/\s+/).filter(Boolean)
+
+  if (words.length === 1) {
+    // Three letters rather than one. A single initial identifies nobody.
+    return words[0].slice(0, 3).toUpperCase()
+  }
+  return words.slice(0, 3).map(w => w[0]).join('').toUpperCase()
+}
+
+/**
+ * A kit if the player has chosen one, their mark if not.
+ *
+ * Used everywhere a player appears in a tight space — cup ties, group tables,
+ * the Live Activity — so the two always look deliberate side by side rather
+ * than one being a placeholder for the other.
+ */
+export function PlayerMark({ kit, displayName, size = 28 }) {
+  if (kit) return <Shirt spec={kit} size={size} title={displayName}/>
+
+  return (
+    <span
+      className="flex items-center justify-center flex-shrink-0"
+      title={displayName}
+      style={{
+        width: size, height: size, borderRadius: size * 0.28,
+        background: 'var(--bg-elevated)',
+        border: '0.5px solid var(--border-med)',
+        color: 'var(--txt-second)',
+        // Scaled to the box so a three-letter mark still fits at 24px.
+        fontSize: Math.round(size * 0.34),
+        fontWeight: 600,
+        letterSpacing: '-0.02em',
+      }}>
+      {playerMark(displayName)}
+    </span>
+  )
+}
+
 export default function Shirt({ spec, size = 32, title }) {
   const kit = parseKit(spec)
 

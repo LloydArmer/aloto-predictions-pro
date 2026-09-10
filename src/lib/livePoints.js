@@ -138,6 +138,9 @@ export function liveStandings(participants, fixtures, predictions, rules) {
   const rows = participants.map(p => ({
     user_id: p.user_id,
     display_name: p.display_name ?? p.profiles?.display_name,
+    // Carried through so the table can draw each player's shirt. Without it
+    // the row has a name and nothing to identify it in a tight column.
+    badge_kit: p.badge_kit ?? p.profiles?.badge_kit ?? null,
     ...livePointsFor(fixtures, byUser[p.user_id] ?? {}, rules),
   }))
 

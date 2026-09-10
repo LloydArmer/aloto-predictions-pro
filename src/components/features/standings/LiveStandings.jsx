@@ -4,6 +4,7 @@ import { Card, Spinner } from '../../ui'
 import { resolvePointRules, defaultRules } from '../../../lib/scoring'
 import { liveStandings, anyInPlay, liveLabel, effectiveScore } from '../../../lib/livePoints'
 import { fitName } from '../../../lib/names'
+import { PlayerMark } from '../../ui/Shirt'
 
 /**
  * The table as it stands while matches are being played.
@@ -58,7 +59,10 @@ export default function LiveStandings({ competitionId }) {
         supabase.from('predictions')
           .select('user_id, fixture_id, predicted_home, predicted_away').eq('gameweek_id', gw.id),
         supabase.from('participants')
-          .select('user_id, profiles(display_name)').eq('competition_id', competitionId),
+          // badge_kit so each row can show the player's shirt. Initials are
+          // drawn where there is no kit — and they collide (Matt and Mark
+          // Haworth are both MH), which is the best argument for picking one.
+          .select('user_id, profiles(display_name, badge_kit)').eq('competition_id', competitionId),
         resolvePointRules(supabase, competitionId),
       ])
 
@@ -153,9 +157,13 @@ export default function LiveStandings({ competitionId }) {
                   style={{ color: i === 0 ? 'var(--gold)' : 'var(--txt-muted)' }}>{i + 1}</span>
               </td>
               <td className="name-cell">
-                <p className="text-sm" title={r.display_name} style={{ color: 'var(--txt-primary)' }}>
-                  {fitName(r.display_name)}
-                </p>
+                <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                  <PlayerMark kit={r.badge_kit} displayName={r.display_name} size={22}/>
+                  <span className="text-sm" title={r.display_name}
+                    style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {fitName(r.display_name)}
+                  </span>
+                </span>
               </td>
               <td style={{ textAlign: 'right', paddingRight: 12 }}>
                 <span className="text-sm font-semibold num" style={{ color: 'var(--txt-primary)' }}>

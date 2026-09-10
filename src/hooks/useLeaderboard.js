@@ -64,6 +64,19 @@ export function useLeaderboard(competitionId) {
         })
       }
 
+      // Kits, merged in separately. leaderboard_overall is a view built from
+      // gameweek_scores and doesn't carry badge_kit — fetching it here avoids
+      // altering the view, and a missing kit falls back to initials anyway.
+      const ids = merged.map(r => r.user_id).filter(Boolean)
+      if (ids.length) {
+        const { data: kits } = await supabase.from('profiles')
+          .select('id, badge_kit').in('id', ids)
+
+        const kitByUser = {}
+        ;(kits || []).forEach(k => { kitByUser[k.id] = k.badge_kit })
+        merged.forEach(r => { r.badge_kit = kitByUser[r.user_id] || null })
+      }
+
       // Re-sorted, because adding season points can change the order.
       merged.sort((a, b) => b.total_points - a.total_points || (b.exact_scores || 0) - (a.exact_scores || 0))
       setOverall(merged)
@@ -117,7 +130,7 @@ export function useMonthlyLeaderboard(competitionId, monthKey) {
       setGameweeksInMonth(gws || [])
       if (!gws?.length) { setMonthly([]); return }
 
-      const { data: scores } = await supabase.from('gameweek_scores').select('*, profiles(display_name, avatar_initials)')
+      const { data: scores } = await supabase.from('gameweek_scores').select('*, profiles(display_name, avatar_initials, badge_kit)')
         .eq('competition_id', compId).in('gameweek_id', gws.map(g => g.id))
 
       const map = {}
@@ -127,6 +140,7 @@ export function useMonthlyLeaderboard(competitionId, monthKey) {
           user_id: k,
           display_name: s.profiles?.display_name || 'Unknown',
           avatar_initials: s.profiles?.avatar_initials || '?',
+          badge_kit: s.profiles?.badge_kit || null,
           total_points: 0, exact_scores: 0, correct_results: 0,
           // Counted so the monthly table can show the same bonus columns as the
           // overall one — the underlying booleans were being thrown away here.
