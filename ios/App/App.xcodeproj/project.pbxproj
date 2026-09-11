@@ -70,10 +70,17 @@
 			);
 			target = 4311AC033053ED63002BD8E1 /* ALOTOWidgetExtension */;
 		};
+		4311AC2330540795002BD8E1 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				GameweekActivityAttributes.swift,
+			);
+			target = 504EC3031FED79650016851F /* App */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		4311AC0A3053ED63002BD8E1 /* ALOTOWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (4311AC1C3053ED64002BD8E1 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ALOTOWidget; sourceTree = "<group>"; };
+		4311AC0A3053ED63002BD8E1 /* ALOTOWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (4311AC2330540795002BD8E1 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 4311AC1C3053ED64002BD8E1 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ALOTOWidget; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -319,7 +326,7 @@
 				INFOPLIST_FILE = ALOTOWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = ALOTOWidget;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -361,7 +368,7 @@
 				INFOPLIST_FILE = ALOTOWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = ALOTOWidget;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -499,7 +506,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -521,7 +528,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
