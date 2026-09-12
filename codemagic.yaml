@@ -136,7 +136,20 @@ workflows:
         # Apple allows only three distribution certificates per account. Three
         # builds and you'd be locked out.
         script: |
+          # The app itself.
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+
+          # And the widget extension, which is a SEPARATE app on Apple's side
+          # with its own bundle id and its own provisioning profile. Without
+          # this the archive fails with "ALOTOWidgetExtension requires a
+          # provisioning profile" — the app signs fine and the extension has
+          # nothing to sign with.
+          #
+          # Xcode names an extension's bundle id after its parent, so this is
+          # the app's id with the target name appended.
+          app-store-connect fetch-signing-files "$BUNDLE_ID.ALOTOWidget" \
             --type IOS_APP_STORE \
             --create
 
