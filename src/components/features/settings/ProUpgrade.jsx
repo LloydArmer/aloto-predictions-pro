@@ -93,6 +93,17 @@ export default function ProUpgrade() {
 
   if (loading) return <Card className="p-4 mb-5"><Spinner/></Card>
 
+  // Nothing to sell: on a phone, with no Pro and no package from the store.
+  //
+  // Happens when the subscription product isn't configured in App Store
+  // Connect, or hasn't been approved yet. Showing the card anyway leaves a
+  // permanently disabled "Loading…" button, which reads as broken — and a
+  // review finding a purchase button that does nothing is exactly what
+  // guideline 2.1(b) is about.
+  //
+  // So the offer simply isn't made until there is something to offer.
+  if (canPurchase() && !pkg) return null
+
   /* ---- Already Pro ---- */
   if (status?.isPro) {
     const permanent = !status.expiresAt
