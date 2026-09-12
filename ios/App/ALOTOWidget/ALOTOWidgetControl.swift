@@ -2,53 +2,15 @@
 //  ALOTOWidgetControl.swift
 //  ALOTOWidget
 //
-//  Created by Brittany Earith on 11/09/2026.
+//  Deliberately empty.
 //
-
-import AppIntents
-import SwiftUI
-import WidgetKit
-
-struct ALOTOWidgetControl: ControlWidget {
-    var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(
-            kind: "com.alotoprediction.app.ALOTOWidget",
-            provider: Provider()
-        ) { value in
-            ControlWidgetToggle(
-                "Start Timer",
-                isOn: value,
-                action: StartTimerIntent()
-            ) { isRunning in
-                Label(isRunning ? "On" : "Off", systemImage: "timer")
-            }
-        }
-        .displayName("Timer")
-        .description("A an example control that runs a timer.")
-    }
-}
-
-extension ALOTOWidgetControl {
-    struct Provider: ControlValueProvider {
-        var previewValue: Bool {
-            false
-        }
-
-        func currentValue() async throws -> Bool {
-            let isRunning = true // Check if the timer is running
-            return isRunning
-        }
-    }
-}
-
-struct StartTimerIntent: SetValueIntent {
-    static let title: LocalizedStringResource = "Start a timer"
-
-    @Parameter(title: "Timer is running")
-    var value: Bool
-
-    func perform() async throws -> some IntentResult {
-        // Start / stop the timer based on `value`.
-        return .result()
-    }
-}
+//  Xcode generated a Control Center toggle here. It uses ControlWidgetToggle,
+//  which requires iOS 18, while this app targets iOS 16.1 — so the build failed
+//  with four "only available in iOS 18.0 or newer" errors.
+//
+//  Raising the whole app to iOS 18 to keep a sample timer toggle would cut off
+//  every player on an older phone. The sample goes instead.
+//
+//  The file stays because removing it from the Xcode project needs a Mac, and
+//  an empty Swift file compiles to nothing.
+//
