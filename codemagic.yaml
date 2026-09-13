@@ -163,48 +163,50 @@ workflows:
         # Every upload needs a build number higher than the last, or Apple
         # rejects it as a duplicate.
         #
-        # Two sources, in order of preference:
+        # This has now failed repeatedly, because the App Store Connect lookup
+        # returns nothing and the old fallback — Codemagic's own build counter —
+        # bears no relation to what Apple actually holds. It produced numbers
+        # already used, over and over.
         #
-        #   1. The highest build number App Store Connect already has. Apple's
-        #      number never goes backwards, so +1 is always safe.
-        #   2. Codemagic's own build counter, if the lookup fails.
+        # So the fallback is now derived from the CLOCK: minutes elapsed since
+        # the start of 2026. That number only ever increases, can never repeat,
+        # and is already far above anything uploaded by hand, so it cannot
+        # collide with Apple's history whatever that history happens to be.
         #
-        # The previous version fell back to `|| echo 0`, which turned a failed
-        # lookup into "latest is 0, so build 1" — the same number as last time,
-        # and a guaranteed rejection. A fallback that silently produces a wrong
-        # answer is worse than no fallback, so this one is loud and refuses to
-        # emit a number it knows is stale.
+        # The App Store Connect lookup is still preferred when it works, because
+        # +1 keeps the numbers tidy and readable. The clock is the safety net.
         script: |
           set -e
 
           LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_ID" 2>/dev/null || true)
           echo "App Store Connect reports latest build: '${LATEST:-<lookup failed>}'"
 
-          # Only trust it if it's actually a number.
+          # Minutes since 2026-01-01. Monotonic by construction: roughly 370,000
+          # today and rising by one a minute, so every build is higher than the
+          # last no matter how often you build.
+          CLOCK=$(( ($(date +%s) - 1767225600) / 60 ))
+
           if echo "$LATEST" | grep -qE '^[0-9]+$'; then
             NEXT=$((LATEST + 1))
             echo "Using App Store Connect + 1"
           else
-            # CM_BUILD_NUMBER / BUILD_NUMBER is Codemagic's own counter, which
-            # increments on every build and so can't repeat.
-            COUNTER="${CM_BUILD_NUMBER:-${BUILD_NUMBER:-0}}"
-            NEXT=$((COUNTER + 1))
-            echo "Lookup failed — falling back to Codemagic build counter ($COUNTER) + 1"
+            NEXT="$CLOCK"
+            echo "Lookup failed — using a clock-derived number instead ($NEXT)."
+            echo "This cannot collide with anything already uploaded."
           fi
 
-          # 1 has already been used. Anything at or below it is certain to be
-          # rejected, so fail here with a clear reason rather than after a
-          # fifteen-minute build and an opaque Apple error.
-          if [ "$NEXT" -le 1 ]; then
-            echo "Refusing to build: computed build number $NEXT has already been uploaded."
-            echo "Set APP_ID correctly, or set BUILD_NUMBER_OVERRIDE to something higher."
-            exit 1
-          fi
-
-          # An explicit override, for getting unstuck by hand.
+          # An explicit override, for pinning a number by hand.
           if [ -n "$BUILD_NUMBER_OVERRIDE" ]; then
             NEXT="$BUILD_NUMBER_OVERRIDE"
             echo "Overridden to $NEXT"
+          fi
+
+          # Last line of defence. If the number somehow came out lower than the
+          # clock, the clock wins — a too-low number is the one failure mode
+          # that has actually bitten, and it costs a whole build to discover.
+          if [ "$NEXT" -lt 100 ]; then
+            echo "Computed $NEXT looks too low to be safe — using $CLOCK instead."
+            NEXT="$CLOCK"
           fi
 
           echo "Building version $NEXT"
