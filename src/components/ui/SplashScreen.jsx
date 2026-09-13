@@ -22,9 +22,13 @@ export default function SplashScreen({ onDone }) {
 
   useEffect(() => {
     const timers = [
-      setTimeout(() => setPhase('hold'), 620),
-      setTimeout(() => setPhase('out'), 1500),
-      setTimeout(() => { setPhase('gone'); onDone?.() }, 1950),
+      // Start animating in almost immediately.
+      setTimeout(() => setPhase('hold'), 500),
+      // Everything has finished arriving by ~1.1s; hold it still until 2.6s so
+      // there is a decent beat to read the name and the credit.
+      setTimeout(() => setPhase('out'), 2600),
+      // Then fade out over 550ms.
+      setTimeout(() => { setPhase('gone'); onDone?.() }, 3150),
     ]
     return () => timers.forEach(clearTimeout)
   }, [onDone])
@@ -44,7 +48,9 @@ export default function SplashScreen({ onDone }) {
         // stages of launching the app look like one continuous thing.
         background: 'linear-gradient(160deg, #7438b2 0%, #3a1a68 100%)',
         opacity: phase === 'out' ? 0 : 1,
-        transition: 'opacity 450ms ease-out',
+        // A slower fade than the entrance. Leaving should feel unhurried;
+        // arriving should feel prompt.
+        transition: 'opacity 550ms ease-out',
         // Stops a tap during the fade reaching whatever is underneath.
         pointerEvents: phase === 'out' ? 'none' : 'auto',
       }}
