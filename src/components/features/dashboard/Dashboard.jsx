@@ -4,6 +4,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard } from '../../../hooks/useLeaderboard'
+import { useLiveActivity } from '../../../hooks/useLiveActivity'
 import { supabase } from '../../../lib/supabase'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import JoinCompetition from '../competitions/JoinCompetition'
@@ -28,6 +29,16 @@ export default function Dashboard() {
   const [groupStanding, setGroupStanding] = useState(null)
   const [groupTop3, setGroupTop3] = useState([])
   const [bracketStatus, setBracketStatus] = useState(null)
+
+  // Puts the live gameweek score on the lock screen and in the Dynamic Island.
+  //
+  // Mounted here rather than behind a button because someone watching football
+  // does not open the app to request a lock screen widget — the value is in it
+  // already being there when they put the phone down. It starts itself when a
+  // match kicks off and ends at full time.
+  //
+  // Does nothing at all on the web, so it needs no guard.
+  useLiveActivity(comp, user?.id)
   const [pendingGws, setPendingGws] = useState([])
   const { overall } = useLeaderboard(comp)
   const compObj = competitions.find(c => c.id === comp)
