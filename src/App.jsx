@@ -11,6 +11,8 @@ import Settings       from './components/features/settings/Settings'
 import Privacy        from './components/features/legal/Privacy'
 import Support        from './components/features/legal/Support'
 import { Spinner }    from './components/ui'
+import { useState }   from 'react'
+import SplashScreen    from './components/ui/SplashScreen'
 
 function Protected({ children }) {
   const { user, loading } = useAuth()
@@ -83,5 +85,30 @@ function AppRoutes() {
 }
 
 export default function App() {
-  return <AuthProvider><SelectedCompetitionProvider><AppRoutes /></SelectedCompetitionProvider></AuthProvider>
+  // The animated launch screen sits over everything until it has finished.
+  //
+  // It runs ALONGSIDE the app loading rather than delaying it — by the time
+  // the animation ends, auth has usually resolved and the first screen is
+  // ready, so the two seconds are spent rather than wasted.
+  //
+  // sessionStorage, so it plays once when the app is opened rather than on
+  // every navigation. Wrapped because some in-app browsers block storage
+  // entirely, and a splash that throws is worse than one that replays.
+  const [showSplash, setShowSplash] = useState(() => {
+    try { return !window.sessionStorage.getItem('aloto_splash_seen') } catch { return true }
+  })
+
+  function splashDone() {
+    try { window.sessionStorage.setItem('aloto_splash_seen', '1') } catch { /* blocked */ }
+    setShowSplash(false)
+  }
+
+  return (
+    <AuthProvider>
+      <SelectedCompetitionProvider>
+        <AppRoutes />
+        {showSplash && <SplashScreen onDone={splashDone} />}
+      </SelectedCompetitionProvider>
+    </AuthProvider>
+  )
 }
