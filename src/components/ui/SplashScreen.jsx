@@ -13,6 +13,21 @@ import { useState, useEffect } from 'react'
  *
  * It covers everything until it fades, so nothing half-loaded shows through.
  */
+/* ── Timings ──────────────────────────────────────────────────────────────
+   Adjust these rather than hunting through the code below.
+
+   ARRIVE   how long the ball and text take to animate in. Everything is on
+            screen and still shortly after this.
+   HOLD     how long it then sits completely still. This is the number to
+            change if it feels rushed or drags — it is the reading time.
+   FADE     how long the fade out takes.
+
+   Total on screen = ARRIVE + HOLD + FADE.
+   ─────────────────────────────────────────────────────────────────────── */
+const ARRIVE = 1200
+const HOLD   = 2800
+const FADE   = 650
+
 export default function SplashScreen({ onDone }) {
   // in      — the ball grows and fades up
   // hold    — settled, the wordmark appears
@@ -22,13 +37,11 @@ export default function SplashScreen({ onDone }) {
 
   useEffect(() => {
     const timers = [
-      // Start animating in almost immediately.
-      setTimeout(() => setPhase('hold'), 500),
-      // Everything has finished arriving by ~1.1s; hold it still until 2.6s so
-      // there is a decent beat to read the name and the credit.
-      setTimeout(() => setPhase('out'), 2600),
-      // Then fade out over 550ms.
-      setTimeout(() => { setPhase('gone'); onDone?.() }, 3150),
+      // Trigger the entrance almost immediately. The CSS transitions then run
+      // for roughly ARRIVE milliseconds.
+      setTimeout(() => setPhase('hold'), 400),
+      setTimeout(() => setPhase('out'), ARRIVE + HOLD),
+      setTimeout(() => { setPhase('gone'); onDone?.() }, ARRIVE + HOLD + FADE),
     ]
     return () => timers.forEach(clearTimeout)
   }, [onDone])
@@ -50,7 +63,7 @@ export default function SplashScreen({ onDone }) {
         opacity: phase === 'out' ? 0 : 1,
         // A slower fade than the entrance. Leaving should feel unhurried;
         // arriving should feel prompt.
-        transition: 'opacity 550ms ease-out',
+        transition: `opacity ${FADE}ms ease-out`,
         // Stops a tap during the fade reaching whatever is underneath.
         pointerEvents: phase === 'out' ? 'none' : 'auto',
       }}
