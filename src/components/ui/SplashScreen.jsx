@@ -1,18 +1,5 @@
 import { useState, useEffect } from 'react'
 
-/**
- * The animated launch screen.
- *
- * iOS's own launch screen is a static image and cannot be animated — what
- * looks like an animated splash in other apps is a screen the app draws itself
- * once it has started. This is that screen.
- *
- * The sequence is deliberately short. A splash is a held moment while the app
- * gets ready, not a title sequence; anything past about a second and a half
- * starts to feel like being made to wait.
- *
- * It covers everything until it fades, so nothing half-loaded shows through.
- */
 /* ── Timings ──────────────────────────────────────────────────────────────
    Change HOLD and nothing else. It is the only number that matters.
 
@@ -20,27 +7,40 @@ import { useState, useEffect } from 'react'
    HOLD     how long it then sits completely still. THE READING TIME.
    FADE     the fade out.
 
-   Total on screen = ARRIVE + HOLD + FADE, currently 7.9 seconds.
+   Total on screen = ARRIVE + HOLD + FADE, currently 6.8 seconds.
 
    For reference, the ESPN launch screen this was modelled on stays up for
-   about fourteen seconds — but that is not a choice, it is their app loading.
-   Their splash waits for content; ours has nothing to wait for, because the
-   app is ready almost immediately.
-   
-   So this number is purely how long you want people looking at your logo,
-   traded against how long they wait to reach their score. Every second here
-   is paid on every single launch. Six seconds of stillness is already
-   generous; if players start mentioning it, this is what to bring down.
+   about fourteen seconds — but that is not a design choice, it is their app
+   loading. Their splash waits for content; ours has nothing to wait for,
+   because the app is ready almost immediately.
+
+   So this number is simply how long you want people looking at the logo,
+   traded against how long they wait to reach their score. Every second is
+   paid on every launch.
    ─────────────────────────────────────────────────────────────────────── */
 const ARRIVE = 1200
-const HOLD   = 6000
+const HOLD   = 4900
 const FADE   = 650
 
+/**
+ * The animated launch screen.
+ *
+ * iOS's own launch screen is a static image and cannot be animated — what
+ * looks like an animated splash in other apps is a screen the app draws for
+ * itself once it has started. This is that screen.
+ *
+ * Most of the time is spent holding still. The credit line is the last thing
+ * to arrive, so the hold is measured from the point everything has FINISHED
+ * arriving — measuring from the start of the animation is what made the
+ * earlier versions feel rushed.
+ *
+ * It covers everything until it fades, so nothing half-loaded shows through.
+ */
 export default function SplashScreen({ onDone }) {
-  // in      — the ball grows and fades up
-  // hold    — settled, the wordmark appears
-  // out     — the whole screen fades away
-  // gone    — unmounted
+  // in    — the ball grows and fades up
+  // hold  — settled, everything visible and still
+  // out   — the whole screen fades away
+  // gone  — unmounted
   const [phase, setPhase] = useState('in')
 
   useEffect(() => {
@@ -65,8 +65,8 @@ export default function SplashScreen({ onDone }) {
         position: 'fixed', inset: 0, zIndex: 9999,
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
-        // The same purple as the icon and the static splash, so the three
-        // stages of launching the app look like one continuous thing.
+        // The same purple as the icon and the static iOS splash, so the three
+        // stages of launching look like one continuous thing.
         background: 'linear-gradient(160deg, #7438b2 0%, #3a1a68 100%)',
         opacity: phase === 'out' ? 0 : 1,
         // A slower fade than the entrance. Leaving should feel unhurried;
@@ -85,7 +85,7 @@ export default function SplashScreen({ onDone }) {
         alt=""
         style={{
           width: '44vw', maxWidth: 260,
-          // Slightly overshoots then settles — a straight linear grow looks
+          // Slightly undersized then settling — a straight linear grow looks
           // mechanical, this reads as the app arriving.
           transform: phase === 'in' ? 'scale(0.82)' : 'scale(1)',
           opacity: phase === 'in' ? 0 : 1,
@@ -111,8 +111,8 @@ export default function SplashScreen({ onDone }) {
       </p>
 
       {/* The credit line, sat near the bottom rather than under the title —
-          the same placement ESPN uses for a sponsor. Last to arrive, faintest
-          of the three, so the eye reaches it only after the name.
+          the same placement as the reference. Last to arrive, faintest of the
+          three, so the eye reaches it only after the name.
 
           If a sponsor ever backs the league, this is the line that changes. */}
       <div style={{
