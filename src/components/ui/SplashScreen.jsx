@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react'
    HOLD     how long it then sits completely still. THE READING TIME.
    FADE     the fade out.
 
-   Total on screen = ARRIVE + HOLD + FADE, currently 6.8 seconds.
+   Total on screen = ARRIVE + HOLD + FADE, currently 3.9 seconds.
 
    For reference, the ESPN launch screen this was modelled on stays up for
    about fourteen seconds — but that is not a design choice, it is their app
@@ -19,7 +19,7 @@ import { useState, useEffect } from 'react'
    paid on every launch.
    ─────────────────────────────────────────────────────────────────────── */
 const ARRIVE = 1200
-const HOLD   = 4900
+const HOLD   = 2000
 const FADE   = 650
 
 /**
