@@ -14,18 +14,26 @@ import { useState, useEffect } from 'react'
  * It covers everything until it fades, so nothing half-loaded shows through.
  */
 /* ── Timings ──────────────────────────────────────────────────────────────
-   Adjust these rather than hunting through the code below.
+   Change HOLD and nothing else. It is the only number that matters.
 
-   ARRIVE   how long the ball and text take to animate in. Everything is on
-            screen and still shortly after this.
-   HOLD     how long it then sits completely still. This is the number to
-            change if it feels rushed or drags — it is the reading time.
-   FADE     how long the fade out takes.
+   ARRIVE   the ball and text animating in.
+   HOLD     how long it then sits completely still. THE READING TIME.
+   FADE     the fade out.
 
-   Total on screen = ARRIVE + HOLD + FADE.
+   Total on screen = ARRIVE + HOLD + FADE, currently 7.9 seconds.
+
+   For reference, the ESPN launch screen this was modelled on stays up for
+   about fourteen seconds — but that is not a choice, it is their app loading.
+   Their splash waits for content; ours has nothing to wait for, because the
+   app is ready almost immediately.
+   
+   So this number is purely how long you want people looking at your logo,
+   traded against how long they wait to reach their score. Every second here
+   is paid on every single launch. Six seconds of stillness is already
+   generous; if players start mentioning it, this is what to bring down.
    ─────────────────────────────────────────────────────────────────────── */
 const ARRIVE = 1200
-const HOLD   = 2800
+const HOLD   = 6000
 const FADE   = 650
 
 export default function SplashScreen({ onDone }) {
