@@ -10,6 +10,7 @@ import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../
 import JoinCompetition from '../competitions/JoinCompetition'
 import ReminderBanner from './ReminderBanner'
 import SeasonBanner from './SeasonBanner'
+import MatchupCard  from './MatchupCard'
 import KitPrompt from './KitPrompt'
 import { outcomeLabel, resolvePointRules } from '../../../lib/scoring'
 import { buildWeeklyMessage, openWhatsApp } from '../../../lib/whatsapp'
@@ -201,6 +202,9 @@ export default function Dashboard() {
 
   const myRank = overall.findIndex(p => p.user_id === user?.id) + 1
   const pendingCount = results.filter(f => !f.myPrediction && f.home_score === null && new Date(f.kickoff_time) > new Date()).length
+  // How many of this gameweek's fixtures have a prediction saved — drives the
+  // progress bar above the list.
+  const savedCount = results.filter(f => f.myPrediction).length
   const ocfg = {
     exact:         { label: 'Exact score!',       variant: 'exact'    },
     result:        { label: 'Correct result',     variant: 'result'   },
@@ -250,6 +254,10 @@ export default function Dashboard() {
           {/* Above the stats. High enough to be seen, and it disappears for a
               week if dismissed rather than nagging on every visit. */}
           <KitPrompt />
+
+          {/* The head to head, above everything. It is the thing people open
+              the app for on a Saturday — a lone rank tile is not. */}
+          <MatchupCard competitionId={comp} userId={user?.id} />
 
           {compObj?.format === 'league' && (
             <>
@@ -363,35 +371,86 @@ export default function Dashboard() {
             </Link>
           ))}
 
-          <Card className="p-4 mb-4">
-            <SectionLabel className="mb-3">{gw ? `${gw.number} — your predictions` : 'Recent predictions'}</SectionLabel>
+          {/* ---- Your predictions ----
+              One row per fixture with the score you entered shown inline, so
+              the whole gameweek can be read without opening anything. A card
+              per fixture meant three fixtures filled the screen.
+
+              The bar across the top is the bit people actually want: how many
+              are still outstanding. */}
+          <Card className="p-0 mb-4 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 pt-3.5 pb-2.5">
+              <SectionLabel className="flex-1 mb-0">
+                {gw ? `${gw.number} — your predictions` : 'Recent predictions'}
+              </SectionLabel>
+              {results.length > 0 && (
+                <span className="text-xs" style={{
+                  color: savedCount === results.length ? 'var(--green)' : 'var(--txt-second)',
+                }}>
+                  {savedCount} of {results.length}
+                </span>
+              )}
+            </div>
+
+            {results.length > 0 && (
+              <div style={{ height: 3, background: 'var(--bg-elevated)', margin: '0 16px 10px', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: 2,
+                  width: `${Math.round((savedCount / results.length) * 100)}%`,
+                  background: savedCount === results.length ? 'var(--green)' : 'var(--accent)',
+                  transition: 'width 400ms ease-out',
+                }}/>
+              </div>
+            )}
+
             {results.length === 0
-              ? <EmptyState icon="ti-calendar-off" title="No fixtures yet" action={<Link to="/predict" className="btn btn-primary btn-sm">Go to predictions</Link>}/>
+              ? <div className="px-4 pb-4">
+                  <EmptyState icon="ti-calendar-off" title="No fixtures yet"
+                    action={<Link to="/predict" className="btn btn-primary btn-sm">Go to predictions</Link>}/>
+                </div>
               : results.map(f => {
-                  const cfg = ocfg[f.outcome || 'upcoming']
                   const hasResult = f.home_score !== null
+                  const points = f.outcome === 'exact'
+                    ? (rules?.correct_result_points || 2) + (rules?.exact_score_points || 3)
+                    : f.outcome === 'result' ? (rules?.correct_result_points || 2) : 0
+
                   return (
-                    <Card key={f.id} className="p-3.5 mb-2.5" style={{ background: 'var(--bg-elevated)' }}>
-                      <p className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>
-                        {f.home_team} <span style={{ color: 'var(--txt-muted)', fontWeight: 400 }}>vs</span> {f.away_team}
-                      </p>
-                      {hasResult && <p className="text-xs font-bold mt-0.5" style={{ color: 'var(--green)' }}>Result: {f.home_score}–{f.away_score}</p>}
-                      <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
-                        <p className="text-xs" style={{ color: 'var(--txt-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {f.myPrediction
-                            ? `You predicted: ${f.myPrediction.predicted_home}–${f.myPrediction.predicted_away}`
-                            : hasResult ? '' : format(new Date(f.kickoff_time),'EEE HH:mm')}
+                    <Link key={f.id} to="/predict"
+                      className="flex items-center gap-2.5 px-4 py-2.5"
+                      style={{ borderTop: '1px solid rgba(255,255,255,0.04)', textDecoration: 'none' }}>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p className="text-sm" style={{
+                          color: 'var(--txt-primary)', fontWeight: 500,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {f.home_team} <span style={{ color: 'var(--txt-muted)', fontWeight: 400 }}>vs</span> {f.away_team}
                         </p>
-                        <div className="flex items-center gap-2" style={{ flexShrink: 0, marginLeft: 'auto' }}>
-                          <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                          {f.outcome && f.outcome !== 'upcoming' && f.outcome !== 'no_prediction' && (
-                            <span className="text-xs font-medium" style={{ color: f.outcome==='exact'?'var(--green)':f.outcome==='miss'?'var(--red)':'var(--accent)' }}>
-                              {f.outcome==='exact'?`+${(rules?.correct_result_points||2)+(rules?.exact_score_points||3)}`:f.outcome==='result'?`+${rules?.correct_result_points||2}`:'0'} pts
-                            </span>
-                          )}
-                        </div>
+                        <p style={{ fontSize: 10.5, color: 'var(--txt-muted)', marginTop: 2 }}>
+                          {hasResult
+                            ? `Result ${f.home_score}–${f.away_score}`
+                            : format(new Date(f.kickoff_time), 'EEE HH:mm')}
+                        </p>
                       </div>
-                    </Card>
+
+                      {/* The score you entered, in the same boxes as the Predict
+                          screen so the two read as the same thing. A dashed
+                          empty box says "nothing here yet" without a word. */}
+                      <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
+                        <ScoreBox v={f.myPrediction?.predicted_home}/>
+                        <ScoreBox v={f.myPrediction?.predicted_away}/>
+                      </div>
+
+                      {/* Points, once there is a result to score against. */}
+                      {hasResult && f.myPrediction && (
+                        <span className="text-xs font-semibold" style={{
+                          flexShrink: 0, minWidth: 28, textAlign: 'right',
+                          color: points > 0 ? 'var(--green)' : 'var(--txt-muted)',
+                        }}>
+                          {points > 0 ? `+${points}` : '0'}
+                        </span>
+                      )}
+                    </Link>
                   )
                 })
             }
@@ -452,5 +511,23 @@ export default function Dashboard() {
         </>
       )}
     </div>
+  )
+}
+
+/** One score digit, matching the boxes on the Predict screen. Dashed and
+ *  muted when nothing has been entered. */
+function ScoreBox({ v }) {
+  const empty = v === undefined || v === null
+  return (
+    <span style={{
+      width: 26, height: 26, borderRadius: 6,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 13, fontWeight: 700,
+      background: 'var(--bg-elevated)',
+      border: empty ? '1px dashed var(--border-med)' : '1px solid var(--border-med)',
+      color: empty ? 'var(--txt-muted)' : 'var(--txt-primary)',
+    }}>
+      {empty ? '–' : v}
+    </span>
   )
 }
