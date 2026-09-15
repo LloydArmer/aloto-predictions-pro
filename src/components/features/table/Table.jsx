@@ -156,8 +156,17 @@ function OverallPane({ competitionId, userId }) {
                         <tr className={isMe?'highlight':''}>
                           <td style={{ paddingLeft:14 }}><Pos n={i+1}/></td>
                           <td className="name-cell">
-                            <p className="text-sm font-medium" style={{ color:'var(--txt-primary)' }}>
-                              {p.display_name}
+                            {/* Was rendering the full name with no shortening at
+                                all, so a long one simply pushed the numeric
+                                columns off the screen. */}
+                            <p className="text-sm font-medium" title={p.display_name}
+                              style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                                <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20}/>
+                                <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                  {fitName(p.display_name, 10)}
+                                </span>
+                              </span>
                             </p>
                           </td>
                           <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{correctResults}</td>
@@ -350,7 +359,7 @@ function MonthlyPane({ competitionId, months, userId }) {
                           <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
                     <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20}/>
                     <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                      {fitName(p.display_name)}
+                      {fitName(p.display_name, 10)}
                     </span>
                   </span>
                         </p>
@@ -457,7 +466,7 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
                   <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
                     <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20}/>
                     <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                      {fitName(p.display_name)}
+                      {fitName(p.display_name, 10)}
                     </span>
                   </span>
                   {/* A COUNT, not one chip per full house. Someone with a good
@@ -603,7 +612,7 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
                   <p className="text-sm font-medium" title={s.profiles?.display_name}
                     style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                     <span className="mr-1.5" style={{ color:'var(--txt-muted)', fontSize:11 }}>{i+1}</span>
-                    {fitName(s.profiles?.display_name)}
+                    {fitName(s.profiles?.display_name, 10)}
                   </p>
                 </td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.played}</td>
