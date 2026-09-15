@@ -54,7 +54,7 @@ export default function MatchupCard({ competitionId, userId }) {
 
   /* ---- Cup tie ---- */
   if (data.kind === 'tie') {
-    const { me, them, gameweek, competitionName, roundLabel, live, inPlayCount } = data
+    const { me, them, gameweek, competitionName, roundLabel, live, inPlayCount, fromOtherCompetition } = data
     const leading = me.points > them.points
     const level = me.points === them.points
 
@@ -63,13 +63,22 @@ export default function MatchupCard({ competitionId, userId }) {
         <div className="flex items-center gap-2 px-3.5 py-2.5"
           style={{ borderBottom: '1px solid var(--border)' }}>
           {live && <span className="live-dot" aria-hidden="true"/>}
-          <p className="text-xs font-semibold flex-1" style={{ color: 'var(--txt-primary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {competitionName}
-          </p>
-          <span className="text-xs font-bold px-2 py-0.5 rounded"
-            style={live
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="text-xs font-semibold" style={{ color: 'var(--txt-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {competitionName}
+            </p>
+            {fromOtherCompetition && (
+              <p style={{ fontSize: 10, color: 'var(--txt-muted)', marginTop: 1 }}>
+                Scored from this gameweek
+              </p>
+            )}
+          </div>
+          <span className="text-xs font-bold px-2 py-0.5 rounded" style={{
+            flexShrink: 0,
+            ...(live
               ? { background: 'var(--amber-dim)', color: 'var(--amber)' }
-              : { background: 'var(--bg-elevated)', color: 'var(--txt-muted)' }}>
+              : { background: 'var(--bg-elevated)', color: 'var(--txt-muted)' }),
+          }}>
             {gameweek}{live ? ` · ${inPlayCount} LIVE` : ''}
           </span>
         </div>
@@ -209,7 +218,14 @@ async function build(competitionId, userId) {
 
     return {
       kind: 'tie',
-      competitionName: comp?.name ?? '',
+      // The tie's OWN competition, not the one on screen. A cup runs on another
+      // competition's gameweeks, so the Champions League tie is decided by the
+      // Predictions League's fixtures — labelling it with whatever happened to
+      // be selected was simply wrong.
+      competitionName: opponent.competition_name || comp?.name || '',
+      // True when the tie belongs elsewhere. Worth saying out loud rather than
+      // letting someone wonder why their league has a cup round in it.
+      fromOtherCompetition: !!opponent.competition_id && opponent.competition_id !== competitionId,
       gameweek: gw.number,
       roundLabel: opponent.round_label,
       live, inPlayCount,
