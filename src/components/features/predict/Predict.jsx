@@ -351,14 +351,43 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
         <p className="text-sm font-semibold mb-3" style={{ color:'var(--txt-primary)' }}>Results</p>
         {fixtures.length === 0
           ? <p className="text-xs" style={{ color:'var(--txt-muted)' }}>No fixtures this gameweek</p>
-          : fixtures.map(f => (
-              <div key={f.id} className="flex items-center justify-between py-2.5 border-b last:border-0 gap-3" style={{ borderColor:'var(--border)' }}>
-                <span className="text-sm" style={{ color:'var(--txt-primary)', minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.home_team} vs {f.away_team}</span>
-                <span className="text-sm font-bold" style={{ color: f.home_score !== null ? 'var(--green)' : 'var(--txt-muted)', minWidth: 66, textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                  {f.home_score !== null ? `${f.home_score} – ${f.away_score}` : format(new Date(f.kickoff_time), 'EEE d MMM, HH:mm')}
-                </span>
-              </div>
-            ))
+          : fixtures.map(f => {
+              const played = f.home_score !== null
+              return (
+                // The fixture gets the full width of its own line, with the
+                // kick-off small underneath. Sharing one line with a date meant
+                // the date took a third of the row and anything longer than
+                // "Everton vs Wolves" was cut off mid-word.
+                //
+                // Same shape as the dashboard predictions list, so the two read
+                // as the same kind of thing.
+                <div key={f.id} className="flex items-center gap-3 py-2.5 border-b last:border-0"
+                  style={{ borderColor: 'var(--border)' }}>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>
+                      {f.home_team} <span style={{ color: 'var(--txt-muted)' }}>vs</span> {f.away_team}
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--txt-muted)', marginTop: 2 }}>
+                      {format(new Date(f.kickoff_time), 'EEE d MMM, HH:mm')}
+                    </p>
+                  </div>
+
+                  {/* The score, once there is one. Before kick-off there is
+                      nothing to put here — the time is already on the line
+                      above, and repeating it just to fill the space was what
+                      squeezed the fixture in the first place. */}
+                  {played && (
+                    <span className="text-sm font-bold" style={{
+                      color: 'var(--green)', flexShrink: 0,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      {f.home_score} – {f.away_score}
+                    </span>
+                  )}
+                </div>
+              )
+            })
         }
       </Card>
 
