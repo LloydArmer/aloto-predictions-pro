@@ -189,16 +189,20 @@ export default function SplashScreen({ onDone }) {
           <span style={LETTER}>A</span>
           <span style={LETTER}>L</span>
 
-          {/* The ball stands in for the first O. */}
+          {/* The ball stands in for the first O. Sized to the cap height of
+              the letters rather than to itself — a circle set to the same
+              nominal size as a letter reads as larger, so it takes the letter
+              size and no more. */}
           <img src="/splash-ball.png" alt="" style={{
-            width: 'clamp(46px, 17.5vw, 98px)', height: 'auto', display: 'block',
+            width: O_SIZE, height: O_SIZE, display: 'block',
           }}/>
 
           <span style={LETTER}>T</span>
 
-          {/* And a pitch for the second, as on the logo. */}
+          {/* And a pitch for the second, as on the logo. Same size as the ball
+              so the two O's match each other as well as the letters. */}
           <svg viewBox="0 0 100 100" style={{
-            width: 'clamp(46px, 17.5vw, 98px)', height: 'clamp(46px, 17.5vw, 98px)', display: 'block',
+            width: O_SIZE, height: O_SIZE, display: 'block',
           }}>
             <circle cx="50" cy="50" r="48" fill="#1f7a34"/>
             <g fill="none" stroke="#fff" strokeWidth="2.6" opacity="0.95">
@@ -254,8 +258,16 @@ export default function SplashScreen({ onDone }) {
   )
 }
 
+const LETTER_SIZE = 'clamp(42px, 16.5vw, 92px)'
+
+/* The two O's are drawn, not typed, so they need an explicit size.
+   0.78 of the letter size matches the cap height of the font — a capital A is
+   not as tall as its nominal point size, and matching the nominal size makes
+   the round shapes sit visibly proud of the letters beside them. */
+const O_SIZE = 'clamp(33px, 12.9vw, 72px)'
+
 const LETTER = {
-  fontSize: 'clamp(42px, 16.5vw, 92px)',
+  fontSize: LETTER_SIZE,
   fontWeight: 800,
   color: '#fff',
   lineHeight: 1,
