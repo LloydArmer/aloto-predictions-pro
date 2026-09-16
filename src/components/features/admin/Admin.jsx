@@ -6,7 +6,7 @@ import { supabase } from '../../../lib/supabase'
 import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound, scoreOnePrediction, resolvePointRules } from '../../../lib/scoring'
 import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
-import { Card, Button, Input, Select, SectionLabel, Badge, EmptyState, Spinner } from '../../ui'
+import { Card, Button, Input, Select, Badge, EmptyState, Spinner } from '../../ui'
 import CompetitionIcon, { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import GameweekFixtureLink from './GameweekFixtureLink'
 import FixtureBrowser from './FixtureBrowser'
@@ -46,7 +46,11 @@ export default function Admin() {
   )
 
   return (
-    <div className="max-w-2xl">
+    // aloto-admin scopes the card and input styling below to these screens
+    // only — the admin pages are far denser with controls than the rest of the
+    // app and need more separation than a dashboard does.
+    <div className="max-w-2xl aloto-admin">
+      <AdminStyles />
       <h1 className="text-base font-medium mb-3" style={{ color: 'var(--txt-primary)' }}>Admin</h1>
 
       {/* One scrolling line rather than wrapping to three rows on a phone. */}
@@ -155,7 +159,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
   return (
     <div>
       <Card className="p-4 mb-5">
-        <SectionLabel className="mb-3">Create competition</SectionLabel>
+        <AdminLabel className="mb-3">Create competition</AdminLabel>
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name</p>
@@ -179,7 +183,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
         </form>
       </Card>
 
-      <SectionLabel className="mb-2">Your competitions</SectionLabel>
+      <AdminLabel className="mb-2">Your competitions</AdminLabel>
       {loading ? <div className="flex justify-center py-10"><Spinner /></div>
         : competitions.length === 0 ? <EmptyState icon="ti-trophy" title="No competitions yet" description="Create your first one above"/>
         : competitions.map(c => (
@@ -293,7 +297,7 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
     const leagueOptions = competitions.filter(c => c.format === 'league')
     return (
       <Card className="p-4">
-        <SectionLabel className="mb-2">Points & bonus rules</SectionLabel>
+        <AdminLabel className="mb-2">Points & bonus rules</AdminLabel>
         <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>{comp?.format === 'group_knockout' ? 'Group + Knockout' : 'Knockout'} competitions don't have their own rules — pick which League's rules govern scoring here.</p>
         <div className="mb-4">
           <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Use points rules from</p>
@@ -304,7 +308,7 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
           {leagueOptions.length === 0 && <p className="text-xs mt-1" style={{ color: 'var(--amber)' }}>No League-format competitions exist yet to take scoring from.</p>}
         </div>
         <div className="mt-4 pt-4" style={{ borderTop: '0.5px solid var(--border)' }}>
-          <SectionLabel className="mb-2">Triple Points</SectionLabel>
+          <AdminLabel className="mb-2">Triple Points</AdminLabel>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Triple Points only applies in League competitions. If participants are also in a League that uses Triple Points, you can block it from affecting their scores in this competition.</p>
           <label className="flex items-center gap-2.5 cursor-pointer">
             <input type="checkbox" checked={tpBlocked} onChange={e => saveTpBlock(e.target.checked)} />
@@ -331,7 +335,7 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
 
   return (
     <Card className="p-4">
-      <SectionLabel className="mb-3">Points & bonus rules</SectionLabel>
+      <AdminLabel className="mb-3">Points & bonus rules</AdminLabel>
       {fields.map(f => (
         <div key={f.key} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
           <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{f.label}</span>
@@ -394,7 +398,7 @@ function PredictionTracker({ competitionId, gameweekId, gwLabel }) {
 
   return (
     <Card className="p-4 mb-4">
-      <SectionLabel className="mb-3">Prediction tracker — {gwLabel}</SectionLabel>
+      <AdminLabel className="mb-3">Prediction tracker — {gwLabel}</AdminLabel>
       <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Shows who has saved at least one prediction. Actual scores are hidden.</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         {data.map(p => (
@@ -540,7 +544,7 @@ function GameweeksTab({ competitionId, competitions }) {
   return (
     <div>
       <Card className="p-4 mb-4">
-        <SectionLabel className="mb-3">Add a gameweek</SectionLabel>
+        <AdminLabel className="mb-3">Add a gameweek</AdminLabel>
         <form onSubmit={addGameweek} className="flex items-end gap-2">
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Gameweek label</p>
@@ -569,6 +573,14 @@ function GameweeksTab({ competitionId, competitions }) {
 
               {/* Band 1 — identity and status */}
               <div className="flex items-center gap-2 flex-wrap mb-3">
+                {/* The rule carries the status colour, so a glance down a list
+                    of gameweeks shows which is live without reading a word. */}
+                <span style={{
+                  width: 3, height: 15, borderRadius: 2, flexShrink: 0,
+                  background: gw.status === 'active' ? 'var(--green)'
+                    : gw.status === 'completed' ? 'var(--txt-muted)'
+                    : 'var(--accent)',
+                }}/>
                 <span className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>{gw.number}</span>
 
                 {/* Whose gameweek this actually is. Only shown when it belongs
@@ -593,7 +605,18 @@ function GameweeksTab({ competitionId, competitions }) {
 
               {/* Band 2 — settings, each with a label above it so the fields
                   line up in a column instead of trailing off a wrapped row. */}
-              <div className="mb-3 p-2.5 rounded-md" style={{ background: 'var(--bg-elevated)' }}>
+              {/* Darker than the card, not lighter. A lighter panel reads as
+                  sitting ON TOP of its parent; darker reads as inside it,
+                  which is what it is. */}
+              <div className="mb-3 p-3 rounded-lg" style={{
+                background: 'var(--bg-base, #0d0f14)',
+                border: '1px solid var(--border)',
+              }}>
+                <p className="text-xs font-semibold mb-2.5" style={{
+                  color: 'var(--txt-muted)', letterSpacing: '0.1em', textTransform: 'uppercase',
+                }}>
+                  Gameweek settings
+                </p>
                 <div className="flex flex-wrap gap-x-4 gap-y-2.5">
                   <div>
                     <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Month</p>
@@ -711,7 +734,7 @@ function GameweeksTab({ competitionId, competitions }) {
 
       {[...new Set(gws.map(g => g.month_key).filter(Boolean))].length > 0 && (
         <Card className="p-4 mt-4">
-          <SectionLabel className="mb-2">Monthly closure</SectionLabel>
+          <AdminLabel className="mb-2">Monthly closure</AdminLabel>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Close a month once every gameweek that belongs to it is done — this is what lets the Table page's Monthly tab safely declare a winner.</p>
           {[...new Set(gws.map(g => g.month_key).filter(Boolean))].sort().map(monthKey => {
             const isClosed = closedMonths.includes(monthKey)
@@ -932,12 +955,12 @@ function ConfigTab({ competitionId, competitions }) {
     <div>
       {comp?.format === 'group_knockout' && (
         <>
-          <SectionLabel className="mb-3">Group stage</SectionLabel>
+          <AdminLabel className="mb-3">Group stage</AdminLabel>
           <GroupStageTab competitionId={competitionId} competitions={competitions} />
           <div className="my-6" style={{ borderTop: '0.5px solid var(--border)' }} />
         </>
       )}
-      <SectionLabel className="mb-3">Cup competition</SectionLabel>
+      <AdminLabel className="mb-3">Cup competition</AdminLabel>
       <BracketTab competitionId={competitionId} competitions={competitions} />
     </div>
   )
@@ -1154,7 +1177,7 @@ function GroupStageTab({ competitionId, competitions }) {
     <div>
       {fixtures.length === 0 && (
         <Card className="p-4 mb-4">
-          <SectionLabel className="mb-2">Generate group fixtures</SectionLabel>
+          <AdminLabel className="mb-2">Generate group fixtures</AdminLabel>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Creates a fair round-robin schedule for all {participants.length} participants, alternating home/away, grouped into rounds you can assign gameweeks to.</p>
           <div className="flex items-end gap-2">
             <div>
@@ -1266,7 +1289,7 @@ function GroupStageTab({ competitionId, competitions }) {
 
       {standings.length > 0 && (
         <Card className="p-4 mt-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
-          <SectionLabel className="mb-2">Progress to knockout</SectionLabel>
+          <AdminLabel className="mb-2">Progress to knockout</AdminLabel>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>Once the group table is where you want it, set who qualifies directly, who's eliminated, and which round the rest play into.</p>
           <div className="flex flex-wrap gap-2 items-end mb-3">
             <div>
@@ -1605,7 +1628,7 @@ function BracketTab({ competitionId, competitions }) {
     <div>
       {!hasAnyMatches && preview && (
         <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.35)' }}>
-          <SectionLabel className="mb-2">Generate knockout bracket</SectionLabel>
+          <AdminLabel className="mb-2">Generate knockout bracket</AdminLabel>
           {preview.playoffCount === 0
             ? <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>{preview.N} participants — a clean bracket. {preview.N / 2} matches from <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong> to the Final, all linked automatically.</p>
             : <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>{preview.N} participants — <strong>{preview.byeCount}</strong> get a bye to <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong>, and <strong>{preview.playoffCount}</strong> playoff match{preview.playoffCount !== 1 ? 'es' : ''} decide who joins them. All subsequent rounds are linked automatically.</p>
@@ -1649,7 +1672,7 @@ function BracketTab({ competitionId, competitions }) {
           return (
             <div key={r} className="mb-5">
               <div className="flex items-center justify-between mb-2">
-                <SectionLabel>{roundLabel(r)}</SectionLabel>
+                <AdminLabel>{roundLabel(r)}</AdminLabel>
                 <Badge variant={rResolved ? 'result' : 'upcoming'}>{rResolved ? 'Complete' : 'In progress'}</Badge>
               </div>
               {rMatches.map(m => {
@@ -1760,7 +1783,7 @@ function BracketTab({ competitionId, competitions }) {
 
       {hasAnyMatches && currentRoundResolved && nextRound && !nextRoundHasMatches && (
         <Card className="p-4 mt-2" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.35)' }}>
-          <SectionLabel className="mb-2">Draw {roundLabel(nextRound)}</SectionLabel>
+          <AdminLabel className="mb-2">Draw {roundLabel(nextRound)}</AdminLabel>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
             {roundLabel(currentRound)} is complete. {getNextRoundPool().length} participants will be randomly drawn: {getNextRoundPool().map(id => participants.find(p => p.user_id === id)?.profiles?.display_name).filter(Boolean).join(', ')}.
           </p>
@@ -1770,7 +1793,7 @@ function BracketTab({ competitionId, competitions }) {
 
       {hasAnyMatches && (
         <Card className="p-4 mt-4">
-          <SectionLabel className="mb-2">Gameweek mapping</SectionLabel>
+          <AdminLabel className="mb-2">Gameweek mapping</AdminLabel>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Assign a gameweek to each match individually above, or set a round-level mapping here.</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {gameweeks.length === 0 && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>No gameweeks yet — add some in the Gameweeks tab first</span>}
@@ -2081,7 +2104,7 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
       />
 
       <Card className="p-4 mb-4">
-        <SectionLabel className="mb-3">Add a player manually</SectionLabel>
+        <AdminLabel className="mb-3">Add a player manually</AdminLabel>
         {/* Labelled fields, and the channel picker is gone. It offered
             "Auto-send SMS" and "Auto-send WhatsApp", neither of which works —
             there is no Twilio account, so choosing them sent nothing and said
@@ -2108,7 +2131,7 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
       </Card>
 
       {loading ? <div className="flex justify-center py-10"><Spinner /></div> : <>
-        <SectionLabel className="mb-2">Participants ({participants.length})</SectionLabel>
+        <AdminLabel className="mb-2">Participants ({participants.length})</AdminLabel>
         {participants.length === 0
           ? <p className="text-xs mb-4" style={{ color: 'var(--txt-muted)' }}>No participants yet</p>
           : participants.map(p => (
@@ -2129,7 +2152,7 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
         }
 
         {invitations.length > 0 && <>
-          <SectionLabel className="mb-2 mt-4">Pending invites ({invitations.length})</SectionLabel>
+          <AdminLabel className="mb-2 mt-4">Pending invites ({invitations.length})</AdminLabel>
           {invitations.map(inv => (
             <div key={inv.id} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
               <div style={{ minWidth: 0, flex: '1 1 140px' }}>
@@ -2155,3 +2178,127 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
     </div>
   )
 }
+
+/* ── Admin styling ────────────────────────────────────────────────────────
+
+   The admin screens were a stack of near-identical dark rectangles: headings
+   in the same muted grey as body text, card borders barely distinguishable
+   from the background, and nested panels drawn LIGHTER than their parent so
+   they read as sitting on top rather than inside.
+
+   Three small components fix the hierarchy without adding decoration.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A section heading with a coloured rule beside it.
+ *
+ * Three pixels of colour is the cheapest way to make a heading read as a
+ * heading rather than as another line of muted text — and it lets status
+ * carry colour without a second element.
+ */
+function AdminLabel({ children, className = '', tone = 'accent' }) {
+  const colour = tone === 'green' ? 'var(--green)'
+    : tone === 'amber' ? 'var(--amber)'
+    : tone === 'muted' ? 'var(--border-med)'
+    : 'var(--accent)'
+
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <span style={{ width: 3, height: 13, borderRadius: 2, background: colour, flexShrink: 0 }} />
+      <p className="text-xs font-bold" style={{
+        color: 'var(--txt-second)', letterSpacing: '0.12em', textTransform: 'uppercase', margin: 0,
+      }}>
+        {children}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * A card with its own title bar.
+ *
+ * Separating "what this card is" from "what is in it" is most of the
+ * improvement — previously the heading floated in the same space as the
+ * controls beneath it.
+ */
+function AdminCard({ title, tone, children, className = '', right }) {
+  return (
+    <div className={`mb-4 ${className}`} style={ADMIN_CARD}>
+      {title && (
+        <div className="flex items-center gap-2 px-3.5 py-2.5" style={ADMIN_HEAD}>
+          <AdminLabel tone={tone}>{title}</AdminLabel>
+          {right && <span style={{ marginLeft: 'auto' }}>{right}</span>}
+        </div>
+      )}
+      <div className="p-3.5">{children}</div>
+    </div>
+  )
+}
+
+/** A panel INSIDE a card. Darker than its parent, not lighter — that is what
+ *  makes it read as contained rather than stacked on top. */
+function AdminPanel({ title, children, className = '' }) {
+  return (
+    <div className={`rounded-lg p-3 ${className}`} style={{
+      background: 'var(--bg-base, #0d0f14)',
+      border: '1px solid var(--border)',
+    }}>
+      {title && (
+        <p className="text-xs font-semibold mb-2.5" style={{
+          color: 'var(--txt-muted)', letterSpacing: '0.1em', textTransform: 'uppercase',
+        }}>
+          {title}
+        </p>
+      )}
+      {children}
+    </div>
+  )
+}
+
+const ADMIN_CARD = {
+  background: 'var(--bg-surface, #141822)',
+  // A step brighter than the old border, plus a hairline highlight along the
+  // top and a soft shadow beneath. Cards lift off the background instead of
+  // dissolving into it.
+  border: '1px solid var(--border-med)',
+  borderRadius: 14,
+  overflow: 'hidden',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 12px rgba(0,0,0,0.35)',
+}
+
+const ADMIN_HEAD = {
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.035), transparent)',
+  borderBottom: '1px solid var(--border-med)',
+}
+
+/**
+ * Card styling for the admin screens only.
+ *
+ * Scoped under .aloto-admin so the rest of the app keeps its existing look —
+ * these screens are dense with controls and need more separation than a
+ * dashboard does.
+ */
+function AdminStyles() {
+  return (
+    <style>{`
+      .aloto-admin .card {
+        border-color: var(--border-med);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 12px rgba(0,0,0,0.35);
+      }
+      /* A card nested inside another goes darker, so depth reads correctly. */
+      .aloto-admin .card .card {
+        background: var(--bg-base, #0d0f14);
+        border-color: var(--border);
+        box-shadow: none;
+      }
+      /* Inputs gain a little more edge too — at this density a field with a
+         near-invisible border is hard to find. */
+      .aloto-admin input,
+      .aloto-admin select,
+      .aloto-admin textarea {
+        border-color: var(--border-med);
+      }
+    `}</style>
+  )
+}
+
