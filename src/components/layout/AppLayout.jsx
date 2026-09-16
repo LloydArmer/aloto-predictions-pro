@@ -46,13 +46,40 @@ export default function AppLayout({ children }) {
           underneath the clock and battery. */}
       <nav className="sticky top-0 z-40 app-top-nav"
         style={{ borderBottom: '0.5px solid var(--border)' }}>
+        {/* Written as a media query rather than a Tailwind arbitrary
+            breakpoint, which needs 3.2+ and would silently do nothing on an
+            older version — leaving the name squashed against the avatar on
+            every small phone with no clue why. */}
+        <style>{`
+          @media (max-width: 379px) {
+            .aloto-brand-sub { display: none; }
+          }
+        `}</style>
         {/* 46px on mobile rather than 52 — with a tab bar at the bottom too,
             every pixel of chrome is one less of content. */}
         <div className="max-w-5xl mx-auto px-4 flex items-center h-[46px] md:h-[52px]">
 
-          {/* Brand */}
-          <div className="flex items-center gap-2.5 mr-5 flex-shrink-0">
-            <img src="/icon.png" alt="ALOTO Prediction Pro" width={26} height={26} style={{ borderRadius: 6 }} />
+          {/* Brand — icon, then the wordmark.
+              "Prediction Pro" is hidden on the narrowest phones: at 390px the
+              bar also carries an avatar and a menu, and the full name pushed
+              them together. ALOTO alone still identifies the app, and the
+              smaller line returns the moment there is room. */}
+          <div className="flex items-baseline gap-2 mr-5 flex-shrink-0" style={{ minWidth: 0 }}>
+            <img src="/icon.png" alt="" width={26} height={26}
+              style={{ borderRadius: 6, alignSelf: 'center', flexShrink: 0 }} />
+
+            <span className="font-extrabold" style={{
+              fontSize: 16, letterSpacing: '0.06em', color: 'var(--txt-primary)', lineHeight: 1,
+            }}>
+              ALOTO
+            </span>
+
+            <span className="aloto-brand-sub font-bold" style={{
+              fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+              color: 'var(--txt-second)', lineHeight: 1, whiteSpace: 'nowrap',
+            }}>
+              Prediction Pro
+            </span>
           </div>
 
           {/* Desktop links */}
