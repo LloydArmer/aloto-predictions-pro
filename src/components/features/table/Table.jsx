@@ -584,41 +584,47 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
   return (
     <Card className="overflow-hidden p-0">
       <div className="overflow-x-auto">
-        {/* Eight numeric columns can't be collapsed without losing the point of
-            a league table, so this one still scrolls — but the name column is
-            pinned, so a row of numbers always has a player attached to it. */}
-        <table className="data-table w-full" style={{ minWidth: 560 }}>
+        {/* Five numeric columns instead of eight, so the whole table fits a
+            phone with nothing to scroll and nothing pinned.
+            
+            W, D and L are gone. They are interesting but not decisive — what
+            settles a group is points, then goal difference, and both of those
+            remain. Carrying all eight meant Pts, the single most important
+            number, sat off the right-hand edge where nobody saw it.
+            
+            This now matches the group table on the Admin screen, which has
+            always shown these five. */}
+        <table className="data-table w-full">
           <thead><tr>
-            <th className="sticky-col" style={{ width: 118, paddingLeft: 12 }}>Participant</th>
-            <th style={{ width: 40, textAlign: 'right' }}>P</th>
-            <th style={{ width: 36, textAlign: 'right' }}>W</th>
-            <th style={{ width: 36, textAlign: 'right' }}>D</th>
-            <th style={{ width: 36, textAlign: 'right' }}>L</th>
-            <th style={{ width: 50, textAlign: 'right' }}>PF</th>
-            <th style={{ width: 50, textAlign: 'right' }}>PA</th>
-            <th style={{ width: 56, textAlign: 'right' }}>Diff</th>
-            <th style={{ width: 50, textAlign: 'right', paddingRight: 14 }}>Pts</th>
+            <th style={{ paddingLeft: 12 }}>Participant</th>
+            <th style={{ width: 34, textAlign: 'right' }}>P</th>
+            <th style={{ width: 44, textAlign: 'right' }}>PF</th>
+            <th style={{ width: 44, textAlign: 'right' }}>PA</th>
+            <th style={{ width: 48, textAlign: 'right' }}>Diff</th>
+            <th style={{ width: 44, textAlign: 'right', paddingRight: 12 }}>Pts</th>
           </tr></thead>
           <tbody>
             {standings.map((s,i) => (
               <tr key={s.user_id} className={s.user_id === userId ? 'highlight' : ''}>
                 {/* Position folded into the pinned cell — a separate # column
                     would eat a third of the width that stays on screen. */}
-                <td className="sticky-col" style={{ paddingLeft: 12, maxWidth: 0 }}>
+                <td style={{ paddingLeft: 12, maxWidth: 0 }}>
                   {/* Shortened, and no "(you)" label — the row is already
                       highlighted in blue, so the label was costing four
                       characters to repeat something you can see. That's what
                       pushed "Lloyd Armer (you)" into "Lloyd Armer (…". */}
-                  <p className="text-sm font-medium" title={s.profiles?.display_name}
-                    style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    <span className="mr-1.5" style={{ color:'var(--txt-muted)', fontSize:11 }}>{i+1}</span>
-                    {fitName(s.profiles?.display_name, 10)}
-                  </p>
+                  {/* Three columns lighter, so the name column can carry a kit
+                      like the other tables do — and a longer name besides. */}
+                  <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                    <span style={{ color:'var(--txt-muted)', fontSize:11, flexShrink:0, minWidth:14 }}>{i+1}</span>
+                    <PlayerMark kit={s.profiles?.badge_kit} displayName={s.profiles?.display_name} size={20}/>
+                    <span className="text-sm font-medium" title={s.profiles?.display_name}
+                      style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {fitName(s.profiles?.display_name, 12)}
+                    </span>
+                  </span>
                 </td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.played}</td>
-                <td className="text-xs text-right" style={{ color:'var(--green)' }}>{s.wins}</td>
-                <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.draws}</td>
-                <td className="text-xs text-right" style={{ color:'var(--red)' }}>{s.losses}</td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.points_for}</td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.points_against}</td>
                 <td className="text-xs text-right" style={{ color: s.points_diff >= 0 ? 'var(--green)' : 'var(--red)' }}>{s.points_diff > 0 ? '+' : ''}{s.points_diff}</td>
