@@ -6,15 +6,12 @@ import Shirt, { PATTERNS, KIT_COLOURS, kitSpec, parseKit } from '../../ui/Shirt'
 import toast from 'react-hot-toast'
 
 /**
- * Pick a kit — a pattern and two colours.
+ * Pick a kit — pattern, shirt colours, sleeves and shorts.
  *
  * Built for the Dynamic Island, whose compact states are roughly 50 pixels a
- * side. A name doesn't fit there, not even abbreviated, but a shirt and a score
+ * side. A name doesn't fit there, not even abbreviated, but a kit and a score
  * do. It reads well in cup brackets and standings too, where the name column is
  * already the tightest thing on screen.
- *
- * A drawn shirt rather than an emoji because emoji offers one plain 👕 with no
- * way to colour it — twelve players would all have the same badge.
  *
  * Optional throughout: initials remain the fallback, so nobody has to choose a
  * kit before they can use the app.
@@ -31,16 +28,22 @@ export default function BadgePicker() {
   const [saving, setSaving] = useState(false)
 
   const current = parseKit(profile?.badge_kit)
-  const [pattern, setPattern] = useState(current?.pattern ?? 'plain')
-  const [primary, setPrimary] = useState(current?.primary ?? '#e63946')
+  const [pattern, setPattern]     = useState(current?.pattern ?? 'plain')
+  const [primary, setPrimary]     = useState(current?.primary ?? '#e63946')
   const [secondary, setSecondary] = useState(current?.secondary ?? '#ffffff')
+  // Null means "same as the shirt", which is how most kits actually are.
+  const [sleeve, setSleeve]       = useState(current?.sleeve ?? null)
+  const [shorts, setShorts]       = useState(current?.shorts ?? null)
 
   useEffect(() => {
     const k = parseKit(profile?.badge_kit)
-    if (k) { setPattern(k.pattern); setPrimary(k.primary); setSecondary(k.secondary) }
+    if (k) {
+      setPattern(k.pattern); setPrimary(k.primary); setSecondary(k.secondary)
+      setSleeve(k.sleeve); setShorts(k.shorts)
+    }
   }, [profile?.badge_kit])
 
-  const preview = kitSpec(pattern, primary, secondary)
+  const preview = kitSpec(pattern, primary, secondary, sleeve, shorts)
   const needsSecondary = pattern !== 'plain'
 
   const initials = profile?.display_name
@@ -68,7 +71,7 @@ export default function BadgePicker() {
         <div style={{ minWidth: 0 }}>
           <p className="text-xs font-medium mb-1" style={{ color: 'var(--txt-muted)' }}>Your kit</p>
           <p className="text-xs" style={{ color: 'var(--txt-second)', lineHeight: 1.5 }}>
-            Shown where your name won't fit — cup brackets, and the live score on your lock screen.
+            Shown where your name won't fit — cup ties, tables, and the live score on your lock screen.
           </p>
         </div>
 
@@ -77,11 +80,11 @@ export default function BadgePicker() {
         <button onClick={() => setOpen(o => !o)}
           className="flex items-center justify-center flex-shrink-0"
           style={{
-            width: 50, height: 50, borderRadius: 12,
+            width: 54, height: 54, borderRadius: 12,
             background: 'var(--bg-elevated)', border: '0.5px solid var(--border-med)',
             fontSize: 15, color: 'var(--txt-primary)',
           }}>
-          {profile?.badge_kit ? <Shirt spec={profile.badge_kit} size={34}/> : initials}
+          {profile?.badge_kit ? <Shirt spec={profile.badge_kit} size={32}/> : initials}
         </button>
       </div>
 
@@ -89,9 +92,9 @@ export default function BadgePicker() {
         <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
 
           {/* Live preview, large. The whole point is how it looks, so it is
-              shown at a size you can actually judge rather than as a swatch. */}
+              shown at a size you can judge rather than as a swatch. */}
           <div className="flex justify-center mb-3">
-            <Shirt spec={preview} size={72}/>
+            <Shirt spec={preview} size={78}/>
           </div>
 
           <p className="text-xs mb-1.5" style={{ color: 'var(--txt-muted)' }}>Pattern</p>
@@ -109,7 +112,7 @@ export default function BadgePicker() {
             ))}
           </div>
 
-          <p className="text-xs mb-1.5" style={{ color: 'var(--txt-muted)' }}>Main colour</p>
+          <p className="text-xs mb-1.5" style={{ color: 'var(--txt-muted)' }}>Shirt</p>
           <ColourRow value={primary} onChange={setPrimary}/>
 
           {needsSecondary && (
@@ -118,6 +121,19 @@ export default function BadgePicker() {
               <ColourRow value={secondary} onChange={setSecondary}/>
             </>
           )}
+
+          {/* Sleeves and shorts both offer "same as shirt", because that is
+              what most kits are and it should be one tap rather than hunting
+              for the matching swatch. */}
+          <p className="text-xs mb-1.5 mt-3" style={{ color: 'var(--txt-muted)' }}>Sleeves</p>
+          <ColourRow value={sleeve} onChange={setSleeve} allowNone noneLabel="Match shirt"/>
+
+          <p className="text-xs mb-1.5 mt-3" style={{ color: 'var(--txt-muted)' }}>Shorts</p>
+          <ColourRow value={shorts} onChange={setShorts} allowNone noneLabel="None"/>
+
+          <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+            Shorts show on the bigger kits — cup ties and your lock screen. Tables show the shirt alone.
+          </p>
 
           <div className="flex gap-2 mt-4">
             <Button variant="primary" className="btn-sm" onClick={() => save(preview)} disabled={saving}>
@@ -135,9 +151,22 @@ export default function BadgePicker() {
   )
 }
 
-function ColourRow({ value, onChange }) {
+function ColourRow({ value, onChange, allowNone, noneLabel }) {
   return (
     <div className="flex flex-wrap gap-1.5">
+      {allowNone && (
+        <button onClick={() => onChange(null)} title={noneLabel}
+          className="flex items-center justify-center text-xs px-2.5"
+          style={{
+            height: 32, borderRadius: 8,
+            background: 'var(--bg-elevated)',
+            color: value == null ? 'var(--accent)' : 'var(--txt-muted)',
+            border: `1px solid ${value == null ? 'var(--accent)' : 'var(--border)'}`,
+          }}>
+          {noneLabel}
+        </button>
+      )}
+
       {KIT_COLOURS.map(c => (
         <button key={c.hex} onClick={() => onChange(c.hex)} title={c.name}
           style={{
