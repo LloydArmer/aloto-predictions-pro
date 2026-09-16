@@ -90,16 +90,23 @@ export function kitSpec(pattern, primary, secondary, sleeve, shorts) {
 
 /* ---- The shapes, all on the same 48-wide grid ---- */
 
+// Two hems. On its own the shirt hangs full length; with shorts beneath it is
+// cut shorter, because a full-length shirt over shorts reads as a nightie and
+// leaves the shorts a sliver at the bottom.
 const BODY =
   'M22 8 L32 4 Q40 10 40 10 L46 16 L40 24 L36 21 L36 44 Q32 46 24 46 Q16 46 12 44 L12 21 L8 24 L2 16 L8 10 Q8 10 16 4 L26 8 Z'
+
+const BODY_WITH_SHORTS =
+  'M22 8 L32 4 Q40 10 40 10 L46 16 L40 24 L36 21 L36 36 Q32 38 24 38 Q16 38 12 36 L12 21 L8 24 L2 16 L8 10 Q8 10 16 4 L26 8 Z'
 
 // The two wings either side of the torso. Drawn over the body and its pattern,
 // so a striped shirt can still have plain sleeves.
 const LEFT_SLEEVE  = 'M12 21 L8 24 L2 16 L8 10 Q8 10 16 4 L22 8 L12 12 Z'
 const RIGHT_SLEEVE = 'M36 21 L40 24 L46 16 L40 10 Q40 10 32 4 L26 8 L36 12 Z'
 
-// Sat below the shirt, with the notch between the legs.
-const SHORTS = 'M14 0 L34 0 L35 13 L26 13 L24 6 L22 13 L13 13 Z'
+// Sat below the shirt, with the notch between the legs. Wider and deeper than
+// the first attempt, which was small enough to look like an afterthought.
+const SHORTS = 'M12 0 L36 0 L37 19 L26 19 L24 8 L22 19 L11 19 Z'
 
 /** A player's kit, or an empty outline when they haven't chosen one. */
 export default function Shirt({ spec, size = 32, title }) {
@@ -108,8 +115,11 @@ export default function Shirt({ spec, size = 32, title }) {
 
   // Taller viewBox when shorts are included, and a matching height, so the kit
   // keeps its proportions instead of being squashed into a square.
-  const viewBox = withShorts ? '0 -2 48 66' : '0 0 48 48'
-  const height = withShorts ? Math.round(size * 66 / 48) : size
+  const viewBox = withShorts ? '0 -2 48 64' : '0 0 48 48'
+  const height = withShorts ? Math.round(size * 64 / 48) : size
+
+  // The shorter hem only when there are shorts to sit beneath it.
+  const body = withShorts ? BODY_WITH_SHORTS : BODY
 
   if (!kit) {
     return (
@@ -121,17 +131,21 @@ export default function Shirt({ spec, size = 32, title }) {
   }
 
   const { pattern, primary, secondary, sleeve, shorts } = kit
-  const clipId = `kit-${pattern}-${primary}-${secondary}`.replace(/[^a-zA-Z0-9-]/g, '')
+  // The hem is part of the id: without it, the same kit drawn once with shorts
+  // and once without would share a clip path, and whichever rendered second
+  // would be clipped to the wrong shape.
+  const clipId = `kit-${pattern}-${primary}-${secondary}-${withShorts ? 's' : 'l'}`
+    .replace(/[^a-zA-Z0-9-]/g, '')
 
   return (
     <svg width={size} height={height} viewBox={viewBox} role="img"
       aria-label={title || `${pattern} kit`}>
       <defs>
-        <clipPath id={clipId}><path d={BODY}/></clipPath>
+        <clipPath id={clipId}><path d={body}/></clipPath>
       </defs>
 
       {/* Base colour under everything. */}
-      <path d={BODY} fill={primary}/>
+      <path d={body} fill={primary}/>
 
       <g clipPath={`url(#${clipId})`}>
         {/* Four stripes, not three. Three left one side visibly wider than the
@@ -172,10 +186,10 @@ export default function Shirt({ spec, size = 32, title }) {
       )}
 
       {/* Outline over everything, so nothing bleeds past the edge. */}
-      <path d={BODY} fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth="1.5"/>
+      <path d={body} fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth="1.5"/>
 
       {withShorts && (
-        <g transform="translate(0,49)">
+        <g transform="translate(0,41)">
           <path d={SHORTS} fill={shorts}/>
           <path d={SHORTS} fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth="1.5"/>
         </g>
