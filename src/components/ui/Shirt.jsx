@@ -63,11 +63,28 @@ export function parseKit(spec) {
 }
 
 export function kitSpec(pattern, primary, secondary, sleeve, shorts) {
-  // Trailing empties are trimmed so an old-style kit stays an old-style string
-  // rather than becoming "plain:#e63946::" — easier to read in the database and
-  // shorter in the Live Activity payload.
-  const parts = [pattern, primary, pattern === 'plain' ? '' : secondary, sleeve || '', shorts || '']
-  while (parts.length && !parts[parts.length - 1]) parts.pop()
+  // Every segment must hold a colour. An earlier version left gaps — picking
+  // shorts while leaving sleeves as "match shirt" produced
+  // "stripes:#e63946:#ffffff::#1a1a1a", with an empty segment in the middle,
+  // which the database rejected outright.
+  //
+  // A gap is filled with the colour that means "same as the shirt", which is
+  // exactly what the empty value meant anyway. The drawing code already treats
+  // a sleeve matching the shirt as no sleeve at all, so nothing looks different.
+  const parts = [pattern, primary]
+
+  // Only include what is actually needed, in order, and never skip one.
+  if (shorts) {
+    parts.push(pattern === 'plain' ? primary : secondary)
+    parts.push(sleeve || primary)
+    parts.push(shorts)
+  } else if (sleeve) {
+    parts.push(pattern === 'plain' ? primary : secondary)
+    parts.push(sleeve)
+  } else if (pattern !== 'plain') {
+    parts.push(secondary)
+  }
+
   return parts.join(':')
 }
 
