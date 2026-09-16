@@ -64,21 +64,30 @@ export default function AppLayout({ children }) {
               bar also carries an avatar and a menu, and the full name pushed
               them together. ALOTO alone still identifies the app, and the
               smaller line returns the moment there is room. */}
-          <div className="flex items-baseline gap-2 mr-5 flex-shrink-0" style={{ minWidth: 0 }}>
+          {/* The icon is centred against the TEXT BLOCK, not the text baseline.
+              items-baseline aligns baselines, and an image has none — the
+              browser sits its bottom edge on the baseline instead, which left
+              the icon riding high above the words.
+
+              So the two words share a wrapper of their own and the outer row
+              centres the icon against that wrapper. */}
+          <div className="flex items-center gap-2 mr-5 flex-shrink-0" style={{ minWidth: 0 }}>
             <img src="/icon.png" alt="" width={26} height={26}
-              style={{ borderRadius: 6, alignSelf: 'center', flexShrink: 0 }} />
+              style={{ borderRadius: 6, flexShrink: 0, display: 'block' }} />
 
-            <span className="font-extrabold" style={{
-              fontSize: 16, letterSpacing: '0.06em', color: 'var(--txt-primary)', lineHeight: 1,
-            }}>
-              ALOTO
-            </span>
+            <span className="flex items-baseline gap-2" style={{ minWidth: 0 }}>
+              <span className="font-extrabold" style={{
+                fontSize: 16, letterSpacing: '0.06em', color: 'var(--txt-primary)', lineHeight: 1,
+              }}>
+                ALOTO
+              </span>
 
-            <span className="aloto-brand-sub font-bold" style={{
-              fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
-              color: 'var(--txt-second)', lineHeight: 1, whiteSpace: 'nowrap',
-            }}>
-              Prediction Pro
+              <span className="aloto-brand-sub font-bold" style={{
+                fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+                color: 'var(--txt-second)', lineHeight: 1, whiteSpace: 'nowrap',
+              }}>
+                Prediction Pro
+              </span>
             </span>
           </div>
 
