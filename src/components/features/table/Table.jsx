@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
-import { PlayerMark } from '../../ui/Shirt'
+import { PlayerMark, PlayerCell } from '../../ui/Shirt'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
