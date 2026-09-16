@@ -527,9 +527,19 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
 
   async function withNames(rows) {
     const userIds = [...new Set(rows.map(r => r.user_id))]
-    const { data: profs } = userIds.length ? await supabase.from('profiles').select('id, display_name').in('id', userIds) : { data: [] }
-    const nameMap = {}; (profs || []).forEach(p => { nameMap[p.id] = p.display_name })
-    return rows.map(r => ({ ...r, profiles: { display_name: nameMap[r.user_id] || 'Unknown' } }))
+    // badge_kit included — without it every row in the group table fell back
+    // to initials, however many players had chosen a kit.
+    const { data: profs } = userIds.length
+      ? await supabase.from('profiles').select('id, display_name, badge_kit').in('id', userIds)
+      : { data: [] }
+    const byId = {}; (profs || []).forEach(p => { byId[p.id] = p })
+    return rows.map(r => ({
+      ...r,
+      profiles: {
+        display_name: byId[r.user_id]?.display_name || 'Unknown',
+        badge_kit: byId[r.user_id]?.badge_kit || null,
+      },
+    }))
   }
 
   // Same columns as the all-time table, counting only group fixtures whose
@@ -609,20 +619,8 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
                 {/* Position folded into the pinned cell — a separate # column
                     would eat a third of the width that stays on screen. */}
                 <td style={{ paddingLeft: 12, maxWidth: 0 }}>
-                  {/* Shortened, and no "(you)" label — the row is already
-                      highlighted in blue, so the label was costing four
-                      characters to repeat something you can see. That's what
-                      pushed "Lloyd Armer (you)" into "Lloyd Armer (…". */}
-                  {/* Three columns lighter, so the name column can carry a kit
-                      like the other tables do — and a longer name besides. */}
-                  <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
-                    <span style={{ color:'var(--txt-muted)', fontSize:11, flexShrink:0, minWidth:14 }}>{i+1}</span>
-                    <PlayerMark kit={s.profiles?.badge_kit} displayName={s.profiles?.display_name} size={20}/>
-                    <span className="text-sm font-medium" title={s.profiles?.display_name}
-                      style={{ color:'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                      {fitName(s.profiles?.display_name, 12)}
-                    </span>
-                  </span>
+                  <PlayerCell position={i+1} name={s.profiles?.display_name}
+                    kit={s.profiles?.badge_kit} isMe={s.user_id === userId}/>
                 </td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.played}</td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.points_for}</td>

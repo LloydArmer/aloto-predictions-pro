@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { PlayerMark } from '../../ui/Shirt'
+import { PlayerMark, PlayerCell } from '../../ui/Shirt'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
@@ -25,10 +25,11 @@ function ParticipantRow({ name, kit, pts, isWinner, isMe, isLive, showWinnerHigh
           and initials collide — Matt and Mark Haworth are both "MH", which
           tells you nothing about who you are actually playing. */}
       <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
-        {name && <PlayerMark kit={kit} displayName={name} size={22}/>}
-        <span className="text-sm" style={{ color: 'var(--txt-primary)', fontWeight: isWinner ? 600 : 400, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0 }}>
-          {name || 'TBD'}{isMe && <span className="ml-1.5 text-xs font-normal" style={{ color:'var(--accent)' }}>(you)</span>}
-        </span>
+        {name
+          // Shortened like every other table. A cup tie is two names in a
+          // narrow card, so it is the tightest place of all.
+          ? <PlayerCell name={name} kit={kit} isMe={isMe} maxChars={14} size={22}/>
+          : <span className="text-sm" style={{ color: 'var(--txt-muted)' }}>TBD</span>}
       </span>
       {pts != null && (
         <span className="text-sm font-bold ml-2" style={{ color: isWinner ? 'var(--green)' : isLive ? 'var(--amber)' : 'var(--txt-second)', flexShrink:0 }}>
@@ -176,12 +177,9 @@ function GroupTable({ competitionId, userId }) {
           <tbody>
             {standings.map((s,i) => (
               <tr key={s.user_id} className={s.user_id === userId ? 'highlight' : ''}>
-                <td style={{ paddingLeft: 14 }}>
-                  <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>
-                    <span style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                      {i+1}. {s.profiles?.display_name}{s.user_id === userId && <span className="ml-1 text-xs font-normal" style={{ color: 'var(--accent)' }}>(you)</span>}
-                    </span>
-                  </span>
+                <td style={{ paddingLeft: 14, maxWidth: 0 }}>
+                  <PlayerCell position={i+1} name={s.profiles?.display_name}
+                    kit={s.profiles?.badge_kit} isMe={s.user_id === userId}/>
                 </td>
                 <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.played}</td>
                 <td className="text-xs text-right" style={{ color: 'var(--txt-second)' }}>{s.points_for}</td>

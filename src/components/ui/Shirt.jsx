@@ -237,3 +237,66 @@ export function PlayerMark({ kit, displayName, size = 28 }) {
     </span>
   )
 }
+
+/**
+ * A player in a table row: position, kit, shortened name.
+ *
+ * Every table used to do this itself, and every one did it slightly
+ * differently — one shortened names and showed kits, another shortened but had
+ * no kit, a third rendered the raw name and pushed the numeric columns off the
+ * screen. Fixing them one at a time is how they drifted apart in the first
+ * place, so they now share this.
+ *
+ * If a table looks wrong, the fix belongs here rather than in that table.
+ */
+export function PlayerCell({ position, name, kit, isMe, maxChars = 12, size = 20 }) {
+  return (
+    <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+      {position != null && (
+        <span style={{
+          color: 'var(--txt-muted)', fontSize: 11, flexShrink: 0,
+          minWidth: 14, textAlign: 'right',
+        }}>
+          {position}
+        </span>
+      )}
+
+      <PlayerMark kit={kit} displayName={name} size={size}/>
+
+      {/* No "(you)" label — the row is already highlighted, and the label cost
+          four characters to repeat something you can see. */}
+      <span
+        className="text-sm font-medium"
+        title={name}
+        style={{
+          color: isMe ? 'var(--accent)' : 'var(--txt-primary)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+        {fitName(name, maxChars)}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * Shortens a name to fit a narrow column. Never returns a single letter.
+ *
+ *   "Lloyd Armer"     -> Lloyd A.
+ *   "Mark Haworth"    -> Mark H.
+ *   "Mickefc2103"     -> Mickefc21…
+ *
+ * Lives here rather than in lib/names so that a table importing PlayerCell
+ * gets the matching shortening automatically, instead of having to remember a
+ * second import and the right character limit.
+ */
+export function fitName(name, maxChars = 12) {
+  if (!name) return ''
+  if (name.length <= maxChars) return name
+
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length > 1) {
+    const short = `${words[0]} ${words[words.length - 1][0]}.`
+    if (short.length <= maxChars) return short
+  }
+  return name.slice(0, maxChars - 1) + '…'
+}
