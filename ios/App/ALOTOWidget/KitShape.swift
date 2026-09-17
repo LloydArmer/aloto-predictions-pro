@@ -2,12 +2,20 @@
 //  KitShape.swift
 //  ALOTOWidget
 //
-//  Draws a football shirt from the same spec string the web app uses —
-//  "stripes:#e63946:#ffffff".
+//  Draws a football kit from the same spec string the web app uses:
+//
+//      pattern:primary[:secondary[:sleeve[:shorts]]]
+//
+//      stripes:#e63946:#ffffff                    shirt and pattern
+//      stripes:#e63946:#ffffff:#1a1a1a            + sleeves
+//      stripes:#e63946:#ffffff:#1a1a1a:#1a1a1a    + shorts
 //
 //  Drawn rather than shipped as images so a kit looks identical on the lock
 //  screen and in the app, and so adding a pattern needs no new assets. The
-//  coordinates match the SVG in Shirt.jsx exactly, on the same 48x48 grid.
+//  coordinates match the SVG in Shirt.jsx exactly, on the same 48-wide grid.
+//
+//  Sleeves and shorts are optional: a spec saved before they existed still
+//  parses, with sleeves matching the shirt and no shorts.
 //
 
 import SwiftUI
@@ -16,9 +24,13 @@ struct Kit {
     let pattern: String
     let primary: Color
     let secondary: Color
+    /// nil means "same as the shirt", which is what most kits are.
+    let sleeve: Color?
+    /// nil means no shorts — the shirt is drawn on its own.
+    let shorts: Color?
 
-    /// Parses "stripes:#e63946:#ffffff". Returns nil for anything malformed,
-    /// so a bad value shows initials rather than a broken shape.
+    /// Returns nil for anything malformed, so a bad value shows initials
+    /// rather than a broken shape.
     static func parse(_ spec: String?) -> Kit? {
         guard let spec, !spec.isEmpty else { return nil }
         let parts = spec.split(separator: ":").map(String.init)
@@ -29,7 +41,14 @@ struct Kit {
         guard let primary = Color(hex: parts[1]) else { return nil }
 
         let secondary = parts.count > 2 ? (Color(hex: parts[2]) ?? .white) : .white
-        return Kit(pattern: parts[0], primary: primary, secondary: secondary)
+
+        // Both optional. An older three-part spec falls through with nil for
+        // each, which draws exactly as it always did.
+        let sleeve = parts.count > 3 ? Color(hex: parts[3]) : nil
+        let shorts = parts.count > 4 ? Color(hex: parts[4]) : nil
+
+        return Kit(pattern: parts[0], primary: primary, secondary: secondary,
+                   sleeve: sleeve, shorts: shorts)
     }
 }
 
@@ -49,11 +68,20 @@ extension Color {
     }
 }
 
-/// The shirt outline, on the same 48x48 grid as the web version so the two
+/// The shirt outline, on the same 48-wide grid as the web version so the two
 /// shapes match.
+///
+/// Two hems, as in the web app: full length when the shirt is drawn alone, and
+/// cut shorter when shorts sit beneath it. A full-length shirt over shorts
+/// reads as a nightie and leaves the shorts a sliver at the bottom.
 struct ShirtShape: Shape {
+    var shortHem: Bool = false
+
     func path(in rect: CGRect) -> Path {
-        let s = min(rect.width, rect.height) / 48
+        // Scale from the WIDTH only. Using min(width, height) would shrink the
+        // shirt whenever the frame is made taller to fit shorts.
+        let s = rect.width / 48
+        let hem: CGFloat = shortHem ? 36 : 44
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
             CGPoint(x: rect.minX + x * s, y: rect.minY + y * s)
         }
@@ -65,15 +93,72 @@ struct ShirtShape: Shape {
         path.addLine(to: p(46, 16))
         path.addLine(to: p(40, 24))
         path.addLine(to: p(36, 21))
-        path.addLine(to: p(36, 44))
-        path.addQuadCurve(to: p(24, 46), control: p(32, 46))
-        path.addQuadCurve(to: p(12, 44), control: p(16, 46))
+        path.addLine(to: p(36, hem))
+        path.addQuadCurve(to: p(24, hem + 2), control: p(32, hem + 2))
+        path.addQuadCurve(to: p(12, hem), control: p(16, hem + 2))
         path.addLine(to: p(12, 21))
         path.addLine(to: p(8, 24))
         path.addLine(to: p(2, 16))
         path.addLine(to: p(8, 10))
         path.addQuadCurve(to: p(16, 4), control: p(8, 10))
         path.addLine(to: p(26, 8))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The two sleeve wings, drawn over the shirt and its pattern so a striped
+/// shirt can still have plain sleeves.
+struct SleevesShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = rect.width / 48
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * s, y: rect.minY + y * s)
+        }
+
+        var path = Path()
+
+        // Left.
+        path.move(to: p(12, 21))
+        path.addLine(to: p(8, 24))
+        path.addLine(to: p(2, 16))
+        path.addLine(to: p(8, 10))
+        path.addQuadCurve(to: p(16, 4), control: p(8, 10))
+        path.addLine(to: p(22, 8))
+        path.addLine(to: p(12, 12))
+        path.closeSubpath()
+
+        // Right.
+        path.move(to: p(36, 21))
+        path.addLine(to: p(40, 24))
+        path.addLine(to: p(46, 16))
+        path.addLine(to: p(40, 10))
+        path.addQuadCurve(to: p(32, 4), control: p(40, 10))
+        path.addLine(to: p(26, 8))
+        path.addLine(to: p(36, 12))
+        path.closeSubpath()
+
+        return path
+    }
+}
+
+/// Shorts, with the notch between the legs. Drawn in its own frame beneath the
+/// shirt rather than as part of it.
+struct ShortsShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = rect.width / 48
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * s, y: rect.minY + y * s)
+        }
+
+        var path = Path()
+        path.move(to: p(12, 0))
+        path.addLine(to: p(36, 0))
+        path.addLine(to: p(37, 19))
+        path.addLine(to: p(26, 19))
+        path.addLine(to: p(24, 8))
+        path.addLine(to: p(22, 19))
+        path.addLine(to: p(11, 19))
         path.closeSubpath()
         return path
     }
@@ -87,7 +172,12 @@ struct PlayerBadge: View {
 
     var body: some View {
         if let k = Kit.parse(kit) {
-            KitView(kit: k).frame(width: size, height: size)
+            // Taller frame when shorts will be drawn, or the kit is squashed
+            // into a square and the proportions go wrong. The ratio matches the
+            // web app's viewBox: 64 tall against 48 wide.
+            let withShorts = k.shorts != nil && size >= 26
+            KitView(kit: k)
+                .frame(width: size, height: withShorts ? size * 64 / 48 : size)
         } else {
             Text(Self.mark(from: name))
                 .font(.system(size: size * 0.34, weight: .semibold))
@@ -111,20 +201,49 @@ struct PlayerBadge: View {
 struct KitView: View {
     let kit: Kit
 
+    /// Below this, shorts are left off.
+    ///
+    /// Matches the web app. At Dynamic Island sizes the shorts are two or three
+    /// pixels tall, and including them means shrinking the shirt to make room —
+    /// so the compact states would get a smaller shirt AND an unreadable smudge
+    /// beneath it.
+    private static let shortsMinSize: CGFloat = 26
+
     var body: some View {
         GeometryReader { geo in
-            let s = min(geo.size.width, geo.size.height) / 48
+            let w = geo.size.width
+            let s = w / 48
+            let withShorts = kit.shorts != nil && w >= Self.shortsMinSize
 
-            ZStack {
-                ShirtShape().fill(kit.primary)
+            VStack(spacing: 0) {
+                ZStack {
+                    ShirtShape(shortHem: withShorts).fill(kit.primary)
 
-                // The pattern, clipped to the shirt so nothing bleeds past
-                // the edge.
-                patternLayer(scale: s)
-                    .clipShape(ShirtShape())
+                    // The pattern, clipped to the shirt so nothing bleeds past
+                    // the edge.
+                    patternLayer(scale: s)
+                        .clipShape(ShirtShape(shortHem: withShorts))
 
-                // Outline last, over the pattern.
-                ShirtShape().stroke(Color.black.opacity(0.35), lineWidth: 1.5 * s)
+                    // Sleeves over the pattern — a striped shirt with plain
+                    // sleeves is a common kit and the stripes must not run
+                    // through them.
+                    if let sleeve = kit.sleeve, sleeve != kit.primary {
+                        SleevesShape().fill(sleeve)
+                    }
+
+                    // Outline last, over everything.
+                    ShirtShape(shortHem: withShorts)
+                        .stroke(Color.black.opacity(0.35), lineWidth: 1.5 * s)
+                }
+                .frame(height: (withShorts ? 40 : 48) * s)
+
+                if withShorts, let shorts = kit.shorts {
+                    ZStack {
+                        ShortsShape().fill(shorts)
+                        ShortsShape().stroke(Color.black.opacity(0.35), lineWidth: 1.5 * s)
+                    }
+                    .frame(height: 20 * s)
+                }
             }
         }
     }
