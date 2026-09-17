@@ -14,14 +14,7 @@ import { supabase } from './supabase'
  * So what the app reads is always the database, never RevenueCat's local cache.
  */
 
-// Must match the entitlement identifier in RevenueCat EXACTLY. Theirs reads
-// aloto_prediction_pro_premium; identifiers generally can't be renamed after
-// creation, so the code matches the dashboard rather than the other way round.
-//
-// If this string and RevenueCat's ever diverge, a purchase completes, Apple
-// takes the money, and the app decides the person isn't entitled — the worst
-// failure this file can have.
-const ENTITLEMENT = 'aloto_prediction_pro_premium'
+const ENTITLEMENT = 'pro'   // must match the identifier set in RevenueCat
 
 let configured = false
 
