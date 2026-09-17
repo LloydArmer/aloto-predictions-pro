@@ -237,10 +237,26 @@ workflows:
             exit 1
           fi
 
-          APPLIED_MV=$(agvtool what-marketing-version -terse1)
-          echo "Project now reports marketing version: $APPLIED_MV"
-          if [ "$APPLIED_MV" != "$MARKETING_VERSION" ]; then
-            echo "agvtool did not apply the marketing version — aborting."
+          # Read straight from the Info.plist rather than asking agvtool.
+          #
+          # `agvtool what-marketing-version` returns nothing on this toolchain
+          # even when the version HAS been set — the first attempt at this check
+          # failed a build whose version had been applied correctly, which is
+          # worse than not checking at all.
+          #
+          # PlistBuddy reads the file agvtool just wrote, so it reports what is
+          # actually in the bundle.
+          APPLIED_MV=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" App/Info.plist 2>/dev/null || echo "")
+          echo "Info.plist now reports marketing version: ${APPLIED_MV:-<unreadable>}"
+
+          if [ -z "$APPLIED_MV" ]; then
+            # Could not read it. Warn rather than abort: agvtool reported success
+            # above, and failing here would repeat exactly the mistake this
+            # comment describes.
+            echo "Could not read the marketing version back — continuing anyway."
+            echo "If the upload fails with error 90062, this is where to look."
+          elif [ "$APPLIED_MV" != "$MARKETING_VERSION" ]; then
+            echo "Marketing version is '$APPLIED_MV', expected '$MARKETING_VERSION' — aborting."
             echo "Uploading would fail at the very end with error 90062 after a full build."
             exit 1
           fi
