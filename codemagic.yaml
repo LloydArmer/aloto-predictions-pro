@@ -77,6 +77,14 @@ workflows:
         # appstoreconnect.apple.com/apps/6805768246/... — used to look up the
         # last build number so this one can be higher.
         APP_ID: "6805768246"
+        # The version users see. DIFFERENT from the build number above, and the
+        # one people forget: Apple CLOSES a version once it is approved, so a
+        # build still claiming 1.0 is rejected with "the train version '1.0' is
+        # closed for new build submissions" — after a full build has run.
+        #
+        # Bump this for every release: 1.1, 1.2, 2.0. The build number takes
+        # care of itself; this does not.
+        MARKETING_VERSION: "1.1"
 
     scripts:
       - name: Install dependencies
@@ -159,9 +167,15 @@ workflows:
       - name: Apply the profiles to the Xcode project
         script: xcode-project use-profiles
 
-      - name: Set the build number
-        # Every upload needs a build number higher than the last, or Apple
-        # rejects it as a duplicate.
+      - name: Set the build and marketing versions
+        # TWO different numbers, and both have to be right.
+        #
+        # The BUILD number must be higher than the last upload, or Apple rejects
+        # it as a duplicate.
+        #
+        # The MARKETING version (1.0, 1.1) is what users see, and Apple closes a
+        # version to new builds once it has been approved. That is what failed
+        # the last build: the number was fine, the version string still said 1.0.
         #
         # This has now failed repeatedly, because the App Store Connect lookup
         # returns nothing and the old fallback — Codemagic's own build counter —
@@ -209,16 +223,25 @@ workflows:
             NEXT="$CLOCK"
           fi
 
-          echo "Building version $NEXT"
+          echo "Building version $NEXT (marketing version $MARKETING_VERSION)"
           cd ios/App
           agvtool new-version -all "$NEXT"
+          agvtool new-marketing-version "$MARKETING_VERSION"
 
-          # Confirm it actually took. agvtool can report success while leaving
+          # Confirm both actually took. agvtool can report success while leaving
           # the project untouched if the build settings aren't where it expects.
           APPLIED=$(agvtool what-version -terse)
           echo "Project now reports build number: $APPLIED"
           if [ "$APPLIED" != "$NEXT" ]; then
-            echo "agvtool did not apply the version — aborting rather than uploading a duplicate."
+            echo "agvtool did not apply the build number — aborting rather than uploading a duplicate."
+            exit 1
+          fi
+
+          APPLIED_MV=$(agvtool what-marketing-version -terse1)
+          echo "Project now reports marketing version: $APPLIED_MV"
+          if [ "$APPLIED_MV" != "$MARKETING_VERSION" ]; then
+            echo "agvtool did not apply the marketing version — aborting."
+            echo "Uploading would fail at the very end with error 90062 after a full build."
             exit 1
           fi
 
