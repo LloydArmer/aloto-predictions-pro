@@ -257,7 +257,10 @@ export default function Settings() {
           </p>
           <div className="flex gap-2">
             <input
-              className="flex-1"
+              // "input" is the app's own class. Without it this rendered as a
+              // bare browser field — white on white, so you could not see what
+              // you were typing.
+              className="input flex-1"
               placeholder="e.g. The Office League"
               value={newLeagueName}
               onChange={e => setNewLeagueName(e.target.value)}
