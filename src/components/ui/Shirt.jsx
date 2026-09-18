@@ -294,9 +294,19 @@ export function fitName(name, maxChars = 12) {
   if (name.length <= maxChars) return name
 
   const words = name.trim().split(/\s+/).filter(Boolean)
+
   if (words.length > 1) {
-    const short = `${words[0]} ${words[words.length - 1][0]}.`
-    if (short.length <= maxChars) return short
+    // Always the "First L." form for a name with more than one word, even when
+    // that is still longer than maxChars.
+    //
+    // The previous version checked it against the limit and fell through to
+    // slicing when it did not fit, which turned "Michael JNR" into
+    // "Michael …" — longer to read than "Michael J." and less informative.
+    // Cutting a name mid-word is the worst of the options, so it is now
+    // reserved for names that have no second word to abbreviate.
+    return `${words[0]} ${words[words.length - 1][0]}.`
   }
+
+  // A single word has nothing to shorten, so it gets cut.
   return name.slice(0, maxChars - 1) + '…'
 }

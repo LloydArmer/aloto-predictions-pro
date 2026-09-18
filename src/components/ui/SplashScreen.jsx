@@ -204,14 +204,33 @@ export default function SplashScreen({ onDone }) {
           <svg viewBox="0 0 100 100" style={{
             width: O_SIZE, height: O_SIZE, display: 'block',
           }}>
+            <defs>
+              {/* Everything inside the pitch is clipped to it. The penalty
+                  boxes sit at x=2 and x=84 with a 2.6-wide stroke, so half
+                  that stroke fell outside the circle and stuck out past the
+                  edge of the O. Clipping cuts them at the boundary, which is
+                  also how a real pitch marking meets the touchline. */}
+              <clipPath id="aloto-pitch-clip">
+                <circle cx="50" cy="50" r="48"/>
+              </clipPath>
+            </defs>
+
             <circle cx="50" cy="50" r="48" fill="#1f7a34"/>
-            <g fill="none" stroke="#fff" strokeWidth="2.6" opacity="0.95">
-              <circle cx="50" cy="50" r="48"/>
+
+            <g fill="none" stroke="#fff" strokeWidth="2.6" opacity="0.95"
+              clipPath="url(#aloto-pitch-clip)">
               <line x1="50" y1="2" x2="50" y2="98"/>
               <circle cx="50" cy="50" r="15"/>
               <rect x="2" y="30" width="14" height="40"/>
               <rect x="84" y="30" width="14" height="40"/>
             </g>
+
+            {/* The touchline is drawn OUTSIDE the clip, so its own stroke is
+                not halved by it — a clipped outline looks thinner than the
+                markings inside and reads as a mistake. */}
+            <circle cx="50" cy="50" r="48" fill="none" stroke="#fff"
+              strokeWidth="2.6" opacity="0.95"/>
+
             <circle cx="50" cy="50" r="3" fill="#fff"/>
           </svg>
         </div>

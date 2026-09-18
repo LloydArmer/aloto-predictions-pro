@@ -210,11 +210,24 @@ async function build(competitionId, userId) {
   const opponent = Array.isArray(oppRows) ? oppRows[0] : oppRows
 
   if (opponent?.opponent_id) {
-    const [mine, theirs, meProfile] = await Promise.all([
+    const [stored, liveMine, liveTheirs, meProfile] = await Promise.all([
+      storedTiePoints(opponent, gw.id, userId),
       pointsFor(gw.id, userId, fixtures, activeRules),
       pointsFor(gw.id, opponent.opponent_id, fixtures, activeRules),
       supabase.from('profiles').select('display_name, badge_kit').eq('id', userId).single(),
     ])
+
+    // Stored points win once the gameweek has been scored.
+    //
+    // pointsFor adds up fixtures one at a time, which can only ever see
+    // per-prediction scoring. Full house bonuses and triple points are awarded
+    // at GAMEWEEK level, so they are invisible to it — which is why this card
+    // said 12 where the real result was 27.
+    //
+    // The scored fixture already holds the true total, bonuses included. Live
+    // figures are still used mid-match, when nothing has been stored yet.
+    const mine   = stored?.mine   ?? liveMine
+    const theirs = stored?.theirs ?? liveTheirs
 
     return {
       kind: 'tie',
@@ -304,4 +317,45 @@ async function pointsFor(gameweekId, userId, fixtures, rules) {
     ).points
   }
   return total
+}
+
+/**
+ * The points recorded against a cup tie or group fixture, once the gameweek has
+ * been scored.
+ *
+ * Returns null while a gameweek is still in play — nothing has been written
+ * yet, so the caller falls back to adding up fixtures live.
+ *
+ * This is the authoritative number: it is what the group table and the cup
+ * bracket both show, and it includes every bonus.
+ */
+async function storedTiePoints(opponent, gameweekId, userId) {
+  const table = opponent.kind === 'knockout' ? 'bracket_matches' : 'group_fixtures'
+
+  try {
+    let q = supabase.from(table)
+      .select('home_user_id, away_user_id, home_points, away_points')
+      .eq('gameweek_id', gameweekId)
+      .or(`home_user_id.eq.${userId},away_user_id.eq.${userId}`)
+
+    // Narrow to the tie's own competition. Without this, a player in two cups
+    // running off the same gameweek could match the wrong fixture.
+    if (opponent.competition_id) q = q.eq('competition_id', opponent.competition_id)
+
+    const { data, error } = await q
+    if (error || !data?.length) return null
+
+    const row = data[0]
+    if (row.home_points == null && row.away_points == null) return null
+
+    const iAmHome = row.home_user_id === userId
+    return {
+      mine:   iAmHome ? row.home_points : row.away_points,
+      theirs: iAmHome ? row.away_points : row.home_points,
+    }
+  } catch {
+    // A knockout table without a gameweek_id column, say. Falling back to the
+    // live calculation shows a slightly low number rather than no card at all.
+    return null
+  }
 }

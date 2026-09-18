@@ -77,21 +77,32 @@ function OverallPane({ competitionId, userId }) {
   async function load() {
     const r = await resolvePointRules(supabase, competitionId)
     setRules(r)
+    // Filtered on the SCORE ROW's competition, not the gameweek's.
+    //
+    // A gameweek is shared: GW7 belongs to the Predictions League but the
+    // Champions League scores off it too, so there are two score rows per
+    // player. Filtering by gameweeks.competition_id matched both, and the same
+    // full house was listed twice — "GW7, GW7 +15", two badges for one bonus.
     const { data: rows } = await supabase.from('gameweek_scores')
-      .select('user_id, full_house_results, full_house_scores, gameweeks!inner(number, competition_id)')
-      .eq('gameweeks.competition_id', competitionId)
+      .select('user_id, competition_id, full_house_results, full_house_scores, gameweeks!inner(number)')
+      .eq('competition_id', competitionId)
       .or('full_house_results.eq.true,full_house_scores.eq.true')
     const grouped = {}
     ;(rows || []).forEach(row => {
       if (!row.gameweeks) return
       if (!grouped[row.user_id]) grouped[row.user_id] = { results: [], scores: [], all: [] }
       const g = grouped[row.user_id]
-      if (row.full_house_results) g.results.push(row.gameweeks.number)
-      if (row.full_house_scores)  g.scores.push(row.gameweeks.number)
+      // Guarded against duplicates as well as filtered. If a recalculation ever
+      // writes a second score row, the badge list should still show one GW7,
+      // not two — a display that double-counts is worse than one that is merely
+      // out of date.
+      const n = row.gameweeks.number
+      if (row.full_house_results && !g.results.includes(n)) g.results.push(n)
+      if (row.full_house_scores  && !g.scores.includes(n))  g.scores.push(n)
       // Distinct gameweeks. An all-scores full house is also an all-results one
       // — getting every score exact means getting every result right — so the
       // same gameweek would otherwise be counted twice.
-      if (!g.all.includes(row.gameweeks.number)) g.all.push(row.gameweeks.number)
+      if (!g.all.includes(n)) g.all.push(n)
     })
     setBadgesByUser(grouped)
     const { data: gws } = await supabase.from('gameweeks').select('id, number')
@@ -395,123 +406,96 @@ function MonthlyPane({ competitionId, months, userId }) {
 /**
  * The overall table on a phone.
  *
- * Three things on the closed row — position, name, total — because that is what
- * a standings table is for. Everything else is one tap away rather than one
- * sideways scroll away, and a tap is far easier to discover: a horizontally
- * scrolling table gives no hint that anything exists to the right of it.
+ * Columns, not expandable cards.
+ *
+ * The cards showed a position, a name, a total and a star. The star meant
+ * "this player has a full house somewhere", which is not information anyone can
+ * act on, and everything that actually explains the total was hidden behind a
+ * tap most people never made.
+ *
+ * This is the same shape as the monthly table, because it answers the same
+ * question. Res, Exact, Bonus and TP add up to Total in front of you.
  */
 function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSeasonPoints }) {
-  const [expanded, setExpanded] = useState(null)
+  const resultPts = rules?.correct_result_points ?? 2
+  const exactPts  = rules?.exact_score_points ?? 3
 
   return (
-    <div>
-      {/* Column labels. The list dropped the table's headings along with the
-          table, leaving a bare number on the right with nothing to say what it
-          was. Aligned to the same padding as the rows below. */}
-      <div className="flex items-center gap-3 px-3 pb-1.5">
-        <span className="flex-shrink-0" style={{ width: 20 }}>
-          <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>#</span>
-        </span>
-        <span style={{ flex: '1 1 auto' }}>
-          <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>Player</span>
-        </span>
-        <span className="text-xs flex-shrink-0 text-right" style={{ color: 'var(--txt-muted)', minWidth: 46 }}>Pts</span>
-        {/* Matches the chevron's width so "Pts" sits over the number, not over
-            the chevron. */}
-        <span className="flex-shrink-0" style={{ width: 13 }} aria-hidden="true"/>
-      </div>
+    <Card className="overflow-hidden p-0">
+      <table className="data-table w-full" style={{ tableLayout: 'fixed' }}>
+        <thead>
+          <tr>
+            <th style={{ width: 22, paddingLeft: 10 }}>#</th>
+            <th>Player</th>
+            <th style={{ width: 34, textAlign: 'right' }}>Res</th>
+            <th style={{ width: 34, textAlign: 'right' }}>Exa</th>
+            <th style={{ width: 40, textAlign: 'right' }}>Bon</th>
+            <th style={{ width: 34, textAlign: 'right' }}>TP</th>
+            <th style={{ width: 38, textAlign: 'right', paddingRight: 10 }}>Tot</th>
+          </tr>
+        </thead>
 
-      {overall.map((p, i) => {
-        const isMe = p.user_id === userId
-        // One open at a time. A set would let every card be expanded at once,
-        // turning a six-row standings table into a page of scrolling — which is
-        // the problem this layout exists to solve.
-        const open = expanded === p.user_id
-        const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
-        const scoresBonusPts  = (p.full_house_scores_count  || 0) * (rules?.full_house_scores_bonus  || 0)
-        const fh = badgesByUser[p.user_id] || { results: [], scores: [], all: [] }
+        <tbody>
+          {overall.map((p, i) => {
+            const isMe = p.user_id === userId
 
-        // A full house and its bonus are one event, not two. Showing "Results
-        // bonus +15" on one line and "Full houses: GW3, GW7" on another
-        // described the same thing twice and made it look like separate
-        // scoring. Each line now names the achievement, which gameweeks, and
-        // what it was worth.
-        const detail = [
-          ['Correct results', p.correct_results || 0, 'var(--accent)'],
-          ['Correct scores',  p.exact_scores || 0,    'var(--green)'],
-          ...(fh.results.length ? [[
-            `Full house — all results (${fh.results.length})`,
-            `${fh.results.join(', ')}  +${resultsBonusPts}`,
-            'var(--amber)',
-          ]] : []),
-          ...(fh.scores.length ? [[
-            `Full house — all scores (${fh.scores.length})`,
-            `${fh.scores.join(', ')}  +${scoresBonusPts}`,
-            '#c88bfa',
-          ]] : []),
-          ...(p.tp1_gameweek_id ? [['Triple Points 1', `GW${gwNumbers[p.tp1_gameweek_id] || '?'} +${p.tp1_points || 0}`, 'var(--gold)']] : []),
-          ...(p.tp2_gameweek_id ? [['Triple Points 2', `GW${gwNumbers[p.tp2_gameweek_id] || '?'} +${p.tp2_points || 0}`, 'var(--gold)']] : []),
-          ...(hasSeasonPoints && p.season_points > 0 ? [['Season predictions', `+${p.season_points}`, 'var(--gold)']] : []),
-        ]
+            // Bonus is every gameweek-level award added together: full houses
+            // of both kinds, plus season points where they exist. Splitting
+            // them into separate columns would not fit a phone, and the number
+            // people want is how much came from something other than
+            // individual predictions.
+            const bonus =
+                (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
+              + (p.full_house_scores_count  || 0) * (rules?.full_house_scores_bonus  || 0)
+              + (hasSeasonPoints ? (p.season_points || 0) : 0)
 
-        return (
-          <Card key={p.user_id} className="mb-2 p-0 overflow-hidden"
-            style={isMe ? { borderColor: 'var(--accent)', background: 'var(--accent-dim)' } : {}}>
-            <button onClick={() => setExpanded(open ? null : p.user_id)}
-              className="flex items-center gap-3 w-full px-3 py-2.5 text-left">
-              <span className="flex-shrink-0" style={{ width: 20 }}><Pos n={i + 1}/></span>
+            const tp = (p.tp1_points || 0) + (p.tp2_points || 0)
 
-              <span style={{ flex: '1 1 auto', minWidth: 0 }}>
-                <span className="text-sm font-medium block" style={{ color: 'var(--txt-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
-                    <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20}/>
-                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                      {fitName(p.display_name, 10)}
-                    </span>
-                  </span>
-                  {/* A COUNT, not one chip per full house. Someone with a good
-                      season could have a dozen, and a dozen chips would push the
-                      name off the row entirely. The gameweeks themselves are in
-                      the expanded detail, where there's room for them. */}
-                  {fh.all.length > 0 && (
-                    <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded"
-                      title={`${fh.all.length} full house${fh.all.length !== 1 ? 's' : ''}`}
-                      style={{ background: 'var(--gold-dim)', color: 'var(--gold)', whiteSpace: 'nowrap' }}>
-                      ★ {fh.all.length}
-                    </span>
-                  )}
-                </span>
-              </span>
+            return (
+              <tr key={p.user_id} className={isMe ? 'is-me' : ''}>
+                <td style={{
+                  paddingLeft: 10,
+                  color: i === 0 ? 'var(--gold)' : i === 1 ? 'var(--txt-second)' : i === 2 ? '#cd7f32' : 'var(--txt-muted)',
+                  fontSize: 11,
+                }}>
+                  {i + 1}
+                </td>
 
-              {/* Fixed width and tabular figures so every total occupies the
-                  same space and the digits line up down the column — otherwise
-                  a 96 and a 186 sit at different offsets and look like
-                  different sizes. */}
-              <span className="text-base font-semibold flex-shrink-0 text-right"
-                style={{ color: 'var(--accent)', minWidth: 46, fontVariantNumeric: 'tabular-nums' }}>
-                {p.total_points || 0}
-              </span>
-              <i className={`ti ti-chevron-${open ? 'up' : 'down'} text-sm flex-shrink-0`}
-                style={{ color: 'var(--txt-muted)' }} aria-hidden="true"/>
-            </button>
+                <td style={{ maxWidth: 0 }}>
+                  <PlayerCell name={p.display_name} kit={p.badge_kit} isMe={isMe} maxChars={9}/>
+                </td>
 
-            {open && (
-              <div className="px-3 pb-3" style={{ borderTop: '0.5px solid var(--border)' }}>
-                {detail.map(([label, value, colour]) => (
-                  <div key={label} className="flex items-start justify-between gap-3 py-1.5">
-                    <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>{label}</span>
-                    {/* Wraps rather than truncating — a long list of gameweeks
-                        here means a good season, and is worth reading. */}
-                    <span className="text-xs font-medium text-right" style={{ color: colour }}>{value}</span>
-                  </div>
-                ))}
+                <Num value={p.correct_results || 0} colour="var(--accent)"/>
+                <Num value={p.exact_scores || 0} colour="var(--green)"/>
+                <Num value={bonus ? `+${bonus}` : null} colour="var(--amber)"/>
+                <Num value={tp ? `+${tp}` : null} colour="var(--gold)"/>
 
-              </div>
-            )}
-          </Card>
-        )
-      })}
-    </div>
+                <td className="text-right font-bold" style={{
+                  paddingRight: 10, fontSize: 13, color: 'var(--txt-primary)',
+                }}>
+                  {p.total_points ?? 0}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </Card>
+  )
+}
+
+/** One numeric cell. A dash rather than a zero where nothing was earned —
+ *  a column of zeroes is harder to read past than a column of dashes. */
+function Num({ value, colour }) {
+  const empty = value === null || value === 0 || value === '0'
+  return (
+    <td className="text-right" style={{
+      fontSize: 12,
+      fontVariantNumeric: 'tabular-nums',
+      color: empty ? 'var(--txt-muted)' : colour,
+    }}>
+      {empty ? '\u2013' : value}
+    </td>
   )
 }
 
@@ -604,26 +588,40 @@ function GroupStandingsPane({ competitionId, userId, monthKey = null }) {
             
             This now matches the group table on the Admin screen, which has
             always shown these five. */}
-        <table className="data-table w-full">
+        {/* Nine columns on a phone, so the numerics are smaller than elsewhere
+            and the widths are set to what each actually needs: W, D and L never
+            exceed two digits, PF and PA rarely three.
+
+            222px of numbers leaves about 148px for the name — enough for a kit,
+            a position and nine characters, which is why fitName is set to 9
+            here rather than the 12 used in roomier tables. */}
+        <table className="data-table w-full" style={{ tableLayout: 'fixed' }}>
           <thead><tr>
-            <th style={{ paddingLeft: 12 }}>Participant</th>
-            <th style={{ width: 34, textAlign: 'right' }}>P</th>
-            <th style={{ width: 44, textAlign: 'right' }}>PF</th>
-            <th style={{ width: 44, textAlign: 'right' }}>PA</th>
-            <th style={{ width: 48, textAlign: 'right' }}>Diff</th>
-            <th style={{ width: 44, textAlign: 'right', paddingRight: 12 }}>Pts</th>
+            <th style={{ paddingLeft: 10 }}>Participant</th>
+            <th style={{ width: 24, textAlign: 'right' }}>P</th>
+            <th style={{ width: 24, textAlign: 'right' }}>W</th>
+            <th style={{ width: 24, textAlign: 'right' }}>D</th>
+            <th style={{ width: 24, textAlign: 'right' }}>L</th>
+            <th style={{ width: 30, textAlign: 'right' }}>PF</th>
+            <th style={{ width: 30, textAlign: 'right' }}>PA</th>
+            <th style={{ width: 36, textAlign: 'right' }}>Diff</th>
+            <th style={{ width: 30, textAlign: 'right', paddingRight: 10 }}>Pts</th>
           </tr></thead>
           <tbody>
             {standings.map((s,i) => (
               <tr key={s.user_id} className={s.user_id === userId ? 'highlight' : ''}>
                 {/* Position folded into the pinned cell — a separate # column
                     would eat a third of the width that stays on screen. */}
-                <td style={{ paddingLeft: 12, maxWidth: 0 }}>
+                <td style={{ paddingLeft: 10, maxWidth: 0 }}>
                   <PlayerCell position={i+1} name={s.profiles?.display_name}
-                    kit={s.profiles?.badge_kit} isMe={s.user_id === userId}/>
+                    kit={s.profiles?.badge_kit} isMe={s.user_id === userId}
+                    maxChars={9} size={18}/>
                 </td>
-                <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.played}</td>
-                <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.points_for}</td>
+                <td style={GROUP_NUM}>{s.played}</td>
+                <td style={{ ...GROUP_NUM, color: 'var(--green)' }}>{s.wins}</td>
+                <td style={GROUP_NUM}>{s.draws}</td>
+                <td style={{ ...GROUP_NUM, color: 'var(--red)' }}>{s.losses}</td>
+                <td style={GROUP_NUM}>{s.points_for}</td>
                 <td className="text-xs text-right" style={{ color:'var(--txt-second)' }}>{s.points_against}</td>
                 <td className="text-xs text-right" style={{ color: s.points_diff >= 0 ? 'var(--green)' : 'var(--red)' }}>{s.points_diff > 0 ? '+' : ''}{s.points_diff}</td>
                 <td style={{ textAlign:'right', paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{s.league_points}</span></td>
@@ -703,4 +701,14 @@ export default function Table({ embeddedView = null }) {
       )}
     </div>
   )
+}
+
+/* The group table carries nine columns on a 390px screen, so its numbers are a
+   size smaller than other tables and lined up on tabular figures — without
+   those, a column of digits wobbles as the values change. */
+const GROUP_NUM = {
+  fontSize: 11,
+  textAlign: 'right',
+  color: 'var(--txt-second)',
+  fontVariantNumeric: 'tabular-nums',
 }
