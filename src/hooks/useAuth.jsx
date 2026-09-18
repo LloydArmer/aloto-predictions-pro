@@ -29,12 +29,26 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
       setProfile(data)
-
-      // Does this person run a competition of their own?
+    } catch (e) { console.error(e) }
+    finally {
+      // Cleared as soon as the PROFILE is known, and never held open by
+      // anything else.
       //
-      // participants.role has always recorded who administers what, and
-      // createCompetition already writes 'admin' for whoever created it. Only
-      // this check was missing, so the answer was never asked for.
+      // The admin check below used to run before this line. On a fast
+      // connection that was invisible; on a phone it meant the whole app sat
+      // behind its loading spinner waiting for a secondary query that decides
+      // nothing more than whether one nav item appears. A slow answer became
+      // an app that never started.
+      setLoading(false)
+    }
+
+    // Does this person run a competition of their own?
+    //
+    // Deliberately NOT awaited by the caller and deliberately outside the block
+    // above: it decides whether the Admin tab shows, and the app is perfectly
+    // usable for the second it takes to arrive. Worst case it never resolves
+    // and the tab stays hidden — which is a missing button, not a dead app.
+    try {
       const { count } = await supabase
         .from('participants')
         .select('competition_id', { count: 'exact', head: true })
@@ -42,8 +56,9 @@ export function AuthProvider({ children }) {
         .eq('role', 'admin')
 
       setRunsACompetition((count ?? 0) > 0)
-    } catch (e) { console.error(e) }
-    finally { setLoading(false) }
+    } catch (e) {
+      console.warn('Could not check competition admin status:', e?.message || e)
+    }
   }
 
   const signIn   = (e,p)   => supabase.auth.signInWithPassword({ email:e, password:p }).then(({data,error}) => { if(error) throw error; return data })
