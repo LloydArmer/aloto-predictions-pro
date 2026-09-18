@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../hooks/useAuth'
+import { useCompetitions } from '../../../hooks/useCompetitions'
 import { supabase } from '../../../lib/supabase'
 import { Card, Button } from '../../ui'
 import { pushCapability, enablePush, disablePush, resetPush, isIOS, rememberedDeviceToken } from '../../../lib/push'
@@ -11,7 +12,8 @@ import BadgePicker from './BadgePicker'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
-  const { user, profile, isAdmin, fetchProfile, signOut } = useAuth()
+  const { user, profile, isAdmin, runsACompetition, fetchProfile, signOut } = useAuth()
+  const { createCompetition } = useCompetitions()
   const navigate = useNavigate()
   // WhatsApp and SMS were removed from this screen. Nothing sent them — there
   // is no Twilio account, and native push covers everyone once the app is on
@@ -48,16 +50,14 @@ export default function Settings() {
   const [confirmText, setConfirmText] = useState('')
   const [deleting, setDeleting] = useState(false)
 
-  const [adminExists, setAdminExists] = useState(true) // assume true until checked, so the button never flashes on
-  const [checkingAdmin, setCheckingAdmin] = useState(true)
-  const [claiming, setClaiming] = useState(false)
-
-  useEffect(() => {
-    if (isAdmin) { setCheckingAdmin(false); return }
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin')
-      .then(({ count }) => setAdminExists((count ?? 0) > 0))
-      .finally(() => setCheckingAdmin(false))
-  }, [isAdmin])
+  // Starting a league of your own.
+  //
+  // What was here before asked whether ANY admin existed in the whole database
+  // and offered to claim the role if not. Since one account already held it,
+  // the offer could never appear again — so nobody but the first user could
+  // ever run a league, and the app quietly worked for exactly one.
+  const [newLeagueName, setNewLeagueName] = useState('')
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => { pushCapability().then(setCapability) }, [])
 
@@ -158,18 +158,29 @@ export default function Settings() {
     } finally { setResetting(false) }
   }
 
-  async function claimAdmin() {
-    setClaiming(true)
+  async function startLeague() {
+    const name = newLeagueName.trim()
+    if (!name) { toast.error('Give your league a name'); return }
+
+    setCreating(true)
     try {
-      const { error } = await supabase.from('profiles').update({ role: 'admin' }).eq('id', user.id)
-      if (error) throw error
+      // createCompetition registers the creator as its admin, so no role needs
+      // granting separately — the participants row is the permission.
+      await createCompetition({ name, format: 'league', emoji: null, created_by: user.id })
+
+      // Re-read the profile so isAdmin picks up the new competition and the
+      // Admin tab appears without needing a reload.
       await fetchProfile(user.id)
-      toast.success("You're now the admin!")
-    } catch {
-      // Most likely reason: someone else claimed admin a moment before you did.
-      setAdminExists(true)
-      toast.error('An admin already exists for this league — ask them for access.')
-    } finally { setClaiming(false) }
+      toast.success('League created — set up your gameweeks in Admin')
+      navigate('/admin')
+    } catch (err) {
+      // The free tier allows one league. The database trigger enforces it, so
+      // the message it raises is the accurate one to show.
+      const msg = err?.message || ''
+      toast.error(msg.includes('limit') || msg.includes('Pro')
+        ? 'The free plan includes one league. Upgrade to Pro for more.'
+        : 'Could not create the league')
+    } finally { setCreating(false) }
   }
 
   async function openDelete() {
@@ -234,13 +245,29 @@ export default function Settings() {
         </div>
       </Card>
 
-      {!isAdmin && !checkingAdmin && !adminExists && (
+      {/* Offered to anyone who does not already run a competition — which is
+          every new user. Joining someone else's league with a code is the other
+          route, and both are on this screen. */}
+      {!runsACompetition && (
         <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'rgba(79,142,247,0.35)' }}>
-          <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>No admin set up yet</p>
-          <p className="text-xs mb-3" style={{ color:'var(--txt-second)' }}>This league doesn't have an admin yet. If this is your league, claim admin access to set up competitions, gameweeks, and fixtures. This option disappears once someone claims it.</p>
-          <Button variant="primary" onClick={claimAdmin} disabled={claiming} className="w-full justify-center">
-            {claiming ? 'Claiming…' : 'Claim admin access'}
-          </Button>
+          <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>Run your own league</p>
+          <p className="text-xs mb-3" style={{ color:'var(--txt-second)' }}>
+            Create a league, add your fixtures, and invite your friends with a join code.
+            You'll be its admin. Free for one league.
+          </p>
+          <div className="flex gap-2">
+            <input
+              className="flex-1"
+              placeholder="e.g. The Office League"
+              value={newLeagueName}
+              onChange={e => setNewLeagueName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') startLeague() }}
+              maxLength={60}
+            />
+            <Button variant="primary" onClick={startLeague} disabled={creating}>
+              {creating ? 'Creating…' : 'Create'}
+            </Button>
+          </div>
         </Card>
       )}
 
