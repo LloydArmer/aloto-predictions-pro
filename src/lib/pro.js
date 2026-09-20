@@ -61,10 +61,20 @@ export async function getProPackage() {
   if (!canPurchase()) return null
   try {
     const { current } = await Purchases.getOfferings()
-    return current?.availablePackages?.[0] ?? null
+    const pkg = current?.availablePackages?.[0] ?? null
+
+    if (!pkg) {
+      // RevenueCat answered, but with nothing to sell. Almost always Apple
+      // withholding the product: a subscription still on "Missing Metadata"
+      // is not served to StoreKit, and the app cannot tell the difference
+      // between that and a network problem unless it is said out loud.
+      return { package: null, error: 'no-products' }
+    }
+
+    return { package: pkg, error: null }
   } catch (err) {
     console.error('Could not load offerings:', err)
-    return null
+    return { package: null, error: err?.message || 'offerings-failed' }
   }
 }
 

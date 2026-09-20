@@ -23,6 +23,10 @@ export default function ProUpgrade() {
   const [pkg, setPkg] = useState(null)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
+  // Why there is nothing to sell, when there is nothing to sell. Without this
+  // the button cannot distinguish "still fetching" from "fetched, got nothing",
+  // and shows Loading… forever.
+  const [pkgError, setPkgError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -33,9 +37,13 @@ export default function ProUpgrade() {
       if (!cancelled) setStatus(s)
 
       if (canPurchase() && user?.id) {
-        await initPurchases(user.id)
-        const p = await getProPackage()
-        if (!cancelled) setPkg(p)
+        const ready = await initPurchases(user.id)
+        if (!ready) {
+          if (!cancelled) setPkgError('no-key')
+        } else {
+          const { package: p, error } = await getProPackage()
+          if (!cancelled) { setPkg(p); setPkgError(error) }
+        }
       }
 
       if (!cancelled) setLoading(false)
@@ -159,8 +167,20 @@ export default function ProUpgrade() {
           disabled={busy || !pkg}>
           {busy ? 'Just a moment…'
             : pkg ? `Upgrade — ${pkg.product?.priceString ?? '£29.99'} a year`
-            : 'Loading…'}
+            : loading ? 'Loading…'
+            : 'Unavailable right now'}
         </Button>
+
+        {/* Said plainly rather than left as a spinner. Almost always Apple not
+            yet serving the subscription — which is invisible from inside the
+            app unless the reason is shown. */}
+        {!loading && !pkg && (
+          <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)', textAlign: 'center' }}>
+            {pkgError === 'no-key'
+              ? 'Purchases are not configured in this build.'
+              : 'The App Store has not made this subscription available yet. Try again shortly.'}
+          </p>
+        )}
 
         {/* Apple REQUIRES a restore option in any app selling a subscription,
             and rejects apps without one. It is also genuinely needed: a new
