@@ -21,6 +21,11 @@ export default function AppLayout({ children }) {
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
 
+  // Admin shows for anyone who runs at least one competition. That comes from
+  // their role in each competition (my_role, from useCompetitions), not the
+  // single profiles.role flag, which only ever let the first account in.
+  const showAdmin = isAdmin || competitions.some(c => c.my_role === 'admin')
+
   const compFormat = competitions.find(c => c.id === selectedComp)?.format
   const showBracket = competitions.some(c => c.format !== 'league')
   const showTable   = compFormat !== 'knockout'
@@ -106,7 +111,7 @@ export default function AppLayout({ children }) {
                 {item.label === 'Cup' ? 'Cup Competitions' : item.label}
               </NavLink>
             ))}
-            {isAdmin && (
+            {showAdmin && (
               <NavLink to="/admin"
                 className={({ isActive }) =>
                   `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors ${isActive ? 'font-medium' : ''}`
@@ -123,7 +128,7 @@ export default function AppLayout({ children }) {
 
           {/* Right side — desktop only */}
           <div className="ml-auto flex items-center gap-2">
-            {isAdmin && <span className="badge badge-admin hidden md:inline-flex">Admin</span>}
+            {showAdmin && <span className="badge badge-admin hidden md:inline-flex">Admin</span>}
             <div className="avatar w-7 h-7 text-xs">{initials}</div>
             <span className="hidden md:block text-xs" style={{ color: 'var(--txt-second)' }}>
               {profile?.display_name || 'Player'}
@@ -143,7 +148,7 @@ export default function AppLayout({ children }) {
                 {menuOpen && (
                   <div className="absolute right-0 top-9 rounded-lg shadow-lg py-1 z-50 min-w-36"
                     style={{ background: 'var(--bg-elevated)', border: '0.5px solid var(--border-med)' }}>
-                    {isAdmin && (
+                    {showAdmin && (
                       <NavLink to="/admin" onClick={() => setMenuOpen(false)}
                         className="flex items-center gap-2 px-3 py-2 text-sm"
                         style={{ color: 'var(--amber)' }}>
