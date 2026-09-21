@@ -190,8 +190,21 @@ async function build(competitionId, userId) {
   const { data: gws } = await supabase.from('gameweeks')
     .select('id, number, status').in('id', ids)
 
-  const gw = (gws || []).find(g => g.status === 'active')
-    || [...(gws || [])].reverse().find(g => g.status === 'completed')
+  // Put the gameweeks in order FIRST, lowest to highest.
+  //
+  // This used to take the rows in whatever order the database handed them back
+  // and pick the last completed one. With no ORDER BY that order is not
+  // guaranteed; a gameweek that has been updated more recently (recalculated,
+  // say) can come back last. That is how the card stayed on GW7 after GW8 had
+  // been completed.
+  //
+  // Sorted on the digits in the number, so it works whether the number is
+  // stored as 8 or as "GW8", and GW10 sorts after GW9 rather than before it.
+  const gwOrder = g => parseInt(String(g.number ?? '').replace(/\D/g, ''), 10) || 0
+  const ordered = [...(gws || [])].sort((a, b) => gwOrder(a) - gwOrder(b))
+
+  const gw = [...ordered].reverse().find(g => g.status === 'active')
+    || [...ordered].reverse().find(g => g.status === 'completed')
   if (!gw) return null
 
   const [{ data: fixtures }, rules] = await Promise.all([
