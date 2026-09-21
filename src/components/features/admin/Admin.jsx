@@ -754,6 +754,18 @@ function GameweeksTab({ competitionId, competitions }) {
   )
 }
 
+// A score box is only valid when it holds a whole number 0-99 and nothing else.
+// Anything else, including a box that was never touched, is "no score".
+//
+// The old check only rejected an empty string. A box nobody typed in isn't an
+// empty string, it's undefined, so it passed, Number(undefined) became NaN, NaN
+// went to the database as null, and the fixture was saved as completed with
+// only one score. That is how Bournemouth v Liverpool ended up as "0 -".
+function parseScore(v) {
+  const t = String(v ?? '').trim()
+  return /^\d{1,2}$/.test(t) ? Number(t) : null
+}
+
 function FixturesPanel({ gameweekId }) {
   const [fixtures, setFixtures] = useState([])
   const [loading, setLoading] = useState(false)
@@ -761,6 +773,8 @@ function FixturesPanel({ gameweekId }) {
   const [away, setAway] = useState('')
   const [kickoff, setKickoff] = useState('')
   const [scores, setScores] = useState({})
+  // Fixtures whose saved result is open for correction.
+  const [editing, setEditing] = useState({})
   const [recalculating, setRecalculating] = useState(false)
 
   useEffect(() => { load() }, [gameweekId])
@@ -795,15 +809,45 @@ function FixturesPanel({ gameweekId }) {
     load()
   }
 
+  // What the boxes currently hold: whatever has been typed, otherwise the score
+  // already saved. That second part is what pre-fills a correction.
+  function boxValues(fx) {
+    return {
+      home: scores[fx.id]?.home ?? (fx.home_score ?? ''),
+      away: scores[fx.id]?.away ?? (fx.away_score ?? ''),
+    }
+  }
+
+  function startEdit(fx) { setEditing(e => ({ ...e, [fx.id]: true })) }
+
+  function cancelEdit(fx) {
+    setEditing(e => { const n = { ...e }; delete n[fx.id]; return n })
+    setScores(s => { const n = { ...s }; delete n[fx.id]; return n })
+  }
+
   async function saveResult(fx) {
-    const s = scores[fx.id]
-    if (!s || s.home === '' || s.away === '') { toast.error('Enter both scores'); return }
-    const { error } = await supabase.from('fixtures').update({ home_score: Number(s.home), away_score: Number(s.away), status: 'completed' }).eq('id', fx.id)
+    const v = boxValues(fx)
+    const h = parseScore(v.home)
+    const a = parseScore(v.away)
+    if (h === null || a === null) { toast.error('Enter both scores as whole numbers'); return }
+
+    // Already completed means this is a correction to a result that may have
+    // been scored already, so the gameweek has to be recalculated with it.
+    const isCorrection = fx.status === 'completed'
+
+    const { error } = await supabase.from('fixtures').update({ home_score: h, away_score: a, status: 'completed' }).eq('id', fx.id)
     if (error) { toast.error('Could not save result'); return }
-    // Scores aren't calculated per-fixture — only once the whole gameweek
-    // is marked completed (see "Mark completed" below), so players never
-    // see partial, mid-week standings.
-    toast.success('Result saved')
+    cancelEdit(fx)
+
+    if (isCorrection) {
+      const done = await recalc({ quiet: true })
+      toast.success(done ? 'Result corrected and gameweek recalculated' : 'Result corrected')
+    } else {
+      // Scores aren't calculated per-fixture — only once the whole gameweek
+      // is marked completed (see "Mark completed" below), so players never
+      // see partial, mid-week standings.
+      toast.success('Result saved')
+    }
     load()
   }
 
@@ -832,17 +876,24 @@ function FixturesPanel({ gameweekId }) {
     load()
   }
 
-  async function recalc() {
+  // quiet: used after a correction. A gameweek that isn't completed yet has
+  // nothing to recalculate, which is fine there rather than an error, and the
+  // caller shows its own message. Returns true only if scores were recalculated.
+  async function recalc({ quiet = false } = {}) {
     setRecalculating(true)
     try {
       const { data: gw } = await supabase.from('gameweeks').select('status').eq('id', gameweekId).single()
       if (gw?.status !== 'completed') {
-        toast.error('Scores only calculate once this gameweek is marked completed — nothing to recalculate yet')
-        return
+        if (!quiet) toast.error('Scores only calculate once this gameweek is marked completed — nothing to recalculate yet')
+        return false
       }
       const compIds = await recalculateGameweekForAllLinkedCompetitions(supabase, gameweekId)
-      toast.success(`Gameweek recalculated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
-    } catch { toast.error('Could not recalculate') }
+      if (!quiet) toast.success(`Gameweek recalculated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
+      return true
+    } catch {
+      toast.error(quiet ? 'Result saved, but could not recalculate — press "Recalculate GW"' : 'Could not recalculate')
+      return false
+    }
     finally { setRecalculating(false) }
   }
 
@@ -894,19 +945,37 @@ function FixturesPanel({ gameweekId }) {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {fx.status === 'void'
-                  ? <Badge variant="live">Void</Badge>
-                  : fx.status === 'completed'
-                  ? <Badge variant="result">{fx.home_score} – {fx.away_score}</Badge>
-                  : <div className="flex items-center gap-1.5">
-                      <Input type="number" min="0" placeholder="H" style={{ width: 46 }}
-                        value={scores[fx.id]?.home ?? ''} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...s[fx.id], home: e.target.value } }))} />
-                      <span style={{ color: 'var(--txt-muted)' }}>–</span>
-                      <Input type="number" min="0" placeholder="A" style={{ width: 46 }}
-                        value={scores[fx.id]?.away ?? ''} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...s[fx.id], away: e.target.value } }))} />
-                      <Button size="sm" onClick={() => saveResult(fx)}>Save</Button>
+                {(() => {
+                  if (fx.status === 'void') return <Badge variant="live">Void</Badge>
+
+                  // Only a result with BOTH scores counts as saved. A half-saved
+                  // one falls through to the boxes, pre-filled, so it can be put
+                  // right instead of sitting there as "0 –" with no way to fix it.
+                  const hasResult = fx.status === 'completed' && fx.home_score !== null && fx.away_score !== null
+                  if (hasResult && !editing[fx.id]) return (
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="result">{fx.home_score} – {fx.away_score}</Badge>
+                      <button onClick={() => startEdit(fx)} title="Correct result"
+                        className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
+                        <i className="ti ti-pencil text-sm" aria-hidden="true" />
+                      </button>
                     </div>
-                }
+                  )
+
+                  const v = boxValues(fx)
+                  const valid = parseScore(v.home) !== null && parseScore(v.away) !== null
+                  return (
+                    <div className="flex items-center gap-1.5">
+                      <Input type="number" min="0" step="1" inputMode="numeric" placeholder="H" style={{ width: 46 }}
+                        value={v.home} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...boxValues(fx), ...s[fx.id], home: e.target.value } }))} />
+                      <span style={{ color: 'var(--txt-muted)' }}>–</span>
+                      <Input type="number" min="0" step="1" inputMode="numeric" placeholder="A" style={{ width: 46 }}
+                        value={v.away} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...boxValues(fx), ...s[fx.id], away: e.target.value } }))} />
+                      <Button size="sm" onClick={() => saveResult(fx)} disabled={!valid || recalculating}>Save</Button>
+                      {editing[fx.id] && <Button size="sm" onClick={() => cancelEdit(fx)}>Cancel</Button>}
+                    </div>
+                  )
+                })()}
                 {/* Void, not delete. Deleting removes the predictions people
                     already made; voiding keeps them and simply stops the fixture
                     counting, which is what a postponement actually is. */}
@@ -921,7 +990,7 @@ function FixturesPanel({ gameweekId }) {
               </div>
             </div>
           ))}
-          <Button variant="primary" size="sm" className="mt-3" onClick={recalc} disabled={recalculating}>
+          <Button variant="primary" size="sm" className="mt-3" onClick={() => recalc()} disabled={recalculating}>
             {recalculating ? 'Recalculating…' : 'Recalculate GW'}
           </Button>
         </>
