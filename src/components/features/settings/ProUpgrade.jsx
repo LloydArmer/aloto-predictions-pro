@@ -197,6 +197,17 @@ export default function ProUpgrade() {
         Renews annually until cancelled. Cancel any time in Settings → Apple ID → Subscriptions;
         you keep Pro until the end of the period you have paid for.
       </p>
+
+      {/* Apple REQUIRES working links to the Terms of Use and the Privacy
+          Policy on the screen that sells a subscription (guideline 3.1.2), and
+          rejects the version without them. Apple's standard licence is used
+          as the Terms of Use, which is what the App Store listing points at. */}
+      <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+        <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
+          target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>Terms of Use</a>
+        {' · '}
+        <a href="/privacy" style={{ color: 'var(--accent)' }}>Privacy Policy</a>
+      </p>
     </Card>
   )
 }
