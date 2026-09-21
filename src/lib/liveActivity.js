@@ -99,6 +99,58 @@ export async function endGameweekActivity(activityId) {
   }
 }
 
+/**
+ * Lets the SERVER start an activity while the app is closed (iOS 17.2+).
+ *
+ * Two things happen here, once per signed-in account per app launch:
+ *
+ *   The Swift side is told where to send the update token of an activity the
+ *   server starts. It has to do that itself — the server starting an activity
+ *   only wakes the app for a few seconds in the background, with no page
+ *   running to do it from here.
+ *
+ *   The device's push-to-start token is saved against this account, so the
+ *   server knows which phones to start an activity on when a gameweek kicks
+ *   off. Saved through a database function rather than a plain insert, so a
+ *   phone that changes hands moves its token to the new account.
+ *
+ * Safe on an older app build that has no configure(): the call fails, is
+ * caught, and nothing else is affected.
+ */
+let startTokenRegisteredFor = null
+
+export async function registerLiveActivityStartToken(userId) {
+  if (!isNative() || !userId || startTokenRegisteredFor === userId) return
+  startTokenRegisteredFor = userId
+
+  try {
+    const url = supabase.supabaseUrl || import.meta.env.VITE_SUPABASE_URL
+    const key = supabase.supabaseKey || import.meta.env.VITE_SUPABASE_ANON_KEY
+    if (url && key) {
+      await LiveActivity.configure({
+        endpoint: `${url}/functions/v1/live-activity-token`,
+        apiKey: key,
+      })
+    }
+
+    const save = async ({ token }) => {
+      if (!token) return
+      const { error } = await supabase.rpc('register_live_activity_start_token', { p_token: token })
+      if (error) console.warn('Could not save push-to-start token:', error.message)
+    }
+
+    // Registered before asking, so a token issued in between isn't missed.
+    await LiveActivity.addListener('pushToStartTokenReceived', save)
+
+    const { token } = await LiveActivity.getPushToStartToken()
+    await save({ token })
+  } catch (err) {
+    // Allowed to try again next launch.
+    startTokenRegisteredFor = null
+    console.warn('Push-to-start not available:', err?.message || err)
+  }
+}
+
 /** What is already running, so a second activity isn't started for a gameweek
  *  that already has one. */
 export async function activeActivities() {

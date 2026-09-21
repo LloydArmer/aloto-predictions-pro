@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import {
   isNative, liveActivityStatus, startGameweekActivity,
-  endGameweekActivity, activeActivities,
+  endGameweekActivity, activeActivities, registerLiveActivityStartToken,
 } from '../lib/liveActivity'
 import { effectiveScore, isInPlay } from '../lib/livePoints'
 import { resolvePointRules, defaultRules, scoreOnePrediction } from '../lib/scoring'
@@ -20,6 +20,13 @@ export function useLiveActivity(competitionId, userId) {
   // Which activity this session started, so it can be ended without touching
   // one belonging to another competition.
   const startedRef = useRef(null)
+
+  // Register this phone for push-to-start, so the server can start the
+  // activity when a gameweek kicks off even with the app closed. Once per
+  // account per launch; repeat calls do nothing.
+  useEffect(() => {
+    if (userId) registerLiveActivityStartToken(userId)
+  }, [userId])
 
   useEffect(() => {
     if (!isNative() || !competitionId || !userId) return

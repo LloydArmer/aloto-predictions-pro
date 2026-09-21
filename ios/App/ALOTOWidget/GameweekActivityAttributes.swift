@@ -12,6 +12,10 @@
 //  To check in Xcode: select this file, open the File Inspector on the right,
 //  and under Target Membership tick both "App" and "ALOTOWidgetExtension".
 //
+//  ALSO IMPORTANT: the server builds these same fields as JSON when it starts
+//  an activity by push (push-live-activity). The property names here ARE the
+//  JSON keys. Rename one here and the server's pushes stop decoding, silently.
+//
 
 import Foundation
 import ActivityKit
@@ -66,4 +70,10 @@ struct GameweekActivityAttributes: ActivityAttributes {
     /// What the tie is — "Quarter-final", "Group round 3". Nil for a plain
     /// league gameweek.
     var roundLabel: String?
+
+    /// Set only when the SERVER started this activity (push-to-start). It is
+    /// the server's own reference for it, and the app sends it back with the
+    /// activity's update token so the server knows whose activity the token
+    /// belongs to. Nil for activities the app started itself.
+    var ref: String?
 }
