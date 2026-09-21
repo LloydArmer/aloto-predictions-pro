@@ -12,8 +12,11 @@ import BadgePicker from './BadgePicker'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
-  const { user, profile, isAdmin, runsACompetition, fetchProfile, signOut } = useAuth()
-  const { createCompetition } = useCompetitions()
+  const { user, profile, isAdmin, fetchProfile, signOut } = useAuth()
+  // Whether this person runs a competition comes from their role in each one,
+  // not the global profile flag, which was only ever true for one account.
+  const { competitions, loading: compsLoading, createCompetition } = useCompetitions()
+  const runsACompetition = competitions.some(c => c.my_role === 'admin')
   const navigate = useNavigate()
   // WhatsApp and SMS were removed from this screen. Nothing sent them — there
   // is no Twilio account, and native push covers everyone once the app is on
@@ -225,7 +228,7 @@ export default function Settings() {
       </div>
 
       <div className="mb-5">
-        <HowToPlay isAdmin={isAdmin} />
+        <HowToPlay isAdmin={isAdmin || runsACompetition} />
       </div>
 
       {/* Above Pro: it's a two-second choice with an immediate visible result,
@@ -248,7 +251,7 @@ export default function Settings() {
       {/* Offered to anyone who does not already run a competition — which is
           every new user. Joining someone else's league with a code is the other
           route, and both are on this screen. */}
-      {!runsACompetition && (
+      {!compsLoading && !runsACompetition && (
         <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'rgba(79,142,247,0.35)' }}>
           <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>Run your own league</p>
           <p className="text-xs mb-3" style={{ color:'var(--txt-second)' }}>

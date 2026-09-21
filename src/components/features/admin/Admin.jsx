@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
@@ -35,13 +35,24 @@ export default function Admin() {
   const { user, profile, isAdmin } = useAuth()
   const { competitions, loading: compsLoading, createCompetition, refetch: refetchComps } = useCompetitions()
   const [tab, setTab] = useState('competitions')
+  // The shared selection is passed the FULL list, exactly as before. Admin must
+  // not hand it a filtered list: that would move the selection for every other
+  // page whenever Admin opened. Filtering happens below, for display only.
   const [selectedComp, setSelectedComp] = useSelectedCompetition(competitions)
 
-  if (!isAdmin) return (
+  // The competitions this person runs. Admin rights are per competition now,
+  // from participants.role, not the single profiles.role flag that only ever
+  // let the first account in.
+  const managed = useMemo(() => competitions.filter(c => c.my_role === 'admin'), [competitions])
+  const managesSelected = managed.some(c => c.id === selectedComp)
+
+  if (compsLoading) return <div className="flex justify-center py-20"><Spinner /></div>
+
+  if (!isAdmin && managed.length === 0) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <i className="ti ti-lock text-4xl mb-4" style={{ color: 'var(--txt-muted)' }} />
-      <p className="text-sm font-medium" style={{ color: 'var(--txt-second)' }}>Admin access only</p>
-      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>You need admin role to access this page</p>
+      <p className="text-sm font-medium" style={{ color: 'var(--txt-second)' }}>You don't run a competition yet</p>
+      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>Create a league in Settings and you'll manage it here</p>
     </div>
   )
 
@@ -69,30 +80,41 @@ export default function Admin() {
         ))}
       </div>
 
-      {tab !== 'competitions' && competitions.length > 0 && (
+      {tab !== 'competitions' && managed.length > 0 && (
         // The competition picker. "Managing:" was dropped — the folder icon and
         // the picker itself already say what this is, and on a phone the label
         // pushed the control onto a second line.
         <div className="flex items-center gap-2 mb-3 p-2 rounded-md" style={{ background: 'var(--accent-dim)', border: '0.5px solid rgba(79,142,247,0.3)' }}>
           <i className="ti ti-folder text-sm flex-shrink-0" style={{ color: 'var(--accent)' }} aria-hidden="true" />
-          <Select value={selectedComp || ''} onChange={e => setSelectedComp(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0, fontWeight: 600 }}>
+          <Select value={managesSelected ? selectedComp : ''} onChange={e => { if (e.target.value) setSelectedComp(e.target.value) }} style={{ flex: '1 1 auto', minWidth: 0, fontWeight: 600 }}>
+            {/* Shown when the competition selected elsewhere in the app is one
+                this person only plays in. */}
+            {!managesSelected && <option value="">Choose a competition you run</option>}
             {/* <option> cannot hold markup, so a plain-text mark stands in for
                 the icon and at least keeps the formats distinguishable. */}
-            {competitions.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
+            {managed.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
           </Select>
         </div>
       )}
 
       {tab === 'competitions' && (
-        <CompetitionsTab user={user} competitions={competitions} loading={compsLoading}
+        <CompetitionsTab user={user} competitions={managed} loading={compsLoading}
           createCompetition={createCompetition} refetchComps={refetchComps}
           selectedComp={selectedComp} setSelectedComp={setSelectedComp} />
       )}
-      {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
-      {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
-      {tab === 'season' && <SeasonTab competitionId={selectedComp} />}
-      {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
-      {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
+
+      {/* The other tabs only open for a competition this person runs. They
+          still receive the full list, which they use to look things up. */}
+      {tab !== 'competitions' && !managesSelected && (
+        <EmptyState icon="ti-lock" title="You play in this competition" description="Choose a competition you run from the list above to manage it." />
+      )}
+      {managesSelected && <>
+        {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
+        {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
+        {tab === 'season' && <SeasonTab competitionId={selectedComp} />}
+        {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
+        {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
+      </>}
     </div>
   )
 }
