@@ -43,6 +43,8 @@
 #     VITE_FIREBASE_SENDER_ID
 #     VITE_FIREBASE_APP_ID
 #     VITE_FIREBASE_VAPID_KEY
+#     VITE_REVENUECAT_APPLE_KEY  RevenueCat's public Apple API key (starts appl_).
+#                                iOS only; without it the app cannot sell Pro.
 
 workflows:
 
@@ -87,6 +89,23 @@ workflows:
         MARKETING_VERSION: "1.1"
 
     scripts:
+      - name: Check the required settings are present
+        # Fails in seconds rather than after a full build. A missing RevenueCat
+        # key doesn't break the build: it produces an app that installs, runs,
+        # and says "Purchases are not configured" where the price should be.
+        # That is only discovered on a phone, or by Apple's reviewer.
+        script: |
+          MISSING=""
+          for NAME in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY VITE_REVENUECAT_APPLE_KEY; do
+            if [ -z "${!NAME}" ]; then MISSING="$MISSING $NAME"; fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "Missing from the Codemagic environment:$MISSING"
+            echo "Add them to the 'supabase' group, then run the build again."
+            exit 1
+          fi
+          echo "All required settings present."
+
       - name: Install dependencies
         script: npm ci
 
