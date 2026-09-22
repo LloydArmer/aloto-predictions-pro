@@ -3,13 +3,19 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Prediction reminders, sent as push notifications.
 //
-// Three triggers, all keyed to the GAMEWEEK rather than to individual fixtures:
+// GAMEWEEK reminders, keyed to the gameweek rather than individual fixtures:
 //   gameweek_open — the admin has made a gameweek active and it has fixtures
 //   deadline_24h  — within 24h of the FIRST kickoff, and predictions incomplete
 //   deadline_1h   — within 1h of the first kickoff, and predictions incomplete
 //
-// The two deadline reminders only ever go to someone who still has unpredicted
-// fixtures. Anyone who has finished is left alone.
+// SEASON PREDICTION reminders, for the predicted final table and the season
+// picks, each keyed to its own deadline:
+//   season_table_open / season_picks_open — open, and not yet started
+//   season_table_24h  / season_picks_24h  — within 24h of the deadline, incomplete
+//   season_table_1h   / season_picks_1h   — within 1h of the deadline, incomplete
+//
+// Every deadline reminder only goes to someone who still has something to do.
+// Anyone who has finished is left alone.
 //
 // Runs every 15 minutes from pg_cron (see migration 035). Repeat sends are
 // prevented by the unique constraint on notification_log, so running often is
@@ -139,6 +145,23 @@ const fmtTime = (iso: string) =>
 const fmtDay = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Europe/London' })
 
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })
+
+const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? 's' : ''}`
+
+// One reminder owed to one person. Gameweek reminders carry gwId; season
+// reminders carry refId (the season config), because they have no gameweek.
+type Job = {
+  userId: string
+  gwId: string | null
+  refId: string | null
+  kind: string
+  title: string
+  body: string
+  link: string
+}
+
 serve(async () => {
   try {
     const supabase = createClient(
@@ -152,41 +175,27 @@ serve(async () => {
 
     const now = Date.now()
     const results = { sent: 0, skipped: 0, staleTokensRemoved: 0, errors: [] as string[] }
-    const done = (note: string) =>
-      new Response(JSON.stringify({ success: true, ...results, note }), { headers: { 'Content-Type': 'application/json' } })
 
-    // ---- Which gameweeks are in play? ------------------------------------
-    const { data: gameweeks } = await supabase
-      .from('gameweeks').select('id, number, status').eq('status', 'active')
-    if (!gameweeks?.length) return done('no active gameweeks')
+    // Gameweeks and season predictions are worked out separately and then sent
+    // together. Neither can stop the other: this used to return as soon as
+    // there was no active gameweek, and season predictions are mostly made in
+    // the summer, exactly when there isn't one.
+    const gameweekJobs = await gameweekReminders(supabase, now, results, APP_URL)
+    const seasonJobs   = await seasonReminders(supabase, now, results, APP_URL)
+    const candidates   = [...gameweekJobs, ...seasonJobs]
 
-    const gwIds = gameweeks.map((g: any) => g.id)
+    if (!candidates.length) {
+      return new Response(JSON.stringify({ success: true, ...results, note: 'nothing due' }),
+        { headers: { 'Content-Type': 'application/json' } })
+    }
 
-    // Voided fixtures are excluded everywhere below: they can't be predicted, so
-    // chasing them would tell participants they're behind when they aren't, and
-    // a voided first fixture would set the deadline to a match nobody is playing.
-    const { data: allFixtures } = await supabase
-      .from('fixtures').select('id, gameweek_id, home_team, away_team, kickoff_time, home_score, status')
-      .in('gameweek_id', gwIds).neq('status', 'void').order('kickoff_time')
-
-    // A gameweek reaches participants only through the join table — the
-    // gameweek row itself doesn't know who should be reminded about it.
-    const { data: links } = await supabase
-      .from('competition_gameweeks').select('competition_id, gameweek_id').in('gameweek_id', gwIds)
-
-    const compIds = [...new Set((links || []).map((l: any) => l.competition_id))]
-    if (!compIds.length) return done('no competitions linked to the active gameweeks')
-
-    const { data: participants } = await supabase
-      .from('participants').select('user_id, competition_id').in('competition_id', compIds)
-
-    const userIds = [...new Set((participants || []).map((p: any) => p.user_id))]
-    if (!userIds.length) return done('no participants')
+    // ---- Who wants push, and on which devices -----------------------------
+    const userIds = [...new Set(candidates.map(j => j.userId))]
 
     // Muted participants are filtered here rather than at send time, so someone
     // who has switched reminders off costs nothing beyond this one query.
     const { data: profiles } = await supabase
-      .from('profiles').select('id, display_name, notify_push').in('id', userIds)
+      .from('profiles').select('id, notify_push').in('id', userIds)
     const wantsPush = new Map((profiles || []).map((p: any) => [p.id, p.notify_push !== false]))
 
     const { data: tokens } = await supabase
@@ -197,83 +206,15 @@ serve(async () => {
       tokensByUser.get(t.user_id)!.push({ id: t.id, token: t.token })
     }
 
-    // Scoped to this channel. WhatsApp, when it's added, keeps its own send
-    // history — a participant who got the push shouldn't be silently skipped on
-    // the other channel, or vice versa.
-    const { data: alreadySent } = await supabase
-      .from('notification_log').select('user_id, gameweek_id, kind')
-      .eq('channel', CHANNEL).in('gameweek_id', gwIds)
-    const sentKey = new Set((alreadySent || []).map((r: any) => `${r.user_id}:${r.gameweek_id}:${r.kind}`))
+    const jobs = candidates.filter(j => {
+      if (!wantsPush.get(j.userId) || !tokensByUser.has(j.userId)) { results.skipped++; return false }
+      return true
+    })
 
-    const { data: predictions } = await supabase
-      .from('predictions').select('user_id, fixture_id, gameweek_id').in('gameweek_id', gwIds)
-
-    // ---- Work out what each participant is owed ---------------------------
-    type Job = { userId: string; gwId: string; kind: string; title: string; body: string }
-    const jobs: Job[] = []
-
-    for (const gw of gameweeks) {
-      const fixtures = (allFixtures || []).filter((f: any) => f.gameweek_id === gw.id)
-      if (!fixtures.length) continue
-
-      const first = fixtures[0]
-      const minutesToDeadline = (new Date(first.kickoff_time).getTime() - now) / 60000
-
-      const gwCompIds = (links || []).filter((l: any) => l.gameweek_id === gw.id).map((l: any) => l.competition_id)
-      const gwUserIds = [...new Set((participants || [])
-        .filter((p: any) => gwCompIds.includes(p.competition_id)).map((p: any) => p.user_id))]
-
-      for (const userId of gwUserIds) {
-        if (!wantsPush.get(userId)) { results.skipped++; continue }
-        if (!tokensByUser.has(userId)) { results.skipped++; continue }
-
-        // Fixtures this participant still hasn't predicted. Ones that have
-        // already kicked off are excluded — chasing a locked fixture is noise,
-        // since there is nothing they can do about it.
-        const mine = new Set((predictions || [])
-          .filter((p: any) => p.user_id === userId && p.gameweek_id === gw.id).map((p: any) => p.fixture_id))
-        const outstanding = fixtures.filter((f: any) =>
-          !mine.has(f.id) && f.home_score === null && new Date(f.kickoff_time).getTime() > now)
-
-        const push = (kind: string, title: string, body: string) => {
-          if (sentKey.has(`${userId}:${gw.id}:${kind}`)) return
-          jobs.push({ userId, gwId: gw.id, kind, title, body })
-        }
-
-        // 1. The gameweek is open. Goes to everyone — this one is an
-        //    announcement, not a chase.
-        push(
-          'gameweek_open',
-          `${gw.number} is open`,
-          `${fixtures.length} fixture${fixtures.length !== 1 ? 's' : ''} to predict. Each locks at its own kickoff — the first is ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}.`,
-        )
-
-        // 2 and 3. Deadline chases — only when something is still outstanding.
-        if (outstanding.length > 0) {
-          if (minutesToDeadline <= 24 * 60 && minutesToDeadline > 60) {
-            push(
-              'deadline_24h',
-              `24 hours left — ${gw.number}`,
-              `${outstanding.length} prediction${outstanding.length !== 1 ? 's' : ''} outstanding. First fixture locks ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}; each later one locks at its own kickoff.`,
-            )
-          }
-          if (minutesToDeadline <= 60 && minutesToDeadline > 0) {
-            // Wording matters here. This is the LAST reminder, but it is not a
-            // deadline for the whole gameweek — only the first fixture locks at
-            // this kickoff. Every other fixture stays open until its own. Saying
-            // "last chance" would be wrong, and would push people into rushing
-            // predictions they still have days to make.
-            push(
-              'deadline_1h',
-              `Final reminder — ${gw.number}`,
-              `${first.home_team} v ${first.away_team} kicks off at ${fmtTime(first.kickoff_time)} and locks then. ${outstanding.length} prediction${outstanding.length !== 1 ? 's' : ''} outstanding — later fixtures stay open until their own kickoff. This is the last reminder for this gameweek.`,
-            )
-          }
-        }
-      }
+    if (!jobs.length) {
+      return new Response(JSON.stringify({ success: true, ...results, note: 'nothing deliverable' }),
+        { headers: { 'Content-Type': 'application/json' } })
     }
-
-    if (!jobs.length) return done('nothing due')
 
     // ---- Send -------------------------------------------------------------
     const accessToken = await getAccessToken(CLIENT_EMAIL, PRIVATE_KEY)
@@ -286,7 +227,7 @@ serve(async () => {
       for (const device of devices) {
         try {
           const outcome = await sendPush(
-            PROJECT_ID, accessToken, device.token, job.title, job.body, `${APP_URL}/predict`, job.kind,
+            PROJECT_ID, accessToken, device.token, job.title, job.body, job.link, job.kind,
           )
           if (outcome === 'sent') deliveredToAny = true
           if (outcome === 'stale') staleTokenIds.push(device.id)
@@ -297,17 +238,23 @@ serve(async () => {
 
       // Only log a reminder that actually reached a device. Logging on failure
       // would permanently suppress the retry, and the participant would silently
-      // never be reminded about that gameweek again.
+      // never be reminded again.
       if (deliveredToAny) {
-        const { error } = await supabase.from('notification_log')
-          .insert({ user_id: job.userId, gameweek_id: job.gwId, kind: job.kind, channel: CHANNEL })
+        const { error } = await supabase.from('notification_log').insert({
+          user_id: job.userId,
+          gameweek_id: job.gwId,
+          ref_id: job.refId,
+          kind: job.kind,
+          channel: CHANNEL,
+        })
         if (!error) results.sent++
+        else results.errors.push(`log ${job.kind}: ${error.message}`)
       }
     }
 
     if (staleTokenIds.length) {
-      await supabase.from('push_tokens').delete().in('id', staleTokenIds)
-      results.staleTokensRemoved = staleTokenIds.length
+      await supabase.from('push_tokens').delete().in('id', [...new Set(staleTokenIds)])
+      results.staleTokensRemoved = new Set(staleTokenIds).size
     }
 
     return new Response(JSON.stringify({ success: true, ...results }),
@@ -317,3 +264,221 @@ serve(async () => {
       { status: 500, headers: { 'Content-Type': 'application/json' } })
   }
 })
+
+/* ========================================================================== */
+/*  Gameweeks. Unchanged in what it sends; only moved into its own function.   */
+/* ========================================================================== */
+
+async function gameweekReminders(supabase: any, now: number, results: any, APP_URL: string): Promise<Job[]> {
+  const { data: gameweeks } = await supabase
+    .from('gameweeks').select('id, number, status').eq('status', 'active')
+  if (!gameweeks?.length) return []
+
+  const gwIds = gameweeks.map((g: any) => g.id)
+
+  // Voided fixtures are excluded everywhere below: they can't be predicted, so
+  // chasing them would tell participants they're behind when they aren't, and
+  // a voided first fixture would set the deadline to a match nobody is playing.
+  const { data: allFixtures } = await supabase
+    .from('fixtures').select('id, gameweek_id, home_team, away_team, kickoff_time, home_score, status')
+    .in('gameweek_id', gwIds).neq('status', 'void').order('kickoff_time')
+
+  // A gameweek reaches participants only through the join table — the
+  // gameweek row itself doesn't know who should be reminded about it.
+  const { data: links } = await supabase
+    .from('competition_gameweeks').select('competition_id, gameweek_id').in('gameweek_id', gwIds)
+
+  const compIds = [...new Set((links || []).map((l: any) => l.competition_id))]
+  if (!compIds.length) return []
+
+  const { data: participants } = await supabase
+    .from('participants').select('user_id, competition_id').in('competition_id', compIds)
+  if (!participants?.length) return []
+
+  // Scoped to this channel. WhatsApp, when it's added, keeps its own send
+  // history — a participant who got the push shouldn't be silently skipped on
+  // the other channel, or vice versa.
+  const { data: alreadySent } = await supabase
+    .from('notification_log').select('user_id, gameweek_id, kind')
+    .eq('channel', CHANNEL).in('gameweek_id', gwIds)
+  const sentKey = new Set((alreadySent || []).map((r: any) => `${r.user_id}:${r.gameweek_id}:${r.kind}`))
+
+  const { data: predictions } = await supabase
+    .from('predictions').select('user_id, fixture_id, gameweek_id').in('gameweek_id', gwIds)
+
+  const jobs: Job[] = []
+
+  for (const gw of gameweeks) {
+    const fixtures = (allFixtures || []).filter((f: any) => f.gameweek_id === gw.id)
+    if (!fixtures.length) continue
+
+    const first = fixtures[0]
+    const minutesToDeadline = (new Date(first.kickoff_time).getTime() - now) / 60000
+
+    const gwCompIds = (links || []).filter((l: any) => l.gameweek_id === gw.id).map((l: any) => l.competition_id)
+    const gwUserIds = [...new Set((participants || [])
+      .filter((p: any) => gwCompIds.includes(p.competition_id)).map((p: any) => p.user_id))] as string[]
+
+    for (const userId of gwUserIds) {
+      // Fixtures this participant still hasn't predicted. Ones that have
+      // already kicked off are excluded — chasing a locked fixture is noise,
+      // since there is nothing they can do about it.
+      const mine = new Set((predictions || [])
+        .filter((p: any) => p.user_id === userId && p.gameweek_id === gw.id).map((p: any) => p.fixture_id))
+      const outstanding = fixtures.filter((f: any) =>
+        !mine.has(f.id) && f.home_score === null && new Date(f.kickoff_time).getTime() > now)
+
+      const push = (kind: string, title: string, body: string) => {
+        if (sentKey.has(`${userId}:${gw.id}:${kind}`)) return
+        jobs.push({ userId, gwId: gw.id, refId: null, kind, title, body, link: `${APP_URL}/predict` })
+      }
+
+      // 1. The gameweek is open. Goes to everyone — this one is an
+      //    announcement, not a chase.
+      push(
+        'gameweek_open',
+        `${gw.number} is open`,
+        `${plural(fixtures.length, 'fixture')} to predict. Each locks at its own kickoff — the first is ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}.`,
+      )
+
+      // 2 and 3. Deadline chases — only when something is still outstanding.
+      if (outstanding.length > 0) {
+        if (minutesToDeadline <= 24 * 60 && minutesToDeadline > 60) {
+          push(
+            'deadline_24h',
+            `24 hours left — ${gw.number}`,
+            `${plural(outstanding.length, 'prediction')} outstanding. First fixture locks ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}; each later one locks at its own kickoff.`,
+          )
+        }
+        if (minutesToDeadline <= 60 && minutesToDeadline > 0) {
+          // Wording matters here. This is the LAST reminder, but it is not a
+          // deadline for the whole gameweek — only the first fixture locks at
+          // this kickoff. Every other fixture stays open until its own. Saying
+          // "last chance" would be wrong, and would push people into rushing
+          // predictions they still have days to make.
+          push(
+            'deadline_1h',
+            `Final reminder — ${gw.number}`,
+            `${first.home_team} v ${first.away_team} kicks off at ${fmtTime(first.kickoff_time)} and locks then. ${plural(outstanding.length, 'prediction')} outstanding — later fixtures stay open until their own kickoff. This is the last reminder for this gameweek.`,
+          )
+        }
+      }
+    }
+  }
+
+  return jobs
+}
+
+/* ========================================================================== */
+/*  Season predictions: the predicted final table, and the season picks.       */
+/* ========================================================================== */
+
+async function seasonReminders(supabase: any, now: number, results: any, APP_URL: string): Promise<Job[]> {
+  // Open configs whose deadline hasn't passed. One with no deadline set stays
+  // open indefinitely, so it gets the "open" announcement but no countdown.
+  const [{ data: tableConfigs }, { data: pickConfigs }] = await Promise.all([
+    supabase.from('season_table_configs').select('id, competition_id, deadline, is_open').eq('is_open', true),
+    supabase.from('season_pick_configs').select('id, competition_id, deadline, is_open').eq('is_open', true),
+  ])
+
+  const stillOpen = (c: any) => !c.deadline || new Date(c.deadline).getTime() > now
+  const tables = (tableConfigs || []).filter(stillOpen)
+  const picks  = (pickConfigs  || []).filter(stillOpen)
+  if (!tables.length && !picks.length) return []
+
+  const configIds = [...tables, ...picks].map((c: any) => c.id)
+  const compIds = [...new Set([...tables, ...picks].map((c: any) => c.competition_id))]
+
+  const [{ data: comps }, { data: participants }, { data: alreadySent }] = await Promise.all([
+    supabase.from('competitions').select('id, name').in('id', compIds),
+    supabase.from('participants').select('user_id, competition_id').in('competition_id', compIds),
+    supabase.from('notification_log').select('user_id, ref_id, kind')
+      .eq('channel', CHANNEL).in('ref_id', configIds),
+  ])
+  if (!participants?.length) return []
+
+  const compName = new Map((comps || []).map((c: any) => [c.id, c.name]))
+  const sentKey = new Set((alreadySent || []).map((r: any) => `${r.user_id}:${r.ref_id}:${r.kind}`))
+  const membersOf = (compId: string) =>
+    [...new Set((participants || []).filter((p: any) => p.competition_id === compId).map((p: any) => p.user_id))] as string[]
+
+  // Who has already predicted each table. A table is submitted in one go, so
+  // anyone with a saved prediction for it is treated as done.
+  const tableIds = tables.map((c: any) => c.id)
+  const { data: tablePreds } = tableIds.length
+    ? await supabase.from('season_table_predictions').select('user_id, config_id').in('config_id', tableIds)
+    : { data: [] }
+  const tableDone = new Set((tablePreds || []).map((p: any) => `${p.user_id}:${p.config_id}`))
+
+  // Season picks are separate questions, so progress is counted per question.
+  const pickConfigIds = picks.map((c: any) => c.id)
+  const { data: questions } = pickConfigIds.length
+    ? await supabase.from('season_picks').select('id, config_id').in('config_id', pickConfigIds)
+    : { data: [] }
+  const questionIds = (questions || []).map((q: any) => q.id)
+  const { data: answers } = questionIds.length
+    ? await supabase.from('season_pick_answers').select('user_id, pick_id').in('pick_id', questionIds)
+    : { data: [] }
+  const answered = new Set((answers || []).map((a: any) => `${a.user_id}:${a.pick_id}`))
+
+  const jobs: Job[] = []
+  const link = `${APP_URL}/predict`
+
+  const push = (userId: string, refId: string, kind: string, title: string, body: string) => {
+    if (sentKey.has(`${userId}:${refId}:${kind}`)) return
+    jobs.push({ userId, gwId: null, refId, kind, title, body, link })
+  }
+
+  const when = (iso: string) => `${fmtDate(iso)} at ${fmtTime(iso)}`
+
+  // The three stages, shared by tables and picks.
+  function remind(userId: string, config: any, prefix: 'season_table' | 'season_picks',
+                  started: boolean, outstanding: string) {
+    const name = compName.get(config.competition_id) || 'Your league'
+    const minutesLeft = config.deadline
+      ? (new Date(config.deadline).getTime() - now) / 60000
+      : Infinity
+
+    // Announcement: only to people who haven't started, so someone who jumped
+    // in the moment it opened isn't told it has opened.
+    if (!started) {
+      push(userId, config.id, `${prefix}_open`,
+        prefix === 'season_table' ? `Predict the final table — ${name}` : `Season picks are open — ${name}`,
+        config.deadline
+          ? `${outstanding}. Locks ${when(config.deadline)}.`
+          : `${outstanding}.`)
+    }
+
+    if (minutesLeft <= 24 * 60 && minutesLeft > 60) {
+      push(userId, config.id, `${prefix}_24h`,
+        `24 hours left — season predictions`,
+        `${name}: ${outstanding.toLowerCase()}. Locks ${when(config.deadline)}.`)
+    }
+    if (minutesLeft <= 60 && minutesLeft > 0) {
+      push(userId, config.id, `${prefix}_1h`,
+        `Final reminder — season predictions`,
+        `${name}: ${outstanding.toLowerCase()}. Locks at ${fmtTime(config.deadline)} and can't be changed after that.`)
+    }
+  }
+
+  for (const config of tables) {
+    for (const userId of membersOf(config.competition_id)) {
+      if (tableDone.has(`${userId}:${config.id}`)) continue
+      remind(userId, config, 'season_table', false, 'Your predicted final table isn\u2019t in yet')
+    }
+  }
+
+  for (const config of picks) {
+    const qs = (questions || []).filter((q: any) => q.config_id === config.id)
+    if (!qs.length) continue
+
+    for (const userId of membersOf(config.competition_id)) {
+      const left = qs.filter((q: any) => !answered.has(`${userId}:${q.id}`)).length
+      if (left === 0) continue
+      const started = left < qs.length
+      remind(userId, config, 'season_picks', started, `${plural(left, 'season pick')} still to make`)
+    }
+  }
+
+  return jobs
+}
