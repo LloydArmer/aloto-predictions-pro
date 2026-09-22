@@ -88,8 +88,13 @@ Deno.serve(async (req) => {
       ? new Date(Number(ev.expiration_at_ms)).toISOString()
       : null
 
+    // Every database write below is CHECKED. The Supabase client does not
+    // throw when a write fails, it returns { error }. Unchecked, a failed write
+    // still answered 200, RevenueCat never retried, and someone who had paid
+    // was left without Pro and nothing anywhere said so. Now a failure throws,
+    // the catch at the bottom answers 500, and RevenueCat tries again.
     if (GRANTING.has(type)) {
-      await supabase.rpc('apply_pro_entitlement', {
+      const { error } = await supabase.rpc('apply_pro_entitlement', {
         p_user_id:     userId,
         p_expires_at:  expiresAt,
         p_store:       ev.store ?? 'APP_STORE',
@@ -101,11 +106,12 @@ Deno.serve(async (req) => {
         p_will_renew:  type !== 'CANCELLATION',
         p_event_type:  type,
       })
+      if (error) throw new Error(`apply_pro_entitlement: ${error.message}`)
     } else if (REVOKING.has(type)) {
       // Expired at this moment rather than deleted, so the history of what they
       // had and when it ended survives. Deleting the row would make a support
       // question unanswerable.
-      await supabase.from('pro_entitlements')
+      const { error } = await supabase.from('pro_entitlements')
         .update({
           expires_at: new Date().toISOString(),
           will_renew: false,
@@ -114,6 +120,7 @@ Deno.serve(async (req) => {
         })
         .eq('user_id', userId)
         .eq('source', 'purchase')      // never touches a permanent grant
+      if (error) throw new Error(`revoke: ${error.message}`)
     } else {
       // BILLING_ISSUE, SUBSCRIBER_ALIAS, TRANSFER and anything RevenueCat adds
       // later. Logged rather than acted on — a billing issue is not yet a

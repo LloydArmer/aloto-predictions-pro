@@ -14,7 +14,10 @@ import { supabase } from './supabase'
  * So what the app reads is always the database, never RevenueCat's local cache.
  */
 
-const ENTITLEMENT = 'pro'   // must match the identifier set in RevenueCat
+// Must match the entitlement's IDENTIFIER in RevenueCat exactly (Product
+// catalog -> Entitlements). This said 'pro', which RevenueCat never reports, so
+// every successful purchase came back as "not entitled".
+const ENTITLEMENT = 'aloto_prediction_pro_premium'
 
 let configured = false
 
