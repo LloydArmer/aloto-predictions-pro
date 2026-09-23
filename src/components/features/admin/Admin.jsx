@@ -111,7 +111,7 @@ export default function Admin() {
       {managesSelected && <>
         {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
         {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
-        {tab === 'season' && <SeasonTab competitionId={selectedComp} />}
+        {tab === 'season' && <SeasonTab competitionId={selectedComp} competitions={competitions} />}
         {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
         {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
       </>}

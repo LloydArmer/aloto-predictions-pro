@@ -78,7 +78,7 @@ const toLocalInput = iso => {
  * column in the overall standings — which is why there is no "which gameweek do
  * these count in" control here.
  */
-export default function SeasonTab({ competitionId }) {
+export default function SeasonTab({ competitionId, competitions = [] }) {
   const [loading, setLoading] = useState(true)
   const [tableConfig, setTableConfig] = useState(null)
   const [teams, setTeams] = useState([])
@@ -303,6 +303,19 @@ export default function SeasonTab({ competitionId }) {
   }
 
   if (!competitionId) return <EmptyState icon="ti-calendar-star" title="Choose a competition first" />
+
+  // Season predictions are a LEAGUE feature. Their points are added to the
+  // league table, and a cup has no league table to add them to — the points
+  // would be scored and then have nowhere to go. The database refuses to create
+  // them for a cup as well; this is so nobody is offered the setup in the first
+  // place. Checked after the hooks above, never before, or React would see a
+  // different number of hooks between competitions.
+  const comp = competitions.find(c => c.id === competitionId)
+  if (comp && comp.format !== 'league') {
+    return <EmptyState icon="ti-calendar-star" title="Season predictions are for Leagues"
+      description="Their points go into a league table, so they can only be set up on a League competition. Pick your league from the list above." />
+  }
+
   if (loading) return <Spinner/>
 
   return (
