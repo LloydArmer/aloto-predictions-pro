@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Without this the app is not allowed to register for push at all, which
+	     is what produced "Could not register this device". "production" is
+	     correct for TestFlight and App Store builds; Xcode automatically uses
+	     the development servers when running from Xcode. -->
+	<key>aps-environment</key>
+	<string>production</string>
+</dict>
+</plist>

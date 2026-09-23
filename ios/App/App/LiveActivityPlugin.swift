@@ -84,11 +84,14 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// Live Activities need iOS 16.1, and the user can switch them off per app.
-    /// Both are reported so the web side can explain which it is rather than
-    /// failing silently.
+    /// Live Activities need iOS 16.2 here, and the user can switch them off
+    /// per app. Both are reported so the web side can explain which it is
+    /// rather than failing silently.
+    ///
+    /// 16.2 rather than 16.1: the app's minimum is 16.1, and the ActivityKit
+    /// calls used below only exist from 16.2, so a 16.1 check would not build.
     @objc func isSupported(_ call: CAPPluginCall) {
-        if #available(iOS 16.1, *) {
+        if #available(iOS 16.2, *) {
             call.resolve([
                 "supported": true,
                 "enabled": ActivityAuthorizationInfo().areActivitiesEnabled,
@@ -114,8 +117,8 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func start(_ call: CAPPluginCall) {
-        guard #available(iOS 16.1, *) else {
-            call.reject("Live Activities need iOS 16.1 or later")
+        guard #available(iOS 16.2, *) else {
+            call.reject("Live Activities need iOS 16.2 or later")
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
@@ -169,7 +172,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     /// push; this is for the case where the app is open and has fresher data
     /// than the last push delivered.
     @objc func update(_ call: CAPPluginCall) {
-        guard #available(iOS 16.1, *) else { call.reject("Needs iOS 16.1"); return }
+        guard #available(iOS 16.2, *) else { call.reject("Needs iOS 16.2"); return }
         guard let id = call.getString("activityId") else {
             call.reject("activityId is required")
             return
@@ -193,7 +196,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func end(_ call: CAPPluginCall) {
-        guard #available(iOS 16.1, *) else { call.reject("Needs iOS 16.1"); return }
+        guard #available(iOS 16.2, *) else { call.reject("Needs iOS 16.2"); return }
         let id = call.getString("activityId")
 
         Task {
@@ -212,7 +215,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     /// What is currently running. Used on launch to avoid starting a second
     /// activity for a gameweek that already has one.
     @objc func listActive(_ call: CAPPluginCall) {
-        guard #available(iOS 16.1, *) else { call.resolve(["activities": []]); return }
+        guard #available(iOS 16.2, *) else { call.resolve(["activities": []]); return }
 
         let ids = Activity<GameweekActivityAttributes>.activities.map { activity in
             ["activityId": activity.id, "gameweekLabel": activity.attributes.gameweekLabel]
