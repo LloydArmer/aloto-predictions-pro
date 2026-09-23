@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { Card, Button, Input, Select, SectionLabel, EmptyState, Spinner } from '../../ui'
 import TableOrderEditor from './TableOrderEditor'
+import SeasonComparison from './SeasonComparison'
 import { deadlineLabel, daysUntil } from '../../../lib/seasonScoring'
 import toast from 'react-hot-toast'
 
@@ -75,6 +76,10 @@ export default function SeasonPredictions({ competitionId, userId }) {
   const tableLocked = !tableConfig?.is_open || (tableConfig?.deadline && new Date(tableConfig.deadline) < new Date())
   const picksLocked = !pickConfig?.is_open || (pickConfig?.deadline && new Date(pickConfig.deadline) < new Date())
 
+  // Everyone else's predictions become visible the moment entries close, and
+  // not a second before.
+  const showComparison = (!!tableConfig && tableLocked) || (!!pickConfig && picksLocked)
+
   const tableFilled = Object.values(myTable).filter(Boolean).length
   const tableComplete = tableConfig && tableFilled === tableConfig.team_count
   const picksAnswered = picks.filter(p => myPicks[p.id]).length
@@ -134,7 +139,7 @@ export default function SeasonPredictions({ competitionId, userId }) {
 
   if (loading) return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
 
-  if (!scored && !tableConfig?.is_open && !pickConfig?.is_open) {
+  if (!scored && !tableConfig?.is_open && !pickConfig?.is_open && !showComparison) {
     return <EmptyState icon="ti-calendar-star" title="No season predictions open"
       description="Your admin will open these before the season starts"/>
   }
@@ -252,6 +257,15 @@ export default function SeasonPredictions({ competitionId, userId }) {
           </Card>
         </div>
       )}
+      {/* ---------------- Everyone else ---------------- */}
+      <SeasonComparison
+        competitionId={competitionId}
+        userId={userId}
+        tableConfig={tableConfig}
+        pickConfig={pickConfig}
+        tableLocked={tableLocked}
+        picksLocked={picksLocked}
+      />
     </div>
   )
 }
