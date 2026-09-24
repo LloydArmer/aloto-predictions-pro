@@ -98,7 +98,11 @@ export default function Settings() {
             'no-token': 'Could not register this device. Try reloading the page.',
             'save-failed': 'Could not save this device. Check your connection and try again.',
           }
-          toast.error(messages[result.reason] || 'Could not turn on reminders')
+          // The detail is what iOS actually said. Shown rather than swallowed:
+          // "could not register this device" fits half a dozen different
+          // causes, and none of them can be fixed without knowing which.
+          const detail = result.detail ? ` (${result.detail})` : ''
+          toast.error((messages[result.reason] || 'Could not turn on reminders') + detail, { duration: 12000 })
           return
         }
         // Registering a device implies wanting reminders, so switch the account

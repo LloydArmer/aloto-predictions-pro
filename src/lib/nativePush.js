@@ -43,25 +43,37 @@ export async function enableNativePush(userId) {
     return { ok: false, reason: permission.receive === 'denied' ? 'denied' : 'dismissed' }
   }
 
-  const token = await new Promise((resolve) => {
-    // Cleared on either outcome so the listeners don't accumulate across
-    // repeated toggling in Settings.
+  // Whatever iOS says back, kept so the screen can show the real reason
+  // instead of "could not register this device", which describes every
+  // possible failure equally badly and is impossible to act on.
+  const outcome = await new Promise((resolve) => {
     let settled = false
     const finish = (value) => { if (!settled) { settled = true; resolve(value) } }
 
-    PushNotifications.addListener('registration', t => finish(t.value))
-    PushNotifications.addListener('registrationError', () => finish(null))
+    // The listeners are awaited BEFORE register() is called. addListener is
+    // itself asynchronous: firing register() first leaves a window in which
+    // the answer arrives before anything is listening for it, and the result
+    // is an unexplained timeout.
+    Promise.all([
+      PushNotifications.addListener('registration', t => finish({ token: t.value })),
+      PushNotifications.addListener('registrationError', e => finish({
+        error: e?.error || e?.message || String(e ?? 'registration refused'),
+      })),
+    ])
+      .then(() => PushNotifications.register())
+      .catch(err => finish({ error: String(err?.message || err) }))
 
-    PushNotifications.register()
-
-    // A device with no network, or a misconfigured Firebase project, never
-    // fires either event. Without this the Settings toggle would hang.
-    setTimeout(() => finish(null), 15000)
+    // Neither event ever fires on a device with no network. Without this the
+    // toggle would hang.
+    setTimeout(() => finish({ error: 'timed-out' }), 20000)
   })
 
   await PushNotifications.removeAllListeners()
 
-  if (!token) return { ok: false, reason: 'no-token' }
+  if (!outcome?.token) {
+    return { ok: false, reason: 'no-token', detail: outcome?.error || 'no reason given' }
+  }
+  const token = outcome.token
 
   const { error } = await supabase.from('push_tokens').upsert(
     {
