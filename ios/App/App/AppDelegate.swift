@@ -33,6 +33,29 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
 
+    // ---- Push notifications ----
+    //
+    // Apple answers a registration request by calling ONE of these two, and it
+    // calls them here, on the app delegate. Capacitor's push plugin does not
+    // hear them directly — it listens for these notifications instead, so the
+    // app delegate has to pass them on.
+    //
+    // Both were missing. Apple replied every time; the reply reached nothing,
+    // and the app waited for an answer that had already been given. That is
+    // what produced "timed out" in Settings, and why push has never worked.
+
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications,
+                                        object: deviceToken)
+    }
+
+    func application(_ application: UIApplication,
+                     didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications,
+                                        object: error)
+    }
+
     func application(_ application: UIApplication,
                      configurationForConnecting connectingSceneSession: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
