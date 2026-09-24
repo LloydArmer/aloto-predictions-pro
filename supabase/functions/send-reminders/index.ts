@@ -134,6 +134,102 @@ async function sendPush(
 }
 
 // ---------------------------------------------------------------------------
+// Apple Push Notification service
+//
+// iPhones get their reminders straight from Apple, not through Firebase.
+//
+// The app registers with @capacitor/push-notifications, which on iOS hands back
+// an APPLE device token. Firebase only accepts Firebase tokens, so every iPhone
+// reminder was rejected as invalid and the token then deleted as stale — an
+// iPhone could never receive a reminder, however correctly it had registered.
+//
+// Rather than adding Firebase to the iOS app, this sends to Apple directly,
+// with the same key and the same signing already proven in push-live-activity.
+// The web keeps using Firebase, which works.
+// ---------------------------------------------------------------------------
+
+const APNS_KEY_ID  = Deno.env.get('APNS_KEY_ID') ?? ''
+const APNS_TEAM_ID = Deno.env.get('APNS_TEAM_ID') ?? ''
+const APNS_KEY_P8  = Deno.env.get('APNS_KEY_P8') ?? ''
+const APNS_BUNDLE  = Deno.env.get('APNS_BUNDLE_ID') ?? 'com.alotoprediction.app'
+
+// Apple's live servers for TestFlight and App Store builds. Only a build run
+// straight from Xcode needs the sandbox.
+const APNS_HOST = (Deno.env.get('APNS_ENVIRONMENT') ?? 'production') === 'sandbox'
+  ? 'https://api.sandbox.push.apple.com'
+  : 'https://api.push.apple.com'
+
+let apnsJwtCache: { token: string; madeAt: number } | null = null
+
+async function apnsJwt(): Promise<string> {
+  // Apple rejects tokens refreshed more often than once every 20 minutes.
+  if (apnsJwtCache && Date.now() - apnsJwtCache.madeAt < 30 * 60 * 1000) return apnsJwtCache.token
+
+  const enc = (o: unknown) =>
+    btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+  const unsigned = `${enc({ alg: 'ES256', kid: APNS_KEY_ID })}.${enc({ iss: APNS_TEAM_ID, iat: Math.floor(Date.now() / 1000) })}`
+
+  const pem = APNS_KEY_P8
+    .replace(/\\n/g, '\n')
+    .replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\s/g, '')
+
+  const der = Uint8Array.from(atob(pem), c => c.charCodeAt(0))
+  const key = await crypto.subtle.importKey('pkcs8', der, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign'])
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(unsigned))
+
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+  const token = `${unsigned}.${sigB64}`
+  apnsJwtCache = { token, madeAt: Date.now() }
+  return token
+}
+
+async function sendApnsPush(
+  deviceToken: string, title: string, body: string, link: string, kind: string,
+): Promise<SendResult> {
+  if (!APNS_KEY_ID || !APNS_TEAM_ID || !APNS_KEY_P8) return 'failed'
+
+  try {
+    const jwt = await apnsJwt()
+    const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
+      method: 'POST',
+      headers: {
+        authorization: `bearer ${jwt}`,
+        // No ".push-type.liveactivity" suffix here: this is an ordinary alert.
+        'apns-topic': APNS_BUNDLE,
+        'apns-push-type': 'alert',
+        'apns-priority': '10',
+        'content-type': 'application/json',
+      },
+      // url and kind sit alongside aps, not inside it, which is where the app
+      // reads them from when someone taps the notification.
+      body: JSON.stringify({
+        aps: { alert: { title, body }, sound: 'default' },
+        url: link,
+        kind,
+      }),
+    })
+
+    if (res.ok) return 'sent'
+
+    const reason = await res.text()
+    // A device that has been wiped, or whose permission was revoked, keeps
+    // failing forever. Report it so the token is dropped rather than retried
+    // every 15 minutes for the rest of the season.
+    if (res.status === 410 || reason.includes('BadDeviceToken') || reason.includes('Unregistered')) return 'stale'
+    console.warn('APNs push failed:', res.status, reason.slice(0, 160))
+    return 'failed'
+  } catch (err) {
+    console.warn('APNs push threw:', String(err).slice(0, 160))
+    return 'failed'
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 // Only push is wired up today. WhatsApp is planned, and notification_log is
 // keyed by channel so it can be added alongside rather than replacing this.
@@ -198,12 +294,14 @@ serve(async () => {
       .from('profiles').select('id, notify_push').in('id', userIds)
     const wantsPush = new Map((profiles || []).map((p: any) => [p.id, p.notify_push !== false]))
 
+    // platform decides WHERE the reminder is sent: 'ios' goes to Apple,
+    // everything else to Firebase.
     const { data: tokens } = await supabase
-      .from('push_tokens').select('id, user_id, token').in('user_id', userIds)
-    const tokensByUser = new Map<string, Array<{ id: string; token: string }>>()
+      .from('push_tokens').select('id, user_id, token, platform').in('user_id', userIds)
+    const tokensByUser = new Map<string, Array<{ id: string; token: string; platform: string }>>()
     for (const t of (tokens || [])) {
       if (!tokensByUser.has(t.user_id)) tokensByUser.set(t.user_id, [])
-      tokensByUser.get(t.user_id)!.push({ id: t.id, token: t.token })
+      tokensByUser.get(t.user_id)!.push({ id: t.id, token: t.token, platform: t.platform || 'web' })
     }
 
     const jobs = candidates.filter(j => {
@@ -217,7 +315,11 @@ serve(async () => {
     }
 
     // ---- Send -------------------------------------------------------------
-    const accessToken = await getAccessToken(CLIENT_EMAIL, PRIVATE_KEY)
+    // Firebase is only signed into if there is actually a web device to send
+    // to. An all-iPhone league should not fail because a Firebase key is
+    // missing that it never needed.
+    const needsFcm = jobs.some(j => (tokensByUser.get(j.userId) || []).some(d => d.platform !== 'ios'))
+    const accessToken = needsFcm ? await getAccessToken(CLIENT_EMAIL, PRIVATE_KEY) : ''
     const staleTokenIds: string[] = []
 
     for (const job of jobs) {
@@ -226,9 +328,9 @@ serve(async () => {
 
       for (const device of devices) {
         try {
-          const outcome = await sendPush(
-            PROJECT_ID, accessToken, device.token, job.title, job.body, job.link, job.kind,
-          )
+          const outcome = device.platform === 'ios'
+            ? await sendApnsPush(device.token, job.title, job.body, job.link, job.kind)
+            : await sendPush(PROJECT_ID, accessToken, device.token, job.title, job.body, job.link, job.kind)
           if (outcome === 'sent') deliveredToAny = true
           if (outcome === 'stale') staleTokenIds.push(device.id)
         } catch (e) {
