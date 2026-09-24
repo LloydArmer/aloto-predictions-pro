@@ -5,6 +5,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { supabase } from '../../../lib/supabase'
 import { Card, Button } from '../../ui'
 import { pushCapability, enablePush, disablePush, resetPush, isIOS, rememberedDeviceToken } from '../../../lib/push'
+import { isNative, isNativeDeviceRegistered } from '../../../lib/nativePush'
 import JoinCompetition from '../competitions/JoinCompetition'
 import HowToPlay from '../help/HowToPlay'
 import ProUpgrade from './ProUpgrade'
@@ -74,6 +75,15 @@ export default function Settings() {
         .select('id', { count: 'exact', head: true }).eq('user_id', user.id)
       if (cancelled) return
       setDeviceCount(count ?? 0)
+
+      // In the app, ask the database whether this phone is registered. The
+      // local marker below is written by the browser only, so on a phone it is
+      // always missing and the tick looked off however well it had registered.
+      if (isNative()) {
+        const on = await isNativeDeviceRegistered(user.id)
+        if (!cancelled) setDeviceOn(on)
+        return
+      }
 
       const mine = rememberedDeviceToken()
       if (!mine) { setDeviceOn(false); return }

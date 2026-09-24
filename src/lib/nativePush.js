@@ -98,6 +98,27 @@ export async function enableNativePush(userId) {
   return { ok: true, token }
 }
 
+/**
+ * Is THIS phone already registered for the signed-in account?
+ *
+ * The web path answers this from a marker in local storage, written when the
+ * browser registers. The native path never wrote one, so Settings read "off"
+ * on a phone that was registered perfectly well — the tick vanished on every
+ * sign-out while reminders carried on working.
+ *
+ * Answered from the database instead, which is where the truth is. Native rows
+ * are stamped "ios app" or "android app", and each account keeps one row per
+ * platform, so a match means this phone is registered.
+ */
+export async function isNativeDeviceRegistered(userId) {
+  if (!isNative() || !userId) return false
+  const { count } = await supabase.from('push_tokens')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('user_agent', `${nativePlatform()} app`)
+  return (count ?? 0) > 0
+}
+
 export async function disableNativePush(userId) {
   if (!isNative()) return
   const { PushNotifications } = await import('@capacitor/push-notifications')
