@@ -114,7 +114,7 @@ export default function ProUpgrade() {
         </div>
 
         <p className="text-xs mb-2" style={{ color: 'var(--txt-second)', lineHeight: 1.55 }}>
-          Unlimited competitions and the season archive.
+          Unlimited competitions, individual season predictions and the season archive.
         </p>
 
         {!permanent && (
@@ -216,10 +216,11 @@ export default function ProUpgrade() {
 function ProBenefits() {
   return (
     <div className="text-xs" style={{ color: 'var(--txt-second)', lineHeight: 1.7 }}>
-      <p>· Unlimited leagues, cups and season predictions</p>
+      <p>· Unlimited leagues and cups</p>
+      <p>· Individual season predictions, including questions you write yourself</p>
       <p>· A full archive of past seasons</p>
       <p style={{ color: 'var(--txt-muted)', marginTop: 6 }}>
-        The free plan includes one league, one cup and one set of season predictions.
+        The free plan includes one league, one cup and the final league table prediction.
         Playing is always free, however many competitions you are in.
       </p>
     </div>

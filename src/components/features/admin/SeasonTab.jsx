@@ -90,7 +90,21 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
   const [tableOpen, setTableOpen] = useState(true)
   const [picksOpen, setPicksOpen] = useState(true)
 
+  // Individual predictions are part of Pro. null means "still asking": showing
+  // either the setup or the upgrade card before the answer arrives would be a
+  // guess, and it would be wrong half the time.
+  const [isPro, setIsPro] = useState(null)
+
   useEffect(() => { if (competitionId) load(); else setLoading(false) }, [competitionId])
+
+  // has_pro() covers a purchased subscription and a permanent owner grant
+  // alike — a grant carries no expiry date, and the function reads "no expiry"
+  // as never expiring rather than as already expired.
+  useEffect(() => {
+    let cancelled = false
+    supabase.rpc('has_pro').then(({ data }) => { if (!cancelled) setIsPro(data === true) })
+    return () => { cancelled = true }
+  }, [competitionId])
 
   async function load() {
     setLoading(true)
@@ -230,7 +244,14 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
 
   async function createPickConfig() {
     const { error } = await supabase.from('season_pick_configs').insert({ competition_id: competitionId })
-    if (error) { toast.error('Could not create'); return }
+    if (error) {
+      // The database raises a named exception when a free account tries this,
+      // so the message it gets back is the accurate one rather than a shrug.
+      toast.error(String(error.message || '').includes('FREE_TIER_PICKS_LIMIT')
+        ? 'Individual predictions are part of ALOTO Pro — upgrade in Settings.'
+        : 'Could not create')
+      return
+    }
     load()
   }
 
@@ -240,7 +261,14 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
     if (error) { toast.error('Could not save'); load() }
   }
 
-  async function addPick(label) {
+  async function addPick(label, freeTextOverride = null, points = null) {
+    const trimmed = String(label || '').trim()
+    if (!trimmed) { toast.error('Give the question a name'); return }
+    if (trimmed.length > 80) { toast.error('Keep the question under 80 characters'); return }
+    if (picks.some(p => p.label.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error('There is already a question with that name'); return
+    }
+
     // Only the two league title questions get a dropdown: a fixed 20 or 24
     // clubs, known before the season starts, and a list that size is pleasant
     // to scroll.
@@ -255,12 +283,20 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
       /premier league winners/i,
       /championship winners/i,
     ]
-    const freeText = !DROPDOWN_QUESTIONS.some(re => re.test(label))
+    //
+    // A question the admin wrote says which kind it is; a suggestion has its
+    // kind worked out from its name.
+    const freeText = freeTextOverride === null
+      ? !DROPDOWN_QUESTIONS.some(re => re.test(trimmed))
+      : freeTextOverride
+
     const { error } = await supabase.from('season_picks').insert({
-      config_id: pickConfig.id, label, sort_order: picks.length, allow_free_text: freeText,
+      config_id: pickConfig.id, label: trimmed, sort_order: picks.length, allow_free_text: freeText,
+      // Left to the column default for a suggestion, so nothing changes there.
+      ...(points === null ? {} : { points }),
     })
     if (error) { toast.error('Could not add'); return }
-    toast.success(freeText ? `${label} added — participants type their answer` : `${label} added — now add the options`)
+    toast.success(freeText ? `${trimmed} added — participants type their answer` : `${trimmed} added — now add the options`)
     load()
   }
 
@@ -435,12 +471,23 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
       <SectionLabel className="mb-2">Individual Predictions</SectionLabel>
 
       {!pickConfig ? (
-        <Card className="p-4 mb-5">
-          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
-            One-off calls — who wins each competition, the golden boot. Set the questions and the points for each.
-          </p>
-          <Button variant="primary" onClick={createPickConfig}>Set up Individual Predictions</Button>
-        </Card>
+        isPro === null ? (
+          <Card className="p-4 mb-5"><div className="flex justify-center py-2"><Spinner size="sm"/></div></Card>
+        ) : !isPro ? (
+          // Only CREATING them needs Pro. A set already running keeps working
+          // whatever happens to the subscription afterwards — an admin locked
+          // out of marking answers would leave their players unscored, which
+          // punishes the wrong people.
+          <ProLockedPicks/>
+        ) : (
+          <Card className="p-4 mb-5">
+            <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
+              One-off calls — who wins each competition, the golden boot, or any question you write yourself.
+              Set the questions and the points for each.
+            </p>
+            <Button variant="primary" onClick={createPickConfig}>Set up Individual Predictions</Button>
+          </Card>
+        )
       ) : (
         <Card className="p-4 mb-5">
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -485,6 +532,8 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
                 <Button key={label} className="btn-sm" onClick={() => addPick(label)}>+ {label}</Button>
               ))}
           </div>
+
+          <CustomPickForm onCreate={addPick}/>
 
           {picks.length === 0
             ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No questions yet.</p>
@@ -777,6 +826,89 @@ function FreeTextMarker({ pick, stillOpen }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * A question of the admin's own.
+ *
+ * Deliberately produces an ORDINARY season_picks row — the same thing the
+ * suggestion buttons above produce. Nothing downstream knows or cares that it
+ * was typed rather than picked, so the points, the shared deadline, the "who's
+ * entered" tracker, the marking panel, scoring, and showing everyone's answers
+ * once it locks all work on it without a line of extra code.
+ */
+function CustomPickForm({ onCreate }) {
+  const [label, setLabel] = useState('')
+  const [points, setPoints] = useState(10)
+  const [freeText, setFreeText] = useState(true)
+  const [busy, setBusy] = useState(false)
+
+  async function submit() {
+    if (!label.trim() || busy) return
+    setBusy(true)
+    try {
+      await onCreate(label.trim(), freeText, points)
+      setLabel('')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="p-3 mb-4 rounded" style={{ background: 'var(--bg-elevated)', border: '0.5px solid var(--border)' }}>
+      <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>Or write your own</p>
+
+      {/* Capped at 80 characters here and in the database. A question is a
+          question, not a paragraph, and a cap is the cheapest answer to
+          "what stops someone typing anything they like". */}
+      <Input value={label} maxLength={80} className="w-full"
+        placeholder="e.g. First manager to leave his club"
+        onChange={e => setLabel(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit() }}/>
+
+      <div className="flex flex-wrap gap-3 items-end mt-2">
+        <div>
+          <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Points</p>
+          <NumberField value={points} onCommit={setPoints} width={74} min={1}/>
+        </div>
+        <div style={{ flex: '1 1 170px', minWidth: 0 }}>
+          <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>How it's answered</p>
+          <Select value={freeText ? 'text' : 'list'} className="w-full"
+            onChange={e => setFreeText(e.target.value === 'text')}>
+            <option value="text">Players type their answer</option>
+            <option value="list">Players choose from a list</option>
+          </Select>
+        </div>
+        <Button variant="primary" disabled={!label.trim() || busy} onClick={submit}>
+          {busy ? 'Adding\u2026' : 'Add question'}
+        </Button>
+      </div>
+
+      <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+        {freeText
+          ? 'You enter the correct answer at the end of the season and confirm who got it right \u2014 spellings, short forms and nicknames are matched for you.'
+          : 'You add the options after adding the question. The league\u2019s own teams can be added in one click.'}
+      </p>
+    </div>
+  )
+}
+
+/** Shown where the setup would be, for an admin on the free plan. */
+function ProLockedPicks() {
+  return (
+    <Card className="p-4 mb-5" style={{ background: 'var(--gold-dim)', borderColor: 'rgba(245,200,66,0.35)' }}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <i className="ti ti-crown text-sm" style={{ color: 'var(--gold)' }} aria-hidden="true"/>
+        <p className="text-sm font-semibold" style={{ color: 'var(--gold)' }}>Part of ALOTO Pro</p>
+      </div>
+      <p className="text-xs mb-2" style={{ color: 'var(--txt-second)', lineHeight: 1.55 }}>
+        One-off calls alongside the final table — who wins each competition, the golden boot, and any
+        question you write yourself. You set the points, they lock at your deadline, and everyone sees
+        each other's answers once they do.
+      </p>
+      <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+        Upgrade in Settings. The final league table prediction stays free.
+      </p>
+    </Card>
   )
 }
 
