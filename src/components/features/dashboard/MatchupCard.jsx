@@ -95,7 +95,16 @@ export default function MatchupCard({ competitionId, userId }) {
   }
 
   /* ---- League summary ---- */
-  const { gameweek, competitionName, myPoints, position, playerCount, movement, best, live, inPlayCount } = data
+  const { gameweek, competitionName, myPoints, position, playerCount, movement, best,
+          live, inPlayCount, settled, started, progress } = data
+
+  // Three states, not two. FINAL only once every fixture that counts has a
+  // result; part-played shows how far through it is; a gameweek nobody has
+  // played yet gets its number and nothing else.
+  const badge = live     ? ` · ${inPlayCount} LIVE`
+              : settled  ? ' FINAL'
+              : started  ? ` · ${progress.played}/${progress.total}`
+              : ''
 
   return (
     <Card className="p-0 mb-3 overflow-hidden">
@@ -109,12 +118,13 @@ export default function MatchupCard({ competitionId, userId }) {
           style={live
             ? { background: 'var(--amber-dim)', color: 'var(--amber)' }
             : { background: 'var(--bg-elevated)', color: 'var(--txt-muted)' }}>
-          {gameweek}{live ? ` · ${inPlayCount} LIVE` : ' FINAL'}
+          {gameweek}{badge}
         </span>
       </div>
 
       <div className="flex items-center px-3.5 py-3.5">
-        <Stat value={myPoints} label={live ? 'Points so far' : 'Your points'}/>
+        <Stat value={started ? myPoints : '—'}
+          label={!started ? 'Not started' : settled ? 'Your points' : 'Points so far'}/>
 
         <Stat
           value={movement === 0 || movement == null
@@ -218,6 +228,25 @@ async function build(competitionId, userId) {
   const inPlayCount = (fixtures || []).filter(isInPlay).length
   const live = inPlayCount > 0
 
+  // How far through the gameweek are we?
+  //
+  // This used to be a two-way switch: something kicking off right now, or
+  // "FINAL". Nothing in play before a ball is kicked reads exactly the same as
+  // nothing in play after the last whistle, so a gameweek that had not started
+  // was labelled FINAL — with everyone on nought, because nothing had happened
+  // yet.
+  //
+  // Voided fixtures are left out of the count: they are not going to produce a
+  // result, so waiting for one would mean the gameweek never reads as finished.
+  const FINISHED = ['FT', 'AET', 'PEN']
+  const counted = (fixtures || []).filter(f => f.status !== 'void')
+  const played = counted.filter(f =>
+    (f.home_score != null && f.away_score != null) || FINISHED.includes(f.live_status))
+
+  const settled = counted.length > 0 && played.length === counted.length
+  const started = played.length > 0 || live
+  const progress = { played: played.length, total: counted.length }
+
   // Is there a cup tie or group fixture this gameweek?
   const { data: oppRows } = await supabase.rpc('my_gameweek_opponent', { p_gameweek_id: gw.id })
   const opponent = Array.isArray(oppRows) ? oppRows[0] : oppRows
@@ -274,7 +303,19 @@ async function build(competitionId, userId) {
 
   scores.sort((a, b) => b.points - a.points)
   const mine = scores.find(s => s.userId === userId)
-  const position = mine ? scores.indexOf(mine) + 1 : null
+
+  // Competition ranking: everyone on the same points shares a place, rather
+  // than indexOf handing out 1st through 12th by whatever order the rows
+  // arrived in. Two people tied on 14 are both 3rd, not 3rd and 4th.
+  const ahead = mine ? scores.filter(s => s.points > mine.points).length : 0
+  const tiedWithMe = mine ? scores.filter(s => s.points === mine.points).length : 0
+
+  // A position means nothing before the gameweek has produced any points, and
+  // nothing when the entire league is level — which is the same thing seen from
+  // the other end. Showing "#9 of 12" off a twelve-way tie on nought is how
+  // this card claimed someone had fallen seven places without a ball kicked.
+  const everyoneLevel = tiedWithMe === scores.length
+  const position = mine && started && !everyoneLevel ? ahead + 1 : null
 
   // Movement is measured against the standing BEFORE this gameweek, which is
   // the season total minus this week's points — cheaper and more reliable than
@@ -288,8 +329,13 @@ async function build(competitionId, userId) {
     totals.forEach(t => { before[t.user_id] = (before[t.user_id] || 0) + t.points })
     scores.forEach(s => { before[s.userId] = (before[s.userId] || 0) - s.points })
 
-    const prev = [...scores].sort((a, b) => (before[b.userId] || 0) - (before[a.userId] || 0))
-    const prevPos = mine ? prev.findIndex(s => s.userId === userId) + 1 : null
+    // The same shared-place rule as above, or the comparison would be against
+    // an arbitrary previous position and the arrow would be wrong by however
+    // far the tie-break happened to put them.
+    const myBefore = mine ? (before[mine.userId] || 0) : 0
+    const prevPos = mine ? Object.entries(before)
+      .filter(([, pts]) => pts > myBefore).length + 1 : null
+
     if (prevPos && position) movement = prevPos - position
   }
 
@@ -297,12 +343,14 @@ async function build(competitionId, userId) {
     kind: 'league',
     competitionName: comp?.name ?? '',
     gameweek: gw.number,
-    live, inPlayCount,
+    live, inPlayCount, settled, started, progress,
     myPoints: mine?.points ?? 0,
     position,
     playerCount: scores.length,
     movement,
-    best: scores[0] && scores[0].userId !== userId
+    // Nobody is "best" on a gameweek nobody has played. A name against a zero
+    // reads as a result when it is just the first row of a tie.
+    best: started && scores[0] && scores[0].userId !== userId && scores[0].points > 0
       ? { name: scores[0].name.split(' ')[0], points: scores[0].points }
       : null,
   }
