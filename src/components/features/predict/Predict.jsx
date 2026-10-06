@@ -637,6 +637,20 @@ export default function Predict() {
   useEffect(() => { if (comp) { loadGWs(); loadRules() } }, [comp])
   useEffect(() => { if (selectedGW) loadCounts() }, [selectedGW])
 
+  // Season predictions are a LEAGUE feature: their points go into a league
+  // table, and a cup has none to put them in. The admin side already refuses
+  // to set them up on a Knockout or Group + Knockout, and the database refuses
+  // it too — but the tab was offered here regardless, so a cup showed a Season
+  // tab leading to an empty screen.
+  const compFormat = competitions.find(c => c.id === comp)?.format
+  const showSeason = compFormat === 'league'
+
+  // Switching from a league to a cup while sat on Season would otherwise leave
+  // the tab selected with nothing behind it.
+  useEffect(() => {
+    if (tab === 'season' && compFormat && !showSeason) setTab('mine')
+  }, [compFormat, showSeason, tab])
+
   // Live scores, polled separately from the fixtures themselves.
   //
   // useFixtures loads once and never looks again, so a score arriving after the
@@ -723,7 +737,8 @@ export default function Predict() {
       </div>
 
       <div className="flex gap-4 mb-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
-        {[['mine','My Predictions'],['results','Gameweek Results'],['season','Season']].map(([k,label]) => (
+        {[['mine','My Predictions'], ['results','Gameweek Results'],
+          ...(showSeason ? [['season','Season']] : [])].map(([k,label]) => (
           <button key={k} onClick={() => setTab(k)} className="text-sm pb-2"
             style={{ color: tab===k ? 'var(--accent)' : 'var(--txt-muted)', fontWeight: tab===k ? 600 : 400, borderBottom: tab===k ? '2px solid var(--accent)' : '2px solid transparent' }}>
             {label}
@@ -742,7 +757,7 @@ export default function Predict() {
         </div>
       )}
 
-      {tab === 'season' && <SeasonPredictions competitionId={comp} userId={user?.id} />}
+      {tab === 'season' && showSeason && <SeasonPredictions competitionId={comp} userId={user?.id} />}
       {tab === 'mine' && <TriplePointsCard competitionId={comp} competitions={competitions} gameweek={selectedGW} fixtures={fixtures} predictions={predictions} userId={user?.id} />}
 
       {/* Explicit per-tab checks, not a ternary. This was
