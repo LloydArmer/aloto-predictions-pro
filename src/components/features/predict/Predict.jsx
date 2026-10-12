@@ -10,6 +10,7 @@ import { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import SeasonPredictions from '../season/SeasonPredictions'
 import { effectiveScore, isInPlay, isFinished, liveLabel } from '../../../lib/livePoints'
 import { fitName } from '../../../lib/names'
+import { noteGoodMoment } from '../../../lib/review'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
 
@@ -183,7 +184,14 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
   async function save() {
     if (home === '' || away === '') { toast.error('Enter both scores'); return }
     setSaving(true)
-    try { await onSave(fixture.id, Number(home), Number(away)); toast.success('Prediction saved!') }
+    try {
+      await onSave(fixture.id, Number(home), Number(away))
+      toast.success('Prediction saved!')
+      // Someone who has just saved a prediction has finished something and is
+      // pleased with it. Deliberately not awaited — the rating sheet is never
+      // allowed to hold up the save.
+      noteGoodMoment()
+    }
     catch { toast.error('Could not save prediction') }
     finally { setSaving(false) }
   }
