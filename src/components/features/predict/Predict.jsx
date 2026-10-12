@@ -22,6 +22,43 @@ function pointsStyle(points, rules) {
   return { bg: 'var(--bg-elevated)', color: 'var(--txt-muted)' }
 }
 
+/**
+ * What a prediction is worth RIGHT NOW.
+ *
+ * Worked out from the fixture's confirmed score rather than read from
+ * predictions.points_earned, because that column is only written when the
+ * whole gameweek is marked completed and the scoring runs. Until that moment
+ * it is nought for everybody — which is why a gameweek with half its results
+ * already confirmed sat there entirely grey, with the right points printed in
+ * muted text beside a score that had plainly been correct.
+ *
+ * Falls back to the stored figure where there is no confirmed score to work
+ * from, and for a voided fixture, so an admin's correction or a written-off
+ * match still decides the answer rather than this does.
+ *
+ * Deliberately ignores the live feed. A cell turning green off a provisional
+ * score that later moves would be worse than a grey one.
+ */
+function pointsNow(pred, fixture, rules) {
+  if (!pred) return 0
+
+  const noResult = fixture?.home_score == null || fixture?.away_score == null
+  if (noResult || fixture?.status === 'void') return pred.points_earned || 0
+
+  const side = (h, a) => (h > a ? 'home' : a > h ? 'away' : 'draw')
+  const exact = pred.predicted_home === fixture.home_score
+             && pred.predicted_away === fixture.away_score
+  const result = side(pred.predicted_home, pred.predicted_away)
+              === side(fixture.home_score, fixture.away_score)
+
+  const forResult = rules?.correct_result_points ?? 2
+  const forExact  = rules?.exact_score_points ?? 3
+
+  if (exact)  return forResult + forExact
+  if (result) return forResult
+  return 0
+}
+
 function ScoreInput({ value, onChange, disabled }) {
   // Keep the raw string during editing so the browser never shows a
   // leading zero — only parse to a number when the input is actually
@@ -452,17 +489,18 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                         )
                       }
                       if (!pred) return <td key={f.id} style={{ textAlign:'center' }}><span className="text-xs" style={{ color:'var(--txt-muted)' }}>—</span></td>
-                      const ps = pointsStyle(pred.points_earned, rules)
+                      // One source for both the colour and the number. They
+                      // used to disagree: the label was worked out live from
+                      // the result, the colour came from the stored column, so
+                      // a confirmed fixture read "5pts" in grey.
+                      const pts = pointsNow(pred, f, rules)
+                      const ps = pointsStyle(pts, rules)
                       return (
                         <td key={f.id} style={{ textAlign:'center', background: ps.bg, padding: '8px 4px' }}>
                           <p className="text-sm font-semibold" style={{ color: ps.color }}>{pred.predicted_home}–{pred.predicted_away}</p>
-                          {hasKickedOff && (() => {
-                            const { predicted_home: ph, predicted_away: pa } = pred
-                            const isExact = f.home_score !== null && ph === f.home_score && pa === f.away_score
-                            const isResult = f.home_score !== null && ((ph > pa ? 'home' : pa > ph ? 'away' : 'draw') === (f.home_score > f.away_score ? 'home' : f.away_score > f.home_score ? 'away' : 'draw'))
-                            const pts = f.home_score !== null ? (isExact ? (rules?.correct_result_points||2)+(rules?.exact_score_points||3) : isResult ? (rules?.correct_result_points||2) : 0) : 0
-                            return <p className="text-xs" style={{ color: ps.color, opacity: 0.85 }}>{pts}pts</p>
-                          })()}
+                          {hasKickedOff && (
+                            <p className="text-xs" style={{ color: ps.color, opacity: 0.85 }}>{pts}pts</p>
+                          )}
                         </td>
                       )
                     })}
