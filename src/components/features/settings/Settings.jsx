@@ -10,6 +10,7 @@ import JoinCompetition from '../competitions/JoinCompetition'
 import HowToPlay from '../help/HowToPlay'
 import ProUpgrade from './ProUpgrade'
 import BadgePicker from './BadgePicker'
+import Diagnostics from './Diagnostics'
 import toast from 'react-hot-toast'
 
 export default function Settings() {
@@ -394,6 +395,8 @@ export default function Settings() {
           because the consequence for a league is real: their predictions and
           scores go, so a competition loses that history and a bracket they
           featured in is left with a gap. */}
+      <Diagnostics userId={user?.id}/>
+
       <Card className="p-4 mb-4" style={{ borderColor: 'rgba(255,95,95,0.3)' }}>
         <p className="text-xs font-medium mb-1" style={{ color: 'var(--red)' }}>Delete account</p>
 

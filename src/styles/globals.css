@@ -239,6 +239,16 @@
   .tab-strip::-webkit-scrollbar { display: none; }
   .tab-strip > * { flex: 0 0 auto; white-space: nowrap; }
 
+  /* One page at a time, swiped sideways — used by the head-to-head card to
+     put the rest of the round behind your own tie. The scrollbar is hidden
+     because the dots underneath already say where you are, and a 4px bar
+     under a card reads as a rendering fault rather than a control. */
+  .swipe-track {
+    scrollbar-width: none; -ms-overflow-style: none;
+    overscroll-behavior-x: contain;
+  }
+  .swipe-track::-webkit-scrollbar { display: none; }
+
   /* Pinned first column for wide tables. Without it, scrolling the predictions
      grid sideways takes the participant names off screen and leaves a wall of
      numbers with nothing to attach them to. */

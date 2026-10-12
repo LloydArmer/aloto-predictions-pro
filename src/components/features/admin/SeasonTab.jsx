@@ -539,7 +539,8 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
             ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No questions yet.</p>
             : picks.map(pick => (
                 <PickEditor key={pick.id} pick={pick}
-                  stillOpen={pickConfig.is_open && (!pickConfig.deadline || new Date(pickConfig.deadline) > new Date())}
+                  setDeadline={pickConfig.deadline}
+                  stillOpen={pickConfig.is_open && pickStillOpen(pick, pickConfig)}
                   onUpdate={patch => updatePick(pick.id, patch)}
                   onRemove={() => removePick(pick)}
                   onAddOptions={text => addOptionsBulk(pick, text)}
@@ -985,7 +986,21 @@ function TeamListEditor({ teams, onAdd, onRemove, expected }) {
   )
 }
 
-function PickEditor({ pick, onUpdate, onRemove, onAddOptions, onReload, teams, stillOpen }) {
+/**
+ * A question's own deadline overrides the set's; empty means it follows the
+ * set. One expression, used by the admin screen, the player screen and the
+ * database rule alike, so all three agree on when a question is shut.
+ */
+function effectiveDeadline(pick, config) {
+  return pick?.deadline || config?.deadline || null
+}
+
+function pickStillOpen(pick, config) {
+  const d = effectiveDeadline(pick, config)
+  return !d || new Date(d) > new Date()
+}
+
+function PickEditor({ pick, onUpdate, onRemove, onAddOptions, onReload, teams, stillOpen, setDeadline }) {
   const [expanded, setExpanded] = useState(false)
   const [optionText, setOptionText] = useState('')
   const options = pick.season_pick_options || []
@@ -1019,6 +1034,27 @@ function PickEditor({ pick, onUpdate, onRemove, onAddOptions, onReload, teams, s
 
       {expanded && (
         <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+          {/* Per-question lock. The Premier League winner has to be shut before
+              a ball is kicked; the Golden Boot can sensibly run for months. One
+              deadline across the set could never suit both. */}
+          <div className="mb-3 pb-3" style={{ borderBottom: '0.5px solid var(--border)' }}>
+            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Locks</p>
+            <input type="datetime-local" value={toLocalInput(pick.deadline)}
+              onChange={e => onUpdate({ deadline: e.target.value ? new Date(e.target.value).toISOString() : null })}
+              style={{ background:'var(--bg-elevated)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
+            <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>
+              {pick.deadline
+                ? `This question only — ${deadlineLabel(pick.deadline)}`
+                : `Following the set — ${deadlineLabel(setDeadline)}. Set a date here to lock this one sooner or later than the rest.`}
+            </p>
+            {pick.deadline && (
+              <button className="text-xs mt-1" style={{ color: 'var(--accent)' }}
+                onClick={() => onUpdate({ deadline: null })}>
+                Use the set's deadline instead
+              </button>
+            )}
+          </div>
+
           {pick.allow_free_text ? (
             <div>
               <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>

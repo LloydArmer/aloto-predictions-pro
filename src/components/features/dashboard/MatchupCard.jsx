@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { Card } from '../../ui'
 import Shirt, { PlayerMark } from '../../ui/Shirt'
@@ -12,6 +12,9 @@ import { resolvePointRules, defaultRules, scoreOnePrediction } from '../../../li
  *
  *   A CUP TIE, when there is one this gameweek — your kit and points against
  *   your opponent's, which is the thing you actually care about on a Saturday.
+ *   Every OTHER tie in the same round sits behind it, one swipe away, because
+ *   on a Saturday afternoon the rest of the round is half the interest: you
+ *   want to know whether the person above you is getting beaten.
  *
  *   THE LAST GAMEWEEK, otherwise — what you scored, how far you moved, and who
  *   topped it. A plain league has no opponent, and a lone number with nothing
@@ -54,9 +57,7 @@ export default function MatchupCard({ competitionId, userId }) {
 
   /* ---- Cup tie ---- */
   if (data.kind === 'tie') {
-    const { me, them, gameweek, competitionName, roundLabel, live, inPlayCount, fromOtherCompetition } = data
-    const leading = me.points > them.points
-    const level = me.points === them.points
+    const { ties, gameweek, competitionName, roundLabel, live, inPlayCount, fromOtherCompetition } = data
 
     return (
       <Card className="p-0 mb-3 overflow-hidden">
@@ -83,13 +84,7 @@ export default function MatchupCard({ competitionId, userId }) {
           </span>
         </div>
 
-        <div className="flex items-center gap-2 px-3.5 py-4">
-          <Side player={me} highlight={leading || level}/>
-          <span className="text-xs" style={{ color: 'var(--txt-muted)', letterSpacing: '0.1em' }}>
-            {roundLabel || 'VS'}
-          </span>
-          <Side player={them} highlight={!leading || level}/>
-        </div>
+        <TieSwiper ties={ties} roundLabel={roundLabel}/>
       </Card>
     )
   }
@@ -139,6 +134,83 @@ export default function MatchupCard({ competitionId, userId }) {
         {best && <Stat value={best.points} label={`Best — ${best.name}`} muted/>}
       </div>
     </Card>
+  )
+}
+
+/**
+ * The round, one tie per page, yours first.
+ *
+ * A plain scroll container with CSS snap points rather than a carousel
+ * library: it is a horizontal list, the platform already knows how to flick
+ * through one with the right momentum and rubber-banding, and anything
+ * hand-rolled here would feel worse on a phone than what iOS does for free.
+ *
+ * With a single tie it renders exactly as it always did — no dots, nothing to
+ * swipe, no hint that anything changed.
+ */
+function TieSwiper({ ties, roundLabel }) {
+  const [index, setIndex] = useState(0)
+  const trackRef = useRef(null)
+
+  // Which page is in view. Read off scroll position rather than tracked in a
+  // gesture handler, so it stays right however the scroll happened — flick,
+  // drag, or a trackpad on the web build.
+  function onScroll() {
+    const el = trackRef.current
+    if (!el || !el.clientWidth) return
+    const next = Math.round(el.scrollLeft / el.clientWidth)
+    if (next !== index) setIndex(next)
+  }
+
+  function goTo(i) {
+    const el = trackRef.current
+    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' })
+  }
+
+  return (
+    <>
+      <div
+        ref={trackRef}
+        onScroll={onScroll}
+        className="swipe-track"
+        style={{
+          display: 'flex',
+          overflowX: ties.length > 1 ? 'auto' : 'hidden',
+          scrollSnapType: 'x mandatory',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
+        {ties.map(tie => (
+          <div key={tie.id} style={{ flex: '0 0 100%', scrollSnapAlign: 'start' }}>
+            <div className="flex items-center gap-2 px-3.5 py-4">
+              <Side player={tie.left}  highlight={tie.left.points >= tie.right.points}/>
+              <span className="text-xs" style={{ color: 'var(--txt-muted)', letterSpacing: '0.1em', flexShrink: 0 }}>
+                {roundLabel || 'VS'}
+              </span>
+              <Side player={tie.right} highlight={tie.right.points >= tie.left.points}/>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {ties.length > 1 && (
+        <div className="flex items-center justify-center gap-1.5 pb-2.5" style={{ marginTop: -4 }}>
+          {ties.map((tie, i) => (
+            <button
+              key={tie.id}
+              onClick={() => goTo(i)}
+              aria-label={tie.isMine ? 'Your tie' : `Tie ${i + 1}`}
+              style={{
+                width: i === index ? 14 : 5, height: 5, borderRadius: 3, padding: 0, border: 0,
+                background: i === index ? 'var(--txt-second)' : 'var(--border-med)',
+                transition: 'width 160ms ease, background 160ms ease',
+                cursor: 'pointer',
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -271,6 +343,17 @@ async function build(competitionId, userId) {
     const mine   = stored?.mine   ?? liveMine
     const theirs = stored?.theirs ?? liveTheirs
 
+    // Your own tie, always. Everything else in the round is added to it below
+    // and is allowed to fail without taking the card down with it.
+    const myTie = {
+      id: 'mine',
+      isMine: true,
+      left:  { name: meProfile.data?.display_name ?? 'You', kit: meProfile.data?.badge_kit, points: mine },
+      right: { name: opponent.opponent_name, kit: opponent.opponent_kit, points: theirs },
+    }
+
+    const ties = await roundTies(opponent, gw.id, userId, fixtures, activeRules, myTie)
+
     return {
       kind: 'tie',
       // The tie's OWN competition, not the one on screen. A cup runs on another
@@ -284,8 +367,7 @@ async function build(competitionId, userId) {
       gameweek: gw.number,
       roundLabel: opponent.round_label,
       live, inPlayCount,
-      me:   { name: meProfile.data?.display_name ?? 'You', kit: meProfile.data?.badge_kit, points: mine },
-      them: { name: opponent.opponent_name, kit: opponent.opponent_kit, points: theirs },
+      ties,
     }
   }
 
@@ -356,19 +438,106 @@ async function build(competitionId, userId) {
   }
 }
 
-/** One person's provisional points for a gameweek. */
-async function pointsFor(gameweekId, userId, fixtures, rules) {
-  const { data: preds } = await supabase.from('predictions')
-    .select('fixture_id, predicted_home, predicted_away')
-    .eq('gameweek_id', gameweekId).eq('user_id', userId)
+/**
+ * Every tie in this round, yours first.
+ *
+ * Deliberately forgiving: if the round can't be read for any reason — a
+ * knockout table shaped differently, a competition that doesn't record its
+ * gameweek, a row-level rule that hides other people's ties — it returns just
+ * your own tie and the card carries on exactly as it did before. The rest of
+ * the round is a nice-to-have, and it should never be able to take the main
+ * thing off the dashboard.
+ *
+ * Points come from the same two sources as your own tie: what the gameweek
+ * scored, falling back to adding up fixtures while a match is still on.
+ */
+async function roundTies(opponent, gameweekId, userId, fixtures, rules, myTie) {
+  const table = opponent.kind === 'knockout' ? 'bracket_matches' : 'group_fixtures'
 
+  try {
+    let q = supabase.from(table)
+      .select('id, home_user_id, away_user_id, home_points, away_points, home:home_user_id(display_name, badge_kit), away:away_user_id(display_name, badge_kit)')
+      .eq('gameweek_id', gameweekId)
+
+    if (opponent.competition_id) q = q.eq('competition_id', opponent.competition_id)
+
+    const { data: rows, error } = await q
+    if (error || !rows?.length) return [myTie]
+
+    // Both players of every tie, so provisional points can be worked out for
+    // the whole round in ONE query rather than one per person. Twelve players
+    // polling every forty-five seconds is the difference between one request
+    // and twelve.
+    const everyone = [...new Set(
+      rows.flatMap(r => [r.home_user_id, r.away_user_id]).filter(Boolean)
+    )]
+    const livePoints = await livePointsFor(gameweekId, everyone, fixtures, rules)
+
+    const sideFor = (uid, profile, stored) => ({
+      name: profile?.display_name ?? '',
+      kit: profile?.badge_kit,
+      // Stored wins once scored, because only it carries the gameweek bonuses.
+      points: stored ?? livePoints.get(uid) ?? 0,
+    })
+
+    const built = rows
+      // A bye, or a knockout slot still waiting on a qualifier, has nobody to
+      // show on one side of it.
+      .filter(r => r.home_user_id && r.away_user_id)
+      .map(r => {
+        const iAmHome = r.home_user_id === userId
+        const iAmAway = r.away_user_id === userId
+        const home = sideFor(r.home_user_id, r.home, r.home_points)
+        const away = sideFor(r.away_user_id, r.away, r.away_points)
+
+        return {
+          id: r.id,
+          isMine: iAmHome || iAmAway,
+          // Your own tie reads with you on the left, however the draw was made.
+          // Everyone else's keeps the draw's own order.
+          left:  iAmAway ? away : home,
+          right: iAmAway ? home : away,
+        }
+      })
+
+    const mine = built.filter(t => t.isMine)
+    const rest = built.filter(t => !t.isMine)
+    if (!mine.length) return [myTie, ...rest]
+
+    return [...mine, ...rest]
+  } catch {
+    return [myTie]
+  }
+}
+
+/** Provisional points for several people at once. */
+async function livePointsFor(gameweekId, userIds, fixtures, rules) {
+  const out = new Map()
+  if (!userIds.length) return out
+
+  const { data: preds } = await supabase.from('predictions')
+    .select('user_id, fixture_id, predicted_home, predicted_away')
+    .eq('gameweek_id', gameweekId).in('user_id', userIds)
+
+  const byUser = new Map()
+  for (const p of (preds || [])) {
+    if (!byUser.has(p.user_id)) byUser.set(p.user_id, [])
+    byUser.get(p.user_id).push(p)
+  }
+
+  for (const id of userIds) out.set(id, totalFor(byUser.get(id) || [], fixtures, rules))
+  return out
+}
+
+/** Adds up one person's predictions against the scores so far. */
+function totalFor(preds, fixtures, rules) {
   let total = 0
   for (const fx of (fixtures || [])) {
     if (fx.status === 'void') continue
     const score = effectiveScore(fx)
     if (!score) continue
 
-    const p = (preds || []).find(x => x.fixture_id === fx.id)
+    const p = preds.find(x => x.fixture_id === fx.id)
     if (!p) continue
 
     total += scoreOnePrediction(
@@ -378,6 +547,15 @@ async function pointsFor(gameweekId, userId, fixtures, rules) {
     ).points
   }
   return total
+}
+
+/** One person's provisional points for a gameweek. */
+async function pointsFor(gameweekId, userId, fixtures, rules) {
+  const { data: preds } = await supabase.from('predictions')
+    .select('fixture_id, predicted_home, predicted_away')
+    .eq('gameweek_id', gameweekId).eq('user_id', userId)
+
+  return totalFor(preds || [], fixtures, rules)
 }
 
 /**

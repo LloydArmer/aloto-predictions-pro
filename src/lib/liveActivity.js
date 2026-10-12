@@ -114,8 +114,8 @@ export async function endGameweekActivity(activityId) {
  *   off. Saved through a database function rather than a plain insert, so a
  *   phone that changes hands moves its token to the new account.
  *
- * Safe on an older app build that has no configure(): the call fails, is
- * caught, and nothing else is affected.
+ * The two are attempted separately on purpose. A build whose native plugin
+ * has no configure() must still be able to register its token.
  */
 let startTokenRegisteredFor = null
 
@@ -123,6 +123,14 @@ export async function registerLiveActivityStartToken(userId) {
   if (!isNative() || !userId || startTokenRegisteredFor === userId) return
   startTokenRegisteredFor = userId
 
+  // Telling the Swift side where to post a server-started activity's token is
+  // a SEPARATE attempt, with its own catch.
+  //
+  // It used to share the try below, which meant that on any build whose native
+  // plugin has no configure() the rejection jumped straight past the token
+  // registration — the one thing this function exists to do. A comment here
+  // claimed that case was harmless. It was not: it silently skipped
+  // registering the phone at all, and left no trace anywhere.
   try {
     const url = supabase.supabaseUrl || import.meta.env.VITE_SUPABASE_URL
     const key = supabase.supabaseKey || import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -132,7 +140,11 @@ export async function registerLiveActivityStartToken(userId) {
         apiKey: key,
       })
     }
+  } catch (err) {
+    console.warn('Live Activity configure() unavailable:', err?.message || err)
+  }
 
+  try {
     const save = async ({ token }) => {
       if (!token) return
       const { error } = await supabase.rpc('register_live_activity_start_token', { p_token: token })
@@ -148,6 +160,25 @@ export async function registerLiveActivityStartToken(userId) {
     // Allowed to try again next launch.
     startTokenRegisteredFor = null
     console.warn('Push-to-start not available:', err?.message || err)
+  }
+}
+
+/**
+ * The push-to-start token iOS has issued to THIS device, or '' if it hasn't.
+ *
+ * Read-only, for the diagnostic panel in Settings. Separating "iOS never
+ * issued one" from "iOS issued one and it never reached the server" is the
+ * whole point: both show up as no lock screen score, and they need opposite
+ * fixes.
+ */
+export async function pushToStartTokenOnDevice() {
+  if (!isNative()) return ''
+  try {
+    const { token } = await LiveActivity.getPushToStartToken()
+    return token || ''
+  } catch {
+    // An older build without the method. Not an error worth surfacing.
+    return ''
   }
 }
 

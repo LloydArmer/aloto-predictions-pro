@@ -74,7 +74,21 @@ export default function SeasonPredictions({ competitionId, userId }) {
   }
 
   const tableLocked = !tableConfig?.is_open || (tableConfig?.deadline && new Date(tableConfig.deadline) < new Date())
-  const picksLocked = !pickConfig?.is_open || (pickConfig?.deadline && new Date(pickConfig.deadline) < new Date())
+
+  // Each question can carry its own deadline, overriding the set's. Empty
+  // means it follows the set, which is how every question behaved before this
+  // existed — so nothing changes for one that has not been given its own.
+  const deadlineFor = pick => pick?.deadline || pickConfig?.deadline || null
+  const lockedFor = pick => {
+    if (!pickConfig?.is_open) return true
+    const d = deadlineFor(pick)
+    return !!d && new Date(d) < new Date()
+  }
+
+  const openPicks = picks.filter(p => !lockedFor(p))
+  // "All of them are shut", which is what the whole-section notice and the
+  // comparison below both key off.
+  const picksLocked = !pickConfig?.is_open || (picks.length > 0 && openPicks.length === 0)
 
   // Everyone else's predictions become visible the moment entries close, and
   // not a second before.
@@ -113,8 +127,12 @@ export default function SeasonPredictions({ competitionId, userId }) {
   }
 
   async function savePicks() {
-    const answered = picks.filter(p => myPicks[p.id])
-    if (!answered.length) { toast.error('Answer at least one question first'); return }
+    // Locked questions are filtered out here as well as being greyed out: the
+    // page may have been open since before one of them shut, and the database
+    // would refuse the row anyway — which would fail the whole save, losing the
+    // answers that were still in time.
+    const answered = picks.filter(p => myPicks[p.id] && !lockedFor(p))
+    if (!answered.length) { toast.error('Answer at least one question that is still open'); return }
 
     setSaving(true)
     try {
@@ -131,6 +149,7 @@ export default function SeasonPredictions({ competitionId, userId }) {
         .upsert(rows, { onConflict: 'pick_id,user_id' })
       if (error) throw error
       toast.success(`${answered.length} of ${picks.length} answers saved`)
+      load()
     } catch {
       toast.error('Could not save — the deadline may have passed')
       load()
@@ -213,45 +232,61 @@ export default function SeasonPredictions({ competitionId, userId }) {
 
             {picksLocked && (
               <p className="text-xs mb-3 px-2 py-1.5 rounded" style={{ background: 'var(--amber-dim)', color: 'var(--amber)' }}>
-                {pickConfig.deadline && new Date(pickConfig.deadline) < new Date()
-                  ? 'The deadline has passed — these are locked.'
+                {pickConfig.is_open
+                  ? 'Every question has locked.'
                   : 'Not open for entries.'}
               </p>
             )}
 
-            {picks.map(pick => (
-              <div key={pick.id} className="mb-3 pb-3" style={{ borderBottom: '0.5px solid var(--border)' }}>
-                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                  <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>{pick.label}</span>
-                  <span className="text-xs" style={{ color: 'var(--accent)' }}>{pick.points}pts</span>
-                </div>
+            {picks.map(pick => {
+              const locked = lockedFor(pick)
+              // Only worth saying when it differs from the set's, otherwise the
+              // pill at the top of the section already says it.
+              const ownDeadline = pick.deadline && pick.deadline !== pickConfig.deadline
 
-                {pick.allow_free_text ? (
-                  <Input
-                    value={myPicks[pick.id] || ''}
-                    disabled={picksLocked || saving}
-                    placeholder="Type your answer"
-                    onChange={e => setMyPicks(prev => ({ ...prev, [pick.id]: e.target.value }))}
-                    className="w-full"
-                  />
-                ) : (
-                  <Select
-                    value={myPicks[pick.id] || ''}
-                    disabled={picksLocked || saving}
-                    onChange={e => setMyPicks(prev => ({ ...prev, [pick.id]: e.target.value }))}
-                    className="w-full">
-                    <option value="">Choose…</option>
-                    {(pick.season_pick_options || []).map(o => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </Select>
-                )}
-              </div>
-            ))}
+              return (
+                <div key={pick.id} className="mb-3 pb-3" style={{ borderBottom: '0.5px solid var(--border)' }}>
+                  <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                    <span className="text-sm font-medium" style={{ color: locked ? 'var(--txt-muted)' : 'var(--txt-primary)' }}>
+                      {pick.label}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      {locked
+                        ? <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-elevated)', color: 'var(--txt-muted)' }}>Locked</span>
+                        : ownDeadline && <DeadlinePill deadline={pick.deadline} done={!!myPicks[pick.id]}/>}
+                      <span className="text-xs" style={{ color: 'var(--accent)' }}>{pick.points}pts</span>
+                    </span>
+                  </div>
+
+                  {pick.allow_free_text ? (
+                    <Input
+                      value={myPicks[pick.id] || ''}
+                      disabled={locked || saving}
+                      placeholder={locked ? '' : 'Type your answer'}
+                      onChange={e => setMyPicks(prev => ({ ...prev, [pick.id]: e.target.value }))}
+                      className="w-full"
+                    />
+                  ) : (
+                    <Select
+                      value={myPicks[pick.id] || ''}
+                      disabled={locked || saving}
+                      onChange={e => setMyPicks(prev => ({ ...prev, [pick.id]: e.target.value }))}
+                      className="w-full">
+                      <option value="">Choose…</option>
+                      {(pick.season_pick_options || []).map(o => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </Select>
+                  )}
+                </div>
+              )
+            })}
 
             {!picksLocked && (
               <Button variant="primary" className="w-full justify-center" onClick={savePicks} disabled={saving}>
-                {saving ? 'Saving…' : 'Save my answers'}
+                {saving ? 'Saving…' : openPicks.length === picks.length
+                  ? 'Save my answers'
+                  : `Save the ${openPicks.length} still open`}
               </Button>
             )}
           </Card>

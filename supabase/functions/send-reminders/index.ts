@@ -485,7 +485,12 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
 
   const stillOpen = (c: any) => !c.deadline || new Date(c.deadline).getTime() > now
   const tables = (tableConfigs || []).filter(stillOpen)
-  const picks  = (pickConfigs  || []).filter(stillOpen)
+
+  // Pick sets are NOT filtered on the set's own deadline, because a question
+  // can carry a later one of its own. A set that closed last week may still
+  // have the Golden Boot running until May, and dropping it here would mean
+  // that question was never chased.
+  const picks = (pickConfigs || [])
   if (!tables.length && !picks.length) return []
 
   const configIds = [...tables, ...picks].map((c: any) => c.id)
@@ -494,8 +499,15 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
   const [{ data: comps }, { data: participants }, { data: alreadySent }] = await Promise.all([
     supabase.from('competitions').select('id, name').in('id', compIds),
     supabase.from('participants').select('user_id, competition_id').in('competition_id', compIds),
+    // ref_id is the SET for questions sharing its deadline, and the QUESTION
+    // for one with a deadline of its own, so each is chased once on its own
+    // schedule. The question ids are not known until further down, so this
+    // cannot be filtered to them — but it IS filtered to rows that have a
+    // ref_id at all, which excludes every gameweek reminder. Without that the
+    // query would eventually pass Supabase's 1,000-row ceiling, quietly return
+    // a slice, and start sending reminders people had already had.
     supabase.from('notification_log').select('user_id, ref_id, kind')
-      .eq('channel', CHANNEL).in('ref_id', configIds),
+      .eq('channel', CHANNEL).not('ref_id', 'is', null),
   ])
   if (!participants?.length) return []
 
@@ -515,7 +527,8 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
   // Season picks are separate questions, so progress is counted per question.
   const pickConfigIds = picks.map((c: any) => c.id)
   const { data: questions } = pickConfigIds.length
-    ? await supabase.from('season_picks').select('id, config_id').in('config_id', pickConfigIds)
+    ? await supabase.from('season_picks')
+        .select('id, config_id, label, deadline').in('config_id', pickConfigIds)
     : { data: [] }
   const questionIds = (questions || []).map((q: any) => q.id)
   const { data: answers } = questionIds.length
@@ -574,11 +587,73 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
     const qs = (questions || []).filter((q: any) => q.config_id === config.id)
     if (!qs.length) continue
 
+    const name = compName.get(config.competition_id) || 'Your league'
+
+    // Questions are grouped by the deadline they actually lock on, so one
+    // reminder covers everything due at the same moment rather than one per
+    // question. Eight questions sharing the set's deadline is one message, as
+    // it always was; a question moved to its own date gets chased separately.
+    //
+    // The group's ref_id decides what "already reminded" means, so it has to
+    // be the same on every run: the set for questions following it, and
+    // otherwise the lowest question id in the group.
+    const groups = new Map<string, { deadline: string | null; refId: string; qs: any[] }>()
+
+    for (const q of qs) {
+      const deadline = q.deadline || config.deadline || null
+      const key = deadline || 'never'
+      if (!groups.has(key)) groups.set(key, { deadline, refId: '', qs: [] })
+      groups.get(key)!.qs.push(q)
+    }
+
+    for (const [key, g] of groups) {
+      const followsTheSet = key === (config.deadline || 'never')
+      g.refId = followsTheSet
+        ? config.id
+        : g.qs.map((q: any) => q.id).sort()[0]
+    }
+
     for (const userId of membersOf(config.competition_id)) {
-      const left = qs.filter((q: any) => !answered.has(`${userId}:${q.id}`)).length
-      if (left === 0) continue
-      const started = left < qs.length
-      remind(userId, config, 'season_picks', started, `${plural(left, 'season pick')} still to make`)
+      const unanswered = qs.filter((q: any) => !answered.has(`${userId}:${q.id}`))
+      if (!unanswered.length) continue
+
+      // The announcement still covers the whole set — being told once that
+      // season picks have opened is enough, however their deadlines are
+      // arranged. Only to someone who has not started.
+      if (config.is_open && unanswered.length === qs.length) {
+        push(userId, config.id, 'season_picks_open',
+          `Season picks are open — ${name}`,
+          config.deadline
+            ? `${plural(qs.length, 'question')} to answer. First locks ${when(config.deadline)}.`
+            : `${plural(qs.length, 'question')} to answer.`)
+      }
+
+      for (const g of groups.values()) {
+        if (!g.deadline) continue
+
+        const mine = g.qs.filter((q: any) => !answered.has(`${userId}:${q.id}`))
+        if (!mine.length) continue
+
+        const minutesLeft = (new Date(g.deadline).getTime() - now) / 60000
+
+        // Named when it is the only one locking then, counted when it is not.
+        // "Premier League Winners locks tonight" is worth opening; "1 season
+        // pick still to make" is not.
+        const what = mine.length === 1
+          ? `"${mine[0].label}" is still unanswered`
+          : `${plural(mine.length, 'question')} still to answer`
+
+        if (minutesLeft <= 24 * 60 && minutesLeft > 60) {
+          push(userId, g.refId, 'season_picks_24h',
+            `24 hours left — season predictions`,
+            `${name}: ${what}. Locks ${when(g.deadline)}.`)
+        }
+        if (minutesLeft <= 60 && minutesLeft > 0) {
+          push(userId, g.refId, 'season_picks_1h',
+            `Final reminder — season predictions`,
+            `${name}: ${what}. Locks at ${fmtTime(g.deadline)} and cannot be changed after that.`)
+        }
+      }
     }
   }
 

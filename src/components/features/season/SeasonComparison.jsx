@@ -30,7 +30,9 @@ export default function SeasonComparison({ competitionId, userId, tableConfig, p
   const [answers, setAnswers] = useState([])
 
   const showTable = !!tableConfig && tableLocked
-  const showPicks = !!pickConfig && picksLocked
+  // A question opens up the moment ITS OWN deadline passes, not when the whole
+  // set does, so the section appears as soon as any one of them has shut.
+  const showPicks = !!pickConfig && (picksLocked || !pickConfig.is_open || !!pickConfig.deadline)
 
   useEffect(() => {
     if (!competitionId || (!showTable && !showPicks)) { setLoading(false); return }
@@ -55,7 +57,7 @@ export default function SeasonComparison({ competitionId, userId, tableConfig, p
 
         if (showPicks) {
           const { data: pk } = await supabase.from('season_picks')
-            .select('id, label, points, correct_option_id, correct_answer, allow_free_text')
+            .select('id, label, points, correct_option_id, correct_answer, allow_free_text, deadline')
             .eq('config_id', pickConfig.id).order('sort_order')
 
           const ids = (pk || []).map(p => p.id)
@@ -226,12 +228,24 @@ export default function SeasonComparison({ competitionId, userId, tableConfig, p
             <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>Nobody answered these.</p>
           )}
 
-          {pickPlayers.length > 0 && picks.map(pick => (
+          {pickPlayers.length > 0 && picks.map(pick => {
+            // Still open means still sealed. Showing a question everyone can
+            // still answer would hand them each other's answers.
+            const d = pick.deadline || pickConfig.deadline
+            const open = pickConfig.is_open && (!d || new Date(d) > new Date())
+
+            return (
             <div key={pick.id} className="mb-3 pb-3" style={{ borderBottom: '0.5px solid var(--border)' }}>
               <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                <span className="text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>{pick.label}</span>
+                <span className="text-sm font-medium" style={{ color: open ? 'var(--txt-muted)' : 'var(--txt-primary)' }}>{pick.label}</span>
                 <span className="text-xs" style={{ color: 'var(--accent)' }}>{pick.points}pts</span>
               </div>
+
+              {open && (
+                <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+                  Still open — everyone's answers appear when this one locks.
+                </p>
+              )}
 
               {answerFor(pick) && (
                 <p className="text-xs mb-1.5" style={{ color: 'var(--green)' }}>
@@ -255,7 +269,8 @@ export default function SeasonComparison({ competitionId, userId, tableConfig, p
                 )
               })}
             </div>
-          ))}
+            )
+          })}
         </Card>
       )}
     </div>
