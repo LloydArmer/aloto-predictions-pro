@@ -25,8 +25,11 @@ export async function liveActivityStatus() {
   if (!isNative()) return { supported: false, enabled: false }
   try {
     return await LiveActivity.isSupported()
-  } catch {
-    return { supported: false, enabled: false }
+  } catch (err) {
+    // The plugin didn't answer — almost always because it isn't registered in
+    // the native app, which is a different fault entirely from an iOS that is
+    // too old. Reported separately so the diagnostic can't blame the phone.
+    return { supported: false, enabled: false, unavailable: true, reason: err?.message || String(err) }
   }
 }
 

@@ -66,6 +66,7 @@ export default function Diagnostics({ userId }) {
     ['Version',       info.version || (info.native ? 'Unknown' : 'Website')],
     ['Running on',    info.native ? `${info.platform}${info.os ? ` ${info.os}` : ''}` : 'Web browser'],
     ['Live Activities', !info.native ? 'Not applicable on the web'
+                      : info.la.unavailable ? 'The app cannot reach them'
                       : !info.la.supported ? 'Not supported on this iOS'
                       : info.la.enabled ? 'On'
                       : 'Off — turn on in iOS Settings'],
@@ -134,6 +135,17 @@ export default function Diagnostics({ userId }) {
 function lockScreenState({ native, la, deviceToken, savedToken }) {
   if (!native) {
     return { label: 'Not applicable on the web', colour: 'var(--txt-second)', detail: '' }
+  }
+
+  // Checked BEFORE the iOS-version case. These look identical from the web
+  // side — both come back as "not supported" — and blaming the phone for what
+  // is actually a missing plugin sends you looking in the wrong place.
+  if (la.unavailable) {
+    return {
+      label: 'The app cannot reach them',
+      colour: 'var(--red)',
+      detail: 'This build cannot talk to the part of the app that draws the lock screen score. Nothing you can change on the phone will help — send this screen over.',
+    }
   }
 
   if (!la.supported) {
