@@ -1,0 +1,42 @@
+# How git should treat line endings.
+#
+# The problem this solves: several files in this repo are saved with Windows
+# line endings on disk while git stores them with Unix ones. Any edit to such a
+# file then shows as a whole-file rewrite — codemagic.yaml came back as 393
+# changed lines for a one-word version bump, and project.pbxproj as 1,214 for
+# four added lines. Real changes get buried, and a diff stops being reviewable.
+#
+# text=auto tells git to store every text file with LF and hand the working
+# copy whatever the platform expects. Nothing changes about how files open or
+# edit on Windows; it only settles what gets written into history.
+#
+# Applying this to files already committed needs a one-off renormalise:
+#
+#   git add --renormalize .
+#   git commit -m "Normalise line endings"
+#
+# That makes one large commit and no further ones.
+
+* text=auto
+
+# Files git must never normalise or try to diff as text. Rewriting a byte of
+# any of these would corrupt it.
+*.png              binary
+*.jpg              binary
+*.jpeg             binary
+*.gif              binary
+*.ico              binary
+*.webp             binary
+*.pdf              binary
+*.zip              binary
+*.ipa              binary
+*.jar              binary
+*.keystore         binary
+*.p8               binary
+*.p12              binary
+*.cer              binary
+*.mobileprovision  binary
+*.ttf              binary
+*.otf              binary
+*.woff             binary
+*.woff2            binary
