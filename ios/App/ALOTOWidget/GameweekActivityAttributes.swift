@@ -41,6 +41,14 @@ struct GameweekActivityAttributes: ActivityAttributes {
         var position: Int?
         var playerCount: Int?
 
+        /// Places gained since the last push: +2 means up two, -1 means down
+        /// one, 0 or nil means no change or nothing to compare against yet.
+        ///
+        /// Optional on purpose. A push sent before this field existed still
+        /// decodes, which matters because activities already running on
+        /// someone's phone outlive a release.
+        var positionDelta: Int?
+
         /// How many matches are still being played. Zero means everything has
         /// finished and the figures are final apart from the admin confirming.
         var matchesInPlay: Int

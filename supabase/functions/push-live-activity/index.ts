@@ -219,6 +219,61 @@ async function rulesFor(competitionId: string) {
   return rulesCache.get(competitionId)
 }
 
+const standingsCache = new Map<string, Map<string, number>>()
+
+/**
+ * Where everyone stands in this gameweek, as a map of user id to position.
+ *
+ * Worked out ONCE per gameweek and reused for every player in it. Twelve
+ * people in one competition would otherwise mean twelve passes over the same
+ * predictions, every minute, for the whole of a Saturday.
+ *
+ * Position is by this gameweek's points among everyone in the competition that
+ * owns the gameweek — the same rule the dashboard uses, so the two can never
+ * disagree. People level on points SHARE a place: two on 14 are both 3rd, and
+ * nobody is 4th. Ranking them arbitrarily would make the arrow on the lock
+ * screen move when nothing had actually happened.
+ */
+async function standingsFor(gameweekId: string, competitionId: string) {
+  const key = `${gameweekId}:${competitionId}`
+  if (standingsCache.has(key)) return standingsCache.get(key)!
+
+  const [fixtures, rules] = await Promise.all([
+    fixturesFor(gameweekId),
+    rulesFor(competitionId),
+  ])
+
+  const { data: parts } = await supabase.from('participants')
+    .select('user_id').eq('competition_id', competitionId)
+  const members = [...new Set((parts ?? []).map(p => p.user_id))]
+
+  const positions = new Map<string, number>()
+  if (!members.length) { standingsCache.set(key, positions); return positions }
+
+  // One query for the whole competition rather than one per person.
+  const { data: preds } = await supabase.from('predictions')
+    .select('user_id, fixture_id, predicted_home, predicted_away')
+    .eq('gameweek_id', gameweekId).in('user_id', members)
+
+  const byUser = new Map<string, any[]>()
+  for (const p of (preds ?? [])) {
+    if (!byUser.has(p.user_id)) byUser.set(p.user_id, [])
+    byUser.get(p.user_id)!.push(p)
+  }
+
+  const totals = members.map(id => ({
+    id,
+    points: pointsFor(fixtures, byUser.get(id) ?? [], rules),
+  }))
+
+  for (const t of totals) {
+    positions.set(t.id, totals.filter(o => o.points > t.points).length + 1)
+  }
+
+  standingsCache.set(key, positions)
+  return positions
+}
+
 /** Everything the activity shows for one person, as of now. */
 async function stateFor(userId: string, gameweekId: string) {
   const [fixtures, gw] = await Promise.all([fixturesFor(gameweekId), gameweekFor(gameweekId)])
@@ -246,13 +301,23 @@ async function stateFor(userId: string, gameweekId: string) {
   const inPlay = inPlayCount(fixtures)
   const finished = allFinished(fixtures)
 
+  // Where they stand, alongside the tie rather than instead of it. How you are
+  // doing against your opponent and how you are doing in the table are
+  // different questions, and both move as goals go in.
+  const positions = await standingsFor(gameweekId, gw?.competition_id)
+  const position = positions.get(userId) ?? null
+  const playerCount = positions.size || null
+
   return {
-    gw, opponent, finished,
+    gw, opponent, finished, position, playerCount,
     contentState: {
       myPoints: pointsFor(fixtures, preds ?? [], rules),
       opponentPoints,
-      position: null,
-      playerCount: null,
+      position,
+      playerCount,
+      // Filled in by the caller, which is the only place that knows where
+      // this person stood at the last push.
+      positionDelta: null as number | null,
       matchesInPlay: inPlay,
       statusLine: statusLine(inPlay, finished),
     },
@@ -313,13 +378,17 @@ async function startNew(result: any) {
     const label = String(gw.number ?? '')
 
     for (const st of startTokens) {
-      const { opponent, contentState } = await stateFor(st.user_id, gameweekId)
+      const { opponent, contentState, position } = await stateFor(st.user_id, gameweekId)
       const me = profileById.get(st.user_id)
       const ref = crypto.randomUUID()
 
       // Recorded BEFORE the push, so the phone's reply always has a row to land on.
       const { error: insertError } = await supabase.from('live_activity_tokens')
-        .insert({ user_id: st.user_id, gameweek_id: gameweekId, ref, started_at: new Date().toISOString() })
+        .insert({
+          user_id: st.user_id, gameweek_id: gameweekId, ref,
+          started_at: new Date().toISOString(),
+          last_position: position ?? null,
+        })
       if (insertError) { result.errors.push(`record: ${insertError.message}`); continue }
 
       const payload = {
@@ -369,9 +438,28 @@ async function updateRunning(result: any) {
   const { data: activities, error } = await supabase.rpc('activities_needing_push')
   if (error) { result.errors.push(`activities: ${error.message}`); return }
 
+  // Where everyone stood at the last push, in one query. This is what makes
+  // the arrow on the lock screen possible: the phone has no memory of the
+  // previous push, so the movement has to be worked out here and sent.
+  const ids = (activities ?? []).map((a: any) => a.activity_id).filter(Boolean)
+  const lastPositions = new Map<string, number>()
+  if (ids.length) {
+    const { data: rows } = await supabase.from('live_activity_tokens')
+      .select('activity_id, last_position').in('activity_id', ids)
+    for (const r of (rows ?? [])) {
+      if (r.last_position != null) lastPositions.set(r.activity_id, r.last_position)
+    }
+  }
+
   for (const act of activities ?? []) {
     try {
-      const { finished, contentState } = await stateFor(act.user_id, act.gameweek_id)
+      const { finished, contentState, position } = await stateFor(act.user_id, act.gameweek_id)
+
+      // Places GAINED, so positive is up. Lower numbers are better positions,
+      // which makes the subtraction read backwards unless you say so.
+      const previous = lastPositions.get(act.activity_id)
+      contentState.positionDelta =
+        position != null && previous != null ? previous - position : null
       const now = Math.floor(Date.now() / 1000)
 
       const payload = finished
@@ -400,6 +488,10 @@ async function updateRunning(result: any) {
           .update({
             last_push_at: new Date().toISOString(),
             push_failures: 0,
+            // Only after a successful push: if it never arrived, the phone is
+            // still showing the old position and the next delta must be
+            // measured from that, not from one nobody saw.
+            last_position: position ?? null,
             ...(finished ? { ended_at: new Date().toISOString() } : {}),
           })
           .eq('activity_id', act.activity_id)
@@ -424,7 +516,7 @@ async function updateRunning(result: any) {
 }
 
 async function run() {
-  fixtureCache.clear(); gameweekCache.clear(); rulesCache.clear()
+  fixtureCache.clear(); gameweekCache.clear(); rulesCache.clear(); standingsCache.clear()
   const result = { started: 0, pushed: 0, ended: 0, failed: 0, skipped: 0, errors: [] as string[] }
 
   // Tidy up anything abandoned before spending requests on it.

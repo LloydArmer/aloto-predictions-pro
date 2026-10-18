@@ -401,7 +401,77 @@ async function syncLive() {
     fixtures_updated: updated,
   })
 
-  return { updated }
+  const finalised = await autoFinalise(live.map((f: any) => f.id))
+
+  return { updated, finalised }
+}
+
+/**
+ * Copies a full-time feed score into the confirmed score, where the
+ * competition has asked for that.
+ *
+ * Off unless an organiser turns it on, per competition. The feed is treated as
+ * provisional everywhere else in this app for good reason — it can be wrong,
+ * behind, or still reporting a match that was abandoned — so this is an
+ * explicit decision to trust it, not a default.
+ *
+ * Only ever fills in a result that is NOT already there. An admin's own score,
+ * and any correction they make afterwards, always wins: home_score being set
+ * is what takes a fixture out of scope here, permanently.
+ *
+ * Deliberately does not mark the gameweek completed or recalculate points.
+ * That is the moment provisional becomes official and league positions move,
+ * and it stays a human decision.
+ */
+async function autoFinalise(fixtureIds: string[]) {
+  if (!fixtureIds.length) return 0
+
+  // Finished, and nobody has confirmed a score yet.
+  const { data: candidates } = await supabase.from('fixtures')
+    .select('id, gameweek_id, live_home_score, live_away_score')
+    .in('id', fixtureIds)
+    .in('live_status', FINISHED)
+    .is('home_score', null)
+    .neq('status', 'void')
+
+  if (!candidates?.length) return 0
+
+  // Which competition each one belongs to, and whether it wants this.
+  const gwIds = [...new Set(candidates.map(f => f.gameweek_id).filter(Boolean))]
+  if (!gwIds.length) return 0
+
+  const { data: gws } = await supabase.from('gameweeks')
+    .select('id, competition_id').in('id', gwIds)
+  const compByGw = new Map((gws ?? []).map(g => [g.id, g.competition_id]))
+
+  const compIds = [...new Set((gws ?? []).map(g => g.competition_id).filter(Boolean))]
+  if (!compIds.length) return 0
+
+  const { data: comps } = await supabase.from('competitions')
+    .select('id').in('id', compIds).eq('auto_finalise_scores', true)
+  const willing = new Set((comps ?? []).map(c => c.id))
+  if (!willing.size) return 0
+
+  let finalised = 0
+  for (const fx of candidates) {
+    if (!willing.has(compByGw.get(fx.gameweek_id))) continue
+    // A finished match with no score is a feed fault, not a 0-0.
+    if (fx.live_home_score == null || fx.live_away_score == null) continue
+
+    const { error } = await supabase.from('fixtures').update({
+      home_score: fx.live_home_score,
+      away_score: fx.live_away_score,
+      status: 'completed',
+    }).eq('id', fx.id).is('home_score', null)   // last guard against a race
+
+    if (!error) finalised++
+  }
+
+  if (finalised) {
+    await logSync({ kind: 'finalise', requests_used: 0, fixtures_updated: finalised })
+  }
+
+  return finalised
 }
 
 /**

@@ -240,6 +240,7 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
   const [rules, setRules] = useState(null)
   const [sourceId, setSourceId] = useState(comp?.rules_source_competition_id || '')
   const [tpBlocked, setTpBlocked] = useState(comp?.triple_points_blocked || false)
+  const [autoFinalise, setAutoFinalise] = useState(comp?.auto_finalise_scores || false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -266,6 +267,23 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
     const { data, error } = await supabase.from('competitions').update({ triple_points_blocked: blocked }).eq('id', competitionId).select().maybeSingle()
     if (error || !data) { toast.error('Could not save — check admin rights on this competition'); setTpBlocked(!blocked); return }
     toast.success(blocked ? 'Triple Points blocked for this competition' : 'Triple Points unblocked')
+    refetchComps()
+  }
+
+  async function saveAutoFinalise(on) {
+    setAutoFinalise(on)
+    // .select() chained for the same reason as saveSource below: without it a
+    // row-level permission block looks exactly like a successful save.
+    const { data, error } = await supabase.from('competitions')
+      .update({ auto_finalise_scores: on }).eq('id', competitionId).select().maybeSingle()
+    if (error || !data) {
+      toast.error('Could not save - check admin rights on this competition')
+      setAutoFinalise(!on)
+      return
+    }
+    toast.success(on
+      ? 'Results will be confirmed automatically at full time'
+      : 'Results will need confirming by hand again')
     refetchComps()
   }
 
@@ -336,6 +354,22 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
             <input type="checkbox" checked={tpBlocked} onChange={e => saveTpBlock(e.target.checked)} />
             <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>Block Triple Points from applying to this competition</span>
           </label>
+        </div>
+        <div className="mt-4 pt-4" style={{ borderTop: '0.5px solid var(--border)' }}>
+          <AdminLabel className="mb-2">Confirming results</AdminLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
+            Normally you enter each result yourself and the live score from the football feed stays provisional.
+            Turn this on and a fixture's score is confirmed automatically once the feed says the match has finished.
+            You can still correct any score afterwards, and the gameweek is still only completed - and points only
+            recalculated - when you say so.
+          </p>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={autoFinalise} onChange={e => saveAutoFinalise(e.target.checked)} />
+            <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>Confirm results automatically at full time</span>
+          </label>
+          <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+            Only works for fixtures linked to the football feed. Anything you run manually is unaffected.
+          </p>
         </div>
         {rules ? (
           <div style={{ opacity: 0.75 }}>
