@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { sortGameweeks } from '../lib/gameweeks'
 
 export function useLeaderboard(competitionId) {
   const [overall, setOverall] = useState([])
@@ -126,7 +127,10 @@ export function useMonthlyLeaderboard(competitionId, monthKey) {
       const gwIds = (links || []).map(l => l.gameweek_id)
       if (!gwIds.length) { setGameweeksInMonth([]); setMonthly([]); return }
 
-      const { data: gws } = await supabase.from('gameweeks').select('*').in('id', gwIds).eq('month_key', mKey).order('number')
+      const { data: rawGws } = await supabase.from('gameweeks').select('*').in('id', gwIds).eq('month_key', mKey)
+      // Sorted here, not by the database: gameweek numbers are text, so SQL
+      // puts GW10 between GW1 and GW2.
+      const gws = sortGameweeks(rawGws)
       setGameweeksInMonth(gws || [])
       if (!gws?.length) { setMonthly([]); return }
 

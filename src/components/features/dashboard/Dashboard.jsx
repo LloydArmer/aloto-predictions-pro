@@ -4,6 +4,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard } from '../../../hooks/useLeaderboard'
+import { sortGameweeks } from '../../../lib/gameweeks'
 import { useLiveActivity } from '../../../hooks/useLiveActivity'
 import { supabase } from '../../../lib/supabase'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
@@ -153,9 +154,13 @@ export default function Dashboard() {
     try {
       const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', comp)
       const linkedGwIds = (links || []).map(l => l.gameweek_id)
-      const { data: allGws } = linkedGwIds.length
-        ? await supabase.from('gameweeks').select('*').in('id', linkedGwIds).in('status',['active','completed']).order('number',{ascending:false})
+      const { data: rawGws } = linkedGwIds.length
+        ? await supabase.from('gameweeks').select('*').in('id', linkedGwIds).in('status',['active','completed'])
         : { data: [] }
+      // Highest FIRST, by number rather than alphabetically. Asking the
+      // database for this order is what left the dashboard showing GW9 while
+      // GW11 was being played: number is text, and "GW9" sorts above "GW11".
+      const allGws = sortGameweeks(rawGws, { descending: true })
 
       // Show the most recently active GW's fixtures as the "current" snapshot
       const latestGW = allGws?.[0]; setGW(latestGW)

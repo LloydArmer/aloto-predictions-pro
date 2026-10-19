@@ -4,6 +4,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard, useMonthlyLeaderboard } from '../../../hooks/useLeaderboard'
+import { sortGameweeks } from '../../../lib/gameweeks'
 import { supabase } from '../../../lib/supabase'
 import { resolvePointRules } from '../../../lib/scoring'
 import { fitName } from '../../../lib/names'
@@ -660,10 +661,11 @@ export default function Table({ embeddedView = null }) {
   async function loadMeta(id) {
     const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', id)
     const gwIds = (links || []).map(l => l.gameweek_id)
-    const { data: gws } = gwIds.length
-      ? await supabase.from('gameweeks').select('*').in('id', gwIds).in('status',['completed','active']).order('number')
+    const { data: rawGws } = gwIds.length
+      ? await supabase.from('gameweeks').select('*').in('id', gwIds).in('status',['completed','active'])
       : { data: [] }
-    setGameweeks(gws||[])
+    const gws = sortGameweeks(rawGws)
+    setGameweeks(gws)
     const keys = [...new Set((gws||[]).map(g=>g.month_key).filter(Boolean))]
     setMonths(keys.map(k=>({ key:k, label:format(new Date(k+'-01'),'MMM yyyy') })))
   }

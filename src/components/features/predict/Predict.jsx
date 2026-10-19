@@ -4,6 +4,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
+import { sortGameweeks } from '../../../lib/gameweeks'
 import { resolvePointRules, scoreOnePrediction, defaultRules } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
@@ -743,10 +744,10 @@ export default function Predict() {
     // in from another competition — via the join table.
     const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', comp)
     const gwIds = (links || []).map(l => l.gameweek_id)
-    const { data } = gwIds.length
-      ? await supabase.from('gameweeks').select('*').in('id', gwIds).order('number')
+    const { data: rawGws } = gwIds.length
+      ? await supabase.from('gameweeks').select('*').in('id', gwIds)
       : { data: [] }
-    setGameweeks(data||[])
+    setGameweeks(sortGameweeks(rawGws))
     const active = data?.find(g=>g.status==='active') || data?.[data.length-1]
     setSelectedGW(active||null)
   }

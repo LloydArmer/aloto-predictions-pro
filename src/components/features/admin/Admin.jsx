@@ -3,6 +3,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
+import { sortGameweeks } from '../../../lib/gameweeks'
 import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound, scoreOnePrediction, resolvePointRules } from '../../../lib/scoring'
 import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
@@ -504,9 +505,9 @@ function GameweeksTab({ competitionId, competitions }) {
         // competitions(name) so a gameweek belonging to ANOTHER competition can
         // be labelled as such. This list includes linked gameweeks, and three
         // competitions each having a "1" showed as three identical cards.
-        ? await supabase.from('gameweeks').select('*, competitions(name)').in('id', gwIds).order('number')
+        ? await supabase.from('gameweeks').select('*, competitions(name)').in('id', gwIds)
         : { data: [] }
-      setGws(data || [])
+      setGws(sortGameweeks(data))
 
       // Which OTHER competitions is each of these gameweeks also linked to?
       if (data?.length) {
@@ -1139,8 +1140,8 @@ function GroupStageTab({ competitionId, competitions }) {
       // competitions(name) is needed so gwLabel can prefix the option with the
       // competition it belongs to — without it three competitions each having a
       // gameweek "1" give three identical, unchoosable options.
-      const { data: gws } = await supabase.from('gameweeks').select('*, competition_gameweeks(competition_id), competitions(name)').order('number')
-      setGameweeks(gws || [])
+      const { data: gws } = await supabase.from('gameweeks').select('*, competition_gameweeks(competition_id), competitions(name)')
+      setGameweeks(sortGameweeks(gws))
       // Live "points so far" for every gameweek currently in use by an
       // unresolved fixture — this is a display-only running total from
       // whichever real fixtures already have a result, separate from the
@@ -1508,12 +1509,12 @@ function BracketTab({ competitionId, competitions }) {
         // made three competitions each with a gameweek "1" indistinguishable:
         // the dropdown read "1, 1, 1, 2, 2, 2, 3, 4" with no way to tell which
         // was which.
-        supabase.from('gameweeks').select('*, competitions(name)').order('number'),
+        supabase.from('gameweeks').select('*, competitions(name)'),
         supabase.from('participants').select('user_id, profiles(display_name, email)').eq('competition_id', competitionId),
         supabase.from('bracket_round_gameweeks').select('*').eq('competition_id', competitionId),
       ])
       setMatches(m || [])
-      setGameweeks(gws || [])
+      setGameweeks(sortGameweeks(gws))
       setParticipants(parts || [])
       const map = {}
       ;(rgws || []).forEach(r => { if (!map[r.round]) map[r.round] = []; map[r.round].push(r.gameweek_id) })
