@@ -23,6 +23,9 @@ export function useChat(competitionId, userId) {
   const [people, setPeople]       = useState({})   // user_id -> profile
   const [loading, setLoading]     = useState(true)
   const [banned, setBanned]       = useState(false)
+  // null until known, so the screen does not flash 'chat is off'
+  // at somebody whose room is perfectly open.
+  const [enabled, setEnabled]     = useState(null)
   const [error, setError]         = useState(null)
 
   // Realtime hands us raw rows with no author attached, so the roster is
@@ -51,6 +54,12 @@ export function useChat(competitionId, userId) {
       for (const p of parts || []) if (p.profiles) roster[p.profiles.id] = { ...p.profiles, role: p.role }
       peopleRef.current = roster
       setPeople(roster)
+
+      // Is the room open at all? The admin can close it, and a composer that
+      // posts into a closed room just fails with a policy error nobody can act on.
+      const { data: comp } = await supabase
+        .from('competitions').select('chat_enabled').eq('id', competitionId).maybeSingle()
+      if (!cancelled) setEnabled(comp?.chat_enabled === true)
 
       // Am I barred from this room? Policy lets me read my own ban only, so a
       // row here always means me.
@@ -189,7 +198,7 @@ export function useChat(competitionId, userId) {
     )
   }, [competitionId, userId])
 
-  return { messages, people, loading, banned, error, send, edit, remove, report, block, markRead }
+  return { messages, people, loading, banned, enabled, error, send, edit, remove, report, block, markRead }
 }
 
 /**

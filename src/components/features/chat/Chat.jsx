@@ -24,7 +24,7 @@ export default function Chat() {
   const [competitionId] = useSelectedCompetition(competitions)
 
   const {
-    messages, people, loading, banned, error,
+    messages, people, loading, banned, enabled, error,
     send, edit, remove, report, block, markRead,
   } = useChat(competitionId, user?.id)
 
@@ -224,6 +224,18 @@ export default function Chat() {
         icon="ti-messages"
         title="No competition selected"
         description="Chat belongs to a league. Pick one to start talking."
+      />
+    )
+  }
+
+  // The admin has not opened a room here. Said plainly, with where the
+  // conversation probably is, rather than an empty screen.
+  if (enabled === false) {
+    return (
+      <EmptyState
+        icon="ti-message-off"
+        title="No chat in this competition"
+        description={`${competition?.name || 'This competition'} doesn't have a chat room. If you're in another league with the same people, that's where the conversation is — switch competition at the top.`}
       />
     )
   }

@@ -23,15 +23,19 @@ export default function ChatModerationTab({ competitionId }) {
   const [banned, setBanned]     = useState([])
   const [loading, setLoading]   = useState(true)
   const [busy, setBusy]         = useState(null)
+  const [enabled, setEnabled]   = useState(null)   // null until loaded
+  const [saving, setSaving]     = useState(false)
   const [showHistory, setShowHistory] = useState(false)
 
   const load = useCallback(async () => {
     if (!competitionId) return
     setLoading(true)
-    const [{ data: all }, { data: bans }] = await Promise.all([
+    const [{ data: all }, { data: bans }, { data: comp }] = await Promise.all([
       supabase.rpc('chat_report_queue', { p_competition_id: competitionId, p_include_resolved: true }),
       supabase.rpc('chat_banned_players', { p_competition_id: competitionId }),
+      supabase.from('competitions').select('chat_enabled').eq('id', competitionId).maybeSingle(),
     ])
+    setEnabled(comp?.chat_enabled === true)
     setOpen((all || []).filter(r => !r.resolved_at))
     setHistory((all || []).filter(r => r.resolved_at))
     setBanned(bans || [])
@@ -56,6 +60,16 @@ export default function ChatModerationTab({ competitionId }) {
     load()
   }
 
+  async function toggleChat(next) {
+    setSaving(true)
+    const { error } = await supabase
+      .from('competitions').update({ chat_enabled: next }).eq('id', competitionId)
+    setSaving(false)
+    if (error) { toast.error('Could not change that.'); return }
+    setEnabled(next)
+    toast.success(next ? 'Chat is on for this competition' : 'Chat is off for this competition')
+  }
+
   async function unban(player) {
     const { error } = await supabase
       .from('chat_bans')
@@ -71,6 +85,29 @@ export default function ChatModerationTab({ competitionId }) {
 
   return (
     <div className="space-y-3">
+
+      {/* ── The switch ── */}
+      <Card className="p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div style={{ minWidth: 0 }}>
+            <p className="text-sm font-medium mb-0.5" style={{ color: 'var(--txt-primary)' }}>
+              League chat
+              <span className="ml-2 text-xs" style={{ color: enabled ? 'var(--green)' : 'var(--txt-muted)' }}>
+                {enabled ? 'On' : 'Off'}
+              </span>
+            </p>
+            <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+              {enabled
+                ? 'Players in this competition can post. Switching it off closes the room — what was already said stays readable, but nobody can add to it.'
+                : 'Nobody can post here. Turn it on for the competition people should actually talk in — a room for every cup splits the same players across several, and all of them go quiet.'}
+            </p>
+          </div>
+          <Button size="sm" variant={enabled ? 'ghost' : 'primary'}
+            onClick={() => toggleChat(!enabled)} disabled={saving || enabled === null}>
+            {saving ? '…' : enabled ? 'Switch off' : 'Switch on'}
+          </Button>
+        </div>
+      </Card>
 
       {/* ── What is waiting ── */}
       <Card className="p-3">
