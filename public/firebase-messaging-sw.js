@@ -36,7 +36,10 @@ messaging.onBackgroundMessage(payload => {
     // Tagging by notification type means a newer reminder REPLACES an older one
     // rather than stacking. Someone who ignores the 24h nudge shouldn't come
     // back to a wall of notifications.
-    tag: d.kind || 'aloto-reminder',
+    // An explicit tag wins, so chat can give every mention its own and two
+    // in a row both appear. Reminders send none and keep collapsing by kind,
+    // which is what you want when the same deadline is re-sent.
+    tag: d.tag || d.kind || 'aloto-reminder',
     renotify: true,
     data: { url: d.url || '/predict' },
   })

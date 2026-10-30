@@ -5,6 +5,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useChat } from '../../../hooks/useChat'
 import { Spinner, EmptyState, Button } from '../../ui'
+import { PlayerMark } from '../../ui/Shirt'
 import HouseRules from './HouseRules'
 import MessageRow from './MessageRow'
 import ReportDialog from './ReportDialog'
@@ -31,6 +32,9 @@ export default function Chat() {
   const [sending, setSending]   = useState(false)
   const [reporting, setReporting] = useState(null)   // the message being reported
   const [editingId, setEditingId] = useState(null)
+  // The partial name after an @, or null when the caret is not in one.
+  const [mentionQuery, setMentionQuery] = useState(null)
+  const inputRef = useRef(null)
 
   const scroller = useRef(null)
   const bottom   = useRef(null)
@@ -68,6 +72,21 @@ export default function Chat() {
   // Who is talking, for the messages. Realtime rows carry a user_id and
   // nothing else, so every author is looked up here.
   const authorOf = useMemo(() => (id) => people[id] || null, [people])
+
+  // Who matches what has been typed after the @.
+  //
+  // An empty query lists the room rather than nothing: typing "@" on its own
+  // is how you mention someone whose spelling you cannot remember, which is
+  // the case the whole feature exists for.
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) return []
+    const q = mentionQuery.trim().toLowerCase()
+    return Object.values(people)
+      .filter(p => p.display_name && p.id !== user?.id)
+      .filter(p => !q || p.display_name.toLowerCase().includes(q))
+      .sort((a, b) => a.display_name.localeCompare(b.display_name))
+      .slice(0, 6)
+  }, [mentionQuery, people, user?.id])
 
   // ── Sticking to the bottom ───────────────────────────────────────────────
   //
@@ -118,6 +137,36 @@ export default function Chat() {
     setDraft('')
     setEditingId(null)
     wasAtBottom.current = true
+  }
+
+  // ── Mentions ────────────────────────────────────────────────
+  //
+  // Matched on the text BEFORE the caret, not the whole draft, so editing an
+  // earlier @ in a long message still offers the right list.
+  //
+  // Display names contain spaces, so the query cannot stop at one — it runs
+  // to the end of the caret text and the filter narrows as they keep typing.
+  // Capped at 30 characters so an @ earlier in a paragraph stops matching
+  // rather than following them to the end of the message.
+  function detectMention(el) {
+    const upToCaret = el.value.slice(0, el.selectionStart ?? el.value.length)
+    const m = upToCaret.match(/@([^@\n]{0,30})$/)
+    setMentionQuery(m ? m[1] : null)
+  }
+
+  function insertMention(person) {
+    const el = inputRef.current
+    if (!el) return
+    const caret  = el.selectionStart ?? draft.length
+    const before = draft.slice(0, caret).replace(/@([^@\n]{0,30})$/, '')
+    const after  = draft.slice(caret)
+    const inserted = `@${person.display_name} `
+    setDraft(before + inserted + after)
+    setMentionQuery(null)
+    // Put the caret after what was just inserted rather than at the end:
+    // mentioning someone mid-sentence is normal and losing your place is not.
+    const pos = before.length + inserted.length
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos) })
   }
 
   function startEdit(message) {
@@ -247,16 +296,40 @@ export default function Chat() {
           predict, and your points and position are unaffected.
         </div>
       ) : (
-        <form onSubmit={handleSend} className="mt-2 flex items-end gap-2">
+        <form onSubmit={handleSend} className="mt-2 flex items-end gap-2"
+          style={{ position: 'relative' }}>
+
+          {/* Who you might mean. Sits above the composer rather than below
+              it, because below is where the keyboard is. */}
+          {mentionMatches.length > 0 && (
+            <div className="absolute left-0 right-0 rounded-lg shadow-lg py-1 z-50"
+              style={{ bottom: '100%', marginBottom: 6, background: 'var(--bg-elevated)', border: '0.5px solid var(--border-med)', maxHeight: 180, overflowY: 'auto' }}>
+              {mentionMatches.map(p => (
+                <button key={p.id} type="button"
+                  // onMouseDown, not onClick: the textarea's blur fires
+                  // first on a click and would close this before it lands.
+                  onMouseDown={e => { e.preventDefault(); insertMention(p) }}
+                  className="flex items-center gap-2 px-3 py-2 text-sm w-full text-left"
+                  style={{ color: 'var(--txt-primary)' }}>
+                  <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20} />
+                  {p.display_name}
+                </button>
+              ))}
+            </div>
+          )}
+
           <textarea
             className="input flex-1"
             rows={1}
+            ref={inputRef}
             value={draft}
-            onChange={e => setDraft(e.target.value)}
+            onChange={e => { setDraft(e.target.value); detectMention(e.target) }}
+            onBlur={() => setTimeout(() => setMentionQuery(null), 150)}
             onKeyDown={e => {
               // Enter sends, Shift+Enter makes a new line. On a phone the
               // keyboard's return key inserts a newline either way, which is
               // the behaviour people expect there.
+              if (e.key === 'Escape') { setMentionQuery(null); return }
               if (e.key === 'Enter' && !e.shiftKey && !/Mobi|Android/i.test(navigator.userAgent)) {
                 e.preventDefault(); handleSend()
               }
