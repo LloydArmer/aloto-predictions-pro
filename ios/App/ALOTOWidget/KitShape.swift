@@ -215,7 +215,18 @@ struct KitView: View {
             let s = w / 48
             let withShorts = kit.shorts != nil && w >= Self.shortsMinSize
 
-            VStack(spacing: 0) {
+            // ONE coordinate space for the whole kit, exactly as the SVG does
+            // it: 48 units wide, with the shirt always occupying the first 48
+            // units of height whether or not shorts are drawn beneath it.
+            //
+            // This used to be a VStack whose shirt box shrank to 40 units when
+            // shorts were added. Every pattern is positioned from the centre of
+            // that box, so shrinking it moved the centre from 24 to 20 and
+            // dragged hoops, quarters and the sash four units up the shirt —
+            // but only on kits that have shorts. Vertical stripes are offset on
+            // x, which never changes, so they were unaffected: that is why this
+            // looked like one player's kit being wrong rather than the drawing.
+            ZStack(alignment: .top) {
                 ZStack {
                     ShirtShape(shortHem: withShorts).fill(kit.primary)
 
@@ -235,14 +246,17 @@ struct KitView: View {
                     ShirtShape(shortHem: withShorts)
                         .stroke(Color.black.opacity(0.35), lineWidth: 1.5 * s)
                 }
-                .frame(height: (withShorts ? 40 : 48) * s)
+                .frame(width: 48 * s, height: 48 * s)
 
                 if withShorts, let shorts = kit.shorts {
                     ZStack {
                         ShortsShape().fill(shorts)
                         ShortsShape().stroke(Color.black.opacity(0.35), lineWidth: 1.5 * s)
                     }
-                    .frame(height: 20 * s)
+                    .frame(width: 48 * s, height: 20 * s)
+                    // The SVG's translate(0,41). The short hem ends at 38, so
+                    // the shorts tuck under it rather than butting against it.
+                    .offset(y: 41 * s)
                 }
             }
         }

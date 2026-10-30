@@ -5,7 +5,7 @@ import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
 import { sortGameweeks } from '../../../lib/gameweeks'
-import { resolvePointRules, scoreOnePrediction, defaultRules } from '../../../lib/scoring'
+import { resolvePointRules, scoreOnePrediction, defaultRules, triplePointsBonus } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import SeasonPredictions from '../season/SeasonPredictions'
@@ -466,7 +466,7 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                   // Triple Points player the same total as everyone else.
                   const settled = gwTotals[p.user_id]
                   const total = settled != null ? settled : (playedTp ? liveSum * 3 : liveSum)
-                  const tpBonus = playedTp ? total - Math.round(total / 3) : 0
+                  const tpBonus = playedTp ? triplePointsBonus(total) : 0
                   return (
                   <tr key={p.user_id} className={isMe ? 'highlight' : ''}>
                     {/* Pinned: scrolling the grid sideways used to take the names
@@ -485,6 +485,17 @@ function GameweekResultsTab({ competitionId, gwId, gwLabel, rules, compFormat, u
                             longer than ten characters shortens here. */}
                         {fitName(p.profiles?.display_name, 10)}
                       </p>
+                      {/* Under the name rather than beside it. This column is
+                          110px and names already shorten to ten characters to
+                          fit; anything inline would push the name out. The
+                          point is that this column is PINNED, so the chip
+                          stays visible while the grid scrolls sideways — the
+                          TP column itself is off-screen most of the time. */}
+                      {playedTp && (
+                        <p style={{ fontSize: 10, lineHeight: 1.1, marginTop: 1, color: 'var(--gold)' }}>
+                          ⚡ TP
+                        </p>
+                      )}
                     </td>
                     {fixtures.map(f => {
                       const pred = predMap[p.user_id]?.[f.id]

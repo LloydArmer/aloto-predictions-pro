@@ -52,6 +52,26 @@ export function defaultRules() {
   return { exact_score_points: 5, correct_result_points: 2, full_house_results_bonus: 0, full_house_scores_bonus: 0 }
 }
 
+/**
+ * What playing Triple Points actually ADDED.
+ *
+ * The stored figure for a Triple Points gameweek is the tripled total — 5
+ * points become 15. That is the right number for the gameweek, and the wrong
+ * number for a column headed 'TP', which is asking what the chip was worth on
+ * top of ordinary scoring. For 15 the answer is 10, not 15.
+ *
+ * The standings showed 15 while quietly adding 10 to the total, so the columns
+ * did not add up to the figure beside them.
+ *
+ * Rounded because a third of an odd total is not a whole number; the tripled
+ * figure is always divisible by three in practice, and rounding keeps this
+ * honest if that ever stops being true.
+ */
+export function triplePointsBonus(gameweekPoints) {
+  const total = gameweekPoints || 0
+  return total - Math.round(total / 3)
+}
+
 export async function recalculateGameweek(supabase, competitionId, gameweekId, rules) {
   // Nothing is scored until the WHOLE gameweek is marked completed — not
   // as individual results trickle in. Partial scoring during the week

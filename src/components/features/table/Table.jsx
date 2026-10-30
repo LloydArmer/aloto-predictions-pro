@@ -6,7 +6,7 @@ import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useLeaderboard, useMonthlyLeaderboard } from '../../../hooks/useLeaderboard'
 import { sortGameweeks } from '../../../lib/gameweeks'
 import { supabase } from '../../../lib/supabase'
-import { resolvePointRules } from '../../../lib/scoring'
+import { resolvePointRules, triplePointsBonus } from '../../../lib/scoring'
 import { fitName } from '../../../lib/names'
 import { Card, SectionLabel, StatCard, Spinner, EmptyState, Select } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
@@ -161,8 +161,9 @@ function OverallPane({ competitionId, userId }) {
                     const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
                     const scoresBonusPts  = (p.full_house_scores_count || 0) * (rules?.full_house_scores_bonus || 0)
                     const fh = badgesByUser[p.user_id] || { results: [], scores: [], all: [] }
-                    const tp1Label = p.tp1_gameweek_id ? `GW${gwNumbers[p.tp1_gameweek_id]||'?'} +${p.tp1_points||0}` : '–'
-                    const tp2Label = p.tp2_gameweek_id ? `GW${gwNumbers[p.tp2_gameweek_id]||'?'} +${p.tp2_points||0}` : '–'
+                    // What the chip ADDED, not what the gameweek was worth.
+                    const tp1Label = p.tp1_gameweek_id ? `GW${gwNumbers[p.tp1_gameweek_id]||'?'} +${triplePointsBonus(p.tp1_points)}` : '–'
+                    const tp2Label = p.tp2_gameweek_id ? `GW${gwNumbers[p.tp2_gameweek_id]||'?'} +${triplePointsBonus(p.tp2_points)}` : '–'
                     return (
                       <Fragment key={p.user_id}>
                         <tr className={isMe?'highlight':''}>
@@ -353,7 +354,7 @@ function MonthlyPane({ competitionId, months, userId }) {
                           const gw = gameweeksInMonth.find(g => g.id === gwId)
                           // Middle dot rather than a space: keeps it to one line
                           // in a narrow column on a phone.
-                          return `${gw?.number || 'GW?'}\u00b7${p.gw_breakdown?.[gwId] ?? 0}`
+                          return `${gw?.number || 'GW?'}\u00b7${triplePointsBonus(p.gw_breakdown?.[gwId])}`
                         }).join(', ')
                       : '\u2013'
                     const resultsBonusPts = (p.full_house_results_count || 0) * (rules?.full_house_results_bonus || 0)
@@ -450,7 +451,8 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
               + (p.full_house_scores_count  || 0) * (rules?.full_house_scores_bonus  || 0)
               + (hasSeasonPoints ? (p.season_points || 0) : 0)
 
-            const tp = (p.tp1_points || 0) + (p.tp2_points || 0)
+            // The bonus, so Res + Exa + Bon + TP really does equal Total.
+            const tp = triplePointsBonus(p.tp1_points) + triplePointsBonus(p.tp2_points)
 
             return (
               <tr key={p.user_id} className={isMe ? 'is-me' : ''}>

@@ -31,7 +31,7 @@ export default function Diagnostics({ userId }) {
       os: osVersion(),
       la: { supported: false, enabled: false },
       deviceToken: '',
-      savedToken: '',
+      savedTokens: [],
     }
 
     if (next.native) {
@@ -47,9 +47,17 @@ export default function Diagnostics({ userId }) {
     if (userId) {
       // Own row only — the policy on this table is yours-and-yours-alone, so
       // an empty result here genuinely means nothing was ever saved for you.
+      // EVERY token on record for this account, not one of them.
+      //
+      // The table is keyed on the token itself, so a phone that is issued a
+      // new one — which happens on an app update — adds a row rather than
+      // replacing the old one. Someone with two phones has two rows for the
+      // same reason, legitimately. Reading a single arbitrary row and
+      // comparing it to the token in hand reported "saved, but out of date"
+      // on a phone that was perfectly well registered.
       const { data } = await supabase.from('live_activity_start_tokens')
-        .select('token').eq('user_id', userId).limit(1)
-      next.savedToken = data?.[0]?.token || ''
+        .select('token').eq('user_id', userId)
+      next.savedTokens = (data ?? []).map(r => r.token).filter(Boolean)
     }
 
     setInfo(next)
@@ -132,7 +140,9 @@ export default function Diagnostics({ userId }) {
  * an iOS-side one. They produce identical symptoms — no lock screen — and
  * chasing the wrong one costs an afternoon.
  */
-function lockScreenState({ native, la, deviceToken, savedToken }) {
+function lockScreenState({ native, la, deviceToken, savedTokens = [] }) {
+  const registered = !!deviceToken && savedTokens.includes(deviceToken)
+  const anySaved = savedTokens.length > 0
   if (!native) {
     return { label: 'Not applicable on the web', colour: 'var(--txt-second)', detail: '' }
   }
@@ -164,7 +174,7 @@ function lockScreenState({ native, la, deviceToken, savedToken }) {
     }
   }
 
-  if (!deviceToken && !savedToken) {
+  if (!deviceToken && !anySaved) {
     return {
       label: 'iOS has not issued a token',
       colour: 'var(--red)',
@@ -172,7 +182,7 @@ function lockScreenState({ native, la, deviceToken, savedToken }) {
     }
   }
 
-  if (deviceToken && !savedToken) {
+  if (deviceToken && !anySaved) {
     return {
       label: 'On this phone, not saved',
       colour: 'var(--red)',
@@ -180,7 +190,7 @@ function lockScreenState({ native, la, deviceToken, savedToken }) {
     }
   }
 
-  if (!deviceToken && savedToken) {
+  if (!deviceToken && anySaved) {
     return {
       label: 'Saved earlier',
       colour: 'var(--amber)',
@@ -188,7 +198,8 @@ function lockScreenState({ native, la, deviceToken, savedToken }) {
     }
   }
 
-  if (deviceToken !== savedToken) {
+  // Only genuinely out of date if this phone's token is nowhere on record.
+  if (!registered) {
     return {
       label: 'Saved, but out of date',
       colour: 'var(--amber)',
