@@ -8,6 +8,7 @@ import Predict        from './components/features/predict/Predict'
 import Standings      from './components/features/standings/Standings'
 import Admin          from './components/features/admin/Admin'
 import Settings       from './components/features/settings/Settings'
+import Chat           from './components/features/chat/Chat'
 import Privacy        from './components/features/legal/Privacy'
 import Support        from './components/features/legal/Support'
 import { Spinner }    from './components/ui'
@@ -72,6 +73,7 @@ function AppRoutes() {
       <Route path="/"             element={wrap(Dashboard)} />
       <Route path="/predict"      element={wrap(Predict)} />
       <Route path="/standings"    element={wrap(Standings)} />
+      <Route path="/chat"         element={wrap(Chat)} />
       {/* Old paths kept as redirects: they're in people's history, and the
           dashboard cards linked to them. */}
       <Route path="/table"        element={<Navigate to="/standings" replace />} />

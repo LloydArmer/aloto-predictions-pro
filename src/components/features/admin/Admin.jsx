@@ -13,6 +13,7 @@ import GameweekFixtureLink from './GameweekFixtureLink'
 import FixtureBrowser from './FixtureBrowser'
 import { fitName } from '../../../lib/names'
 import SeasonTab from './SeasonTab'
+import ChatModerationTab, { useOpenReportCount } from './ChatModerationTab'
 import toast from 'react-hot-toast'
 
 // Short labels on purpose. "Gameweeks & fixtures" and "Season predictions" made
@@ -30,6 +31,7 @@ const TABS = [
   { key: 'config',       label: 'Cup',          icon: 'ti-tournament' },
   { key: 'season',       label: 'Season',       icon: 'ti-calendar-star' },
   { key: 'participants', label: 'Players',      icon: 'ti-users' },
+  { key: 'chat',         label: 'Chat',         icon: 'ti-flag' },
 ]
 
 export default function Admin() {
@@ -46,6 +48,13 @@ export default function Admin() {
   // let the first account in.
   const managed = useMemo(() => competitions.filter(c => c.my_role === 'admin'), [competitions])
   const managesSelected = managed.some(c => c.id === selectedComp)
+
+  // Reports waiting on this competition, shown on the tab itself.
+  //
+  // An admin who never opens the tab is the failure this guards against:
+  // the 24 hours Apple expects a report to be answered in runs whether or
+  // not anyone has looked.
+  const openReports = useOpenReportCount(managesSelected ? selectedComp : null, tab)
 
   if (compsLoading) return <div className="flex justify-center py-20"><Spinner /></div>
 
@@ -77,6 +86,13 @@ export default function Admin() {
             className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs transition-colors"
             style={{ background: tab === t.key ? 'var(--accent-dim)' : 'transparent', color: tab === t.key ? 'var(--accent)' : 'var(--txt-second)', fontWeight: tab === t.key ? 500 : 400 }}>
             <i className={`ti ${t.icon} hidden sm:inline`} aria-hidden="true" />{t.label}
+            {t.key === 'chat' && openReports > 0 && (
+              <span style={{
+                minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8,
+                background: 'var(--red)', color: '#fff',
+                fontSize: 10, fontWeight: 600, lineHeight: '16px',
+              }}>{openReports}</span>
+            )}
           </button>
         ))}
       </div>
@@ -115,6 +131,7 @@ export default function Admin() {
         {tab === 'season' && <SeasonTab competitionId={selectedComp} competitions={competitions} />}
         {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
         {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
+        {tab === 'chat' && <ChatModerationTab competitionId={selectedComp} />}
       </>}
     </div>
   )

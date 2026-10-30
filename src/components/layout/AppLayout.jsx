@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useCompetitions } from '../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../hooks/useSelectedCompetition'
+import { useUnreadChat } from '../../hooks/useChat'
 import toast from 'react-hot-toast'
 
 const NAV_BASE = [
@@ -15,9 +16,15 @@ const NAV_BASE = [
 ]
 
 export default function AppLayout({ children }) {
-  const { profile, isAdmin, signOut } = useAuth()
+  const { user, profile, isAdmin, signOut } = useAuth()
   const { competitions } = useCompetitions()
   const [selectedComp] = useSelectedCompetition(competitions)
+
+  // Unread across every league, not just the one on screen. A badge that
+  // only counted the selected competition would sit at zero while another
+  // league filled up, which is the one thing a badge exists to prevent.
+  const [unreadByComp] = useUnreadChat(user?.id)
+  const totalUnread = Object.values(unreadByComp).reduce((sum, n) => sum + n, 0)
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -128,6 +135,13 @@ export default function AppLayout({ children }) {
 
           {/* Right side — desktop only */}
           <div className="ml-auto flex items-center gap-2">
+            {/* Chat lives here rather than in the tab bar.
+                
+                Four tabs was a deliberate choice — see NAV_BASE above —
+                and a fifth truncates at 390px. A header icon also puts the
+                unread count where people already look for one, and it stays
+                visible on every screen rather than only when the tab bar is. */}
+            <ChatLink unread={totalUnread} />
             {showAdmin && <span className="badge badge-admin hidden md:inline-flex">Admin</span>}
             <div className="avatar w-7 h-7 text-xs">{initials}</div>
             <span className="hidden md:block text-xs" style={{ color: 'var(--txt-second)' }}>
@@ -201,5 +215,37 @@ export default function AppLayout({ children }) {
         </div>
       </footer>
     </div>
+  )
+}
+
+/**
+ * The chat icon and its unread count.
+ *
+ * The count is capped at 99+ because the badge has to stay round, and the
+ * difference between 140 and 300 unread messages is not a difference anyone
+ * acts on differently.
+ */
+function ChatLink({ unread }) {
+  return (
+    <NavLink
+      to="/chat"
+      className="btn btn-ghost btn-sm"
+      style={{ position: 'relative' }}
+      title="League chat"
+      aria-label={unread > 0 ? `League chat, ${unread} unread` : 'League chat'}>
+      <i className="ti ti-message-circle text-sm" aria-hidden="true" />
+      {unread > 0 && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute', top: 2, right: 2,
+            minWidth: 16, height: 16, padding: '0 4px',
+            borderRadius: 8, background: 'var(--accent)', color: '#fff',
+            fontSize: 10, fontWeight: 600, lineHeight: '16px', textAlign: 'center',
+          }}>
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
+    </NavLink>
   )
 }

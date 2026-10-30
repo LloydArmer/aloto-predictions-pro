@@ -1,4 +1,4 @@
-import { LegalShell, H, P, List, Mail } from './Privacy'
+import { LegalShell, H, P, List, Mail, PrivacyMail } from './Privacy'
 
 /**
  * Support page.
@@ -69,6 +69,25 @@ export default function Support() {
         you're on the participant list, or to send you the join code again.
       </P>
 
+      <H>League chat</H>
+      <P>
+        Each competition has a group chat. It is private to that league — there is no public
+        chat, and nobody outside your competition can read or post in it.
+      </P>
+      <P>
+        You agree to the house rules before your first message: no abuse, harassment, threats or
+        hate; nothing sexual; and no posting other people's private information. Messages are
+        filtered automatically, so some words are rejected when you try to send them.
+      </P>
+      <List items={[
+        'Report a message — tap the dots beside it and choose Report. It goes to your league admin, who will look at it within 24 hours.',
+        'Block a player — tap the dots and choose Block. Everything they post disappears for you, in every league. They are not told.',
+        'Admins can remove any message and remove a player from the chat. Being removed from a chat does not affect your predictions, your points or your place in the table.',
+      ]}/>
+      <P>
+        If a report is not dealt with, or you want to raise something about another player
+        directly, email <Mail/> and it will be handled.
+      </P>
       <H>I've forgotten my password</H>
       <P>Use the reset link on the sign-in screen. Check your spam folder if the email doesn't appear.</P>
 
@@ -85,8 +104,8 @@ export default function Support() {
 
       <H>Deleting your account</H>
       <P>
-        Email <Mail/> and your account will be deleted along with your predictions and scores. Say
-        which email address the account uses.
+        Email <PrivacyMail/> and your account will be deleted along with your predictions and
+        scores. Say which email address the account uses.
       </P>
 
       <H>Still stuck</H>

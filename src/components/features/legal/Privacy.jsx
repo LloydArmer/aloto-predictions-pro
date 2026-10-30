@@ -91,7 +91,7 @@ export default function Privacy() {
       </P>
 
       <H>Contact</H>
-      <P>Questions about privacy, or a request to see or delete your data: <Mail/></P>
+      <P>Questions about privacy, or a request to see or delete your data: <PrivacyMail/></P>
     </LegalShell>
   )
 }
@@ -133,9 +133,24 @@ export const List = ({ items }) => (
   </ul>
 )
 
-/** Change this in one place and both legal pages follow. */
-export const SUPPORT_EMAIL = 'admin@alotopredictionpro.co.uk'
+/* Two addresses, because they are two different jobs.
+ *
+ * Support is the one a player writes to when something is broken, and the one
+ * a reviewer checks is reachable. Privacy is where a request to see or delete
+ * an account goes — those carry a legal clock and need to land somewhere they
+ * will not be lost among questions about push notifications.
+ *
+ * Both are defined here and used through the components below, so an address
+ * is still changed in exactly one place. */
+export const SUPPORT_EMAIL = 'support@alotopredictionpro.co.uk'
+export const PRIVACY_EMAIL = 'admin@alotopredictionpro.co.uk'
 
-export const Mail = () => (
-  <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--accent)' }}>{SUPPORT_EMAIL}</a>
+const MailTo = ({ address }) => (
+  <a href={`mailto:${address}`} style={{ color: 'var(--accent)' }}>{address}</a>
 )
+
+/** General support, and anything to do with the app itself. */
+export const Mail = () => <MailTo address={SUPPORT_EMAIL} />
+
+/** Privacy requests and account deletion. */
+export const PrivacyMail = () => <MailTo address={PRIVACY_EMAIL} />
