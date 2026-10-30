@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../../lib/supabase'
 import { pushCapability, rememberedDeviceToken } from '../../../lib/push'
+import { isNative, isNativeDeviceRegistered } from '../../../lib/nativePush'
 
 const DISMISS_KEY = 'aloto.reminderBanner.dismissedUntil'
 
@@ -48,7 +49,26 @@ export default function ReminderBanner({ userId, pendingGws }) {
         return
       }
 
-      // Registered on this device? Same check Settings uses.
+      // In the app, ask the database whether this phone is registered.
+      //
+      // The local marker below is written by the browser path only. On a phone
+      // it is always missing, which this banner read as reminders being off --
+      // so it fired on every new gameweek at people registered perfectly well,
+      // and Reset notifications could not help, because the native path never
+      // writes a marker either. Settings hit the same bug and was given this
+      // branch; the comment here claiming it used the same check went stale at
+      // that moment.
+      if (isNative()) {
+        // userId is briefly undefined on first paint. Wait for it rather than
+        // flashing the banner at someone who is registered.
+        if (!userId) { setState(null); return }
+        const on = await isNativeDeviceRegistered(userId)
+        if (cancelled) return
+        setState({ show: !on, variant: 'enable' })
+        return
+      }
+
+      // Registered in this browser? Same check Settings uses on the web.
       const mine = rememberedDeviceToken()
       if (mine) {
         const { count } = await supabase.from('push_tokens')
