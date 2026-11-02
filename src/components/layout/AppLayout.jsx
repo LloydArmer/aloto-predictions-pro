@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useCompetitions } from '../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../hooks/useSelectedCompetition'
@@ -23,7 +23,10 @@ export default function AppLayout({ children }) {
   // Unread across every league, not just the one on screen. A badge that
   // only counted the selected competition would sit at zero while another
   // league filled up, which is the one thing a badge exists to prevent.
-  const [unreadByComp] = useUnreadChat(user?.id)
+  // The route is passed in so the count is recalculated on every navigation,
+  // which is what clears the badge after the room has been read.
+  const location = useLocation()
+  const [unreadByComp] = useUnreadChat(user?.id, location.pathname)
   const totalUnread = Object.values(unreadByComp).reduce((sum, n) => sum + n, 0)
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)

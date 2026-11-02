@@ -237,7 +237,7 @@ export function findMentions(text, roster) {
  * One round trip on app open rather than one per competition, which is why
  * this is a function in the database rather than a query here.
  */
-export function useUnreadChat(userId) {
+export function useUnreadChat(userId, refreshKey) {
   const [counts, setCounts] = useState({})
 
   const refresh = useCallback(async () => {
@@ -248,7 +248,11 @@ export function useUnreadChat(userId) {
     setCounts(next)
   }, [userId])
 
-  useEffect(() => { refresh() }, [refresh])
+  // refreshKey is the current route. Opening the room marks it read in the
+  // database, but nothing told the badge — so it kept its old number until
+  // somebody else happened to post. Recounting on every navigation covers
+  // it: you leave the chat, the badge is recalculated, and it clears.
+  useEffect(() => { refresh() }, [refresh, refreshKey])
 
   // Any new message anywhere could change a badge. One subscription for the
   // whole account rather than one per room: the policies already restrict it
