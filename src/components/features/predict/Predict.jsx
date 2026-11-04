@@ -4,7 +4,7 @@ import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
-import { sortGameweeks } from '../../../lib/gameweeks'
+import { sortGameweeks, latestGameweek } from '../../../lib/gameweeks'
 import { resolvePointRules, scoreOnePrediction, defaultRules, triplePointsBonus } from '../../../lib/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
@@ -758,9 +758,23 @@ export default function Predict() {
     const { data: rawGws } = gwIds.length
       ? await supabase.from('gameweeks').select('*').in('id', gwIds)
       : { data: [] }
-    setGameweeks(sortGameweeks(rawGws))
-    const active = data?.find(g=>g.status==='active') || data?.[data.length-1]
-    setSelectedGW(active||null)
+    const gws = sortGameweeks(rawGws)
+    setGameweeks(gws)
+
+    // Open on the gameweek being played.
+    //
+    // This used to read `data`, which does not exist in this function — the
+    // query result is `rawGws`. A leftover from when gameweeks moved to the
+    // join table. So `active` was always undefined and the selection was set
+    // to null, which left the picker displaying whatever option came first
+    // (GW1) with nothing actually selected: hence "No fixtures this
+    // gameweek" on a competition eleven weeks in.
+    //
+    // The fallback is the latest by NUMBER, not the last element of the
+    // array. The database returns these in no particular order, and the old
+    // code took whichever happened to be last.
+    const current = gws.find(g => g.status === 'active') || latestGameweek(gws)
+    setSelectedGW(current || null)
   }
 
   async function loadRules() {
