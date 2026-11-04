@@ -9,11 +9,16 @@ import { PlayerMark } from '../../ui/Shirt'
  * be reachable from every message without being so prominent that an ordinary
  * conversation looks like a moderation queue.
  */
+// Roughly the tallest the menu gets: five items plus padding. Used to decide
+// whether it will fit below the message it belongs to.
+const MENU_HEIGHT = 200
+
 export default function MessageRow({
   message, author, replyTo, isMine, isAdmin, grouped,
   onEdit, onRemove, onReport, onBlock,
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [dropUp, setDropUp]     = useState(false)
   const menuRef = useRef(null)
 
   // Close on any click elsewhere. Without this the menu stays open behind the
@@ -26,6 +31,22 @@ export default function MessageRow({
     document.addEventListener('pointerdown', onDown)
     return () => document.removeEventListener('pointerdown', onDown)
   }, [menuOpen])
+
+  // Which way the menu opens.
+  //
+  // It lives inside the scrolling message list, so it is clipped by that
+  // list's bottom edge rather than the window's — which is why the options on
+  // the newest message, sitting just above the composer, were cut in half.
+  // Measuring the scroller is the only way to know what room there actually is.
+  function openMenu(e) {
+    if (!menuOpen) {
+      const trigger = e.currentTarget.getBoundingClientRect()
+      const list    = e.currentTarget.closest('[data-chat-scroller]')
+      const limit   = list ? list.getBoundingClientRect().bottom : window.innerHeight
+      setDropUp(limit - trigger.bottom < MENU_HEIGHT)
+    }
+    setMenuOpen(o => !o)
+  }
 
   const removed = !!message.deleted_at
 
@@ -91,7 +112,7 @@ export default function MessageRow({
               there above all. */}
           <div className="relative flex-shrink-0" ref={menuRef}>
             <button
-              onClick={() => setMenuOpen(o => !o)}
+              onClick={openMenu}
               className="flex items-center justify-center"
               style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}
               aria-label={`Options for ${isMine ? 'your message' : `message from ${name}`}`}>
@@ -99,7 +120,7 @@ export default function MessageRow({
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-6 rounded-lg shadow-lg py-1 z-50 min-w-40"
+              <div className={`absolute right-0 ${dropUp ? 'bottom-6' : 'top-6'} rounded-lg shadow-lg py-1 z-50 min-w-40`}
                 style={{ background: 'var(--bg-elevated)', border: '0.5px solid var(--border-med)' }}>
 
                 {canEdit && (

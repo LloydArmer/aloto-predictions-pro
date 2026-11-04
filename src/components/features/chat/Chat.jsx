@@ -18,6 +18,10 @@ import toast from 'react-hot-toast'
  * everywhere else in the app — so switching league in the nav switches room,
  * and nobody has to learn a second way of choosing one.
  */
+// A stand-in row in the @ list. display_name is what gets typed into the
+// message; label is what the list shows.
+const EVERYONE = { id: '__everyone__', display_name: 'everyone', label: 'Everyone', everyone: true }
+
 export default function Chat() {
   const { user, profile, fetchProfile } = useAuth()
   const { competitions, loading: compsLoading } = useCompetitions()
@@ -81,11 +85,21 @@ export default function Chat() {
   const mentionMatches = useMemo(() => {
     if (mentionQuery === null) return []
     const q = mentionQuery.trim().toLowerCase()
-    return Object.values(people)
+
+    const matched = Object.values(people)
       .filter(p => p.display_name && p.id !== user?.id)
       .filter(p => !q || p.display_name.toLowerCase().includes(q))
       .sort((a, b) => a.display_name.localeCompare(b.display_name))
-      .slice(0, 6)
+      // Everyone, not a handful. The list scrolls, so a long league costs
+      // nothing — whereas capping it at six in a twelve-player league hid
+      // half the room, and the half it hid depended on the alphabet.
+      .slice(0, 50)
+
+    // Everyone sits at the top, because reaching the whole league is the one
+    // thing you cannot do by picking names — and the reason people fall back
+    // to a WhatsApp group when a deadline is coming.
+    const wantsEveryone = !q || 'everyone'.startsWith(q) || 'all'.startsWith(q)
+    return wantsEveryone ? [EVERYONE, ...matched] : matched
   }, [mentionQuery, people, user?.id])
 
   // ── Sticking to the bottom ───────────────────────────────────────────────
@@ -269,7 +283,9 @@ export default function Chat() {
       </div>
 
       {/* ── The conversation ── */}
-      <div ref={scroller} className="flex-1 overflow-y-auto px-1"
+      {/* data-chat-scroller is read by MessageRow, which measures this
+          element to decide whether its options menu opens up or down. */}
+      <div ref={scroller} data-chat-scroller className="flex-1 overflow-y-auto px-1"
         style={{ overscrollBehavior: 'contain' }}>
         {messages.length === 0
           ? <EmptyState
@@ -315,7 +331,7 @@ export default function Chat() {
               it, because below is where the keyboard is. */}
           {mentionMatches.length > 0 && (
             <div className="absolute left-0 right-0 rounded-lg shadow-lg py-1 z-50"
-              style={{ bottom: '100%', marginBottom: 6, background: 'var(--bg-elevated)', border: '0.5px solid var(--border-med)', maxHeight: 180, overflowY: 'auto' }}>
+              style={{ bottom: '100%', marginBottom: 6, background: 'var(--bg-elevated)', border: '0.5px solid var(--border-med)', maxHeight: 260, overflowY: 'auto' }}>
               {mentionMatches.map(p => (
                 <button key={p.id} type="button"
                   // onMouseDown, not onClick: the textarea's blur fires
@@ -323,8 +339,16 @@ export default function Chat() {
                   onMouseDown={e => { e.preventDefault(); insertMention(p) }}
                   className="flex items-center gap-2 px-3 py-2 text-sm w-full text-left"
                   style={{ color: 'var(--txt-primary)' }}>
-                  <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20} />
-                  {p.display_name}
+                  {p.everyone
+                    ? <i className="ti ti-users text-base" aria-hidden="true"
+                        style={{ color: 'var(--accent)', width: 20, textAlign: 'center' }} />
+                    : <PlayerMark kit={p.badge_kit} displayName={p.display_name} size={20} />}
+                  {p.label || p.display_name}
+                  {p.everyone && (
+                    <span className="text-xs ml-auto" style={{ color: 'var(--txt-muted)' }}>
+                      notifies the league
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

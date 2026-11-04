@@ -214,6 +214,14 @@ export function useChat(competitionId, userId) {
  */
 export function findMentions(text, roster) {
   const lower = text.toLowerCase()
+
+  // @everyone (or @all) is the whole room. Expanded here rather than stored
+  // as a special value, so the notification job needs to know nothing about
+  // it — it just receives a longer list of people, exactly as if they had
+  // been named one at a time. The sender is dropped by the job itself.
+  if (/(^|[^a-z0-9])@(everyone|all)([^a-z0-9]|$)/.test(lower)) {
+    return Object.values(roster || {}).map(p => p.id).filter(Boolean)
+  }
   const names = Object.values(roster || {})
     .filter(p => p.display_name)
     .sort((a, b) => b.display_name.length - a.display_name.length)
