@@ -4,6 +4,8 @@ import { useAuth } from '../../hooks/useAuth'
 import { useCompetitions } from '../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../hooks/useSelectedCompetition'
 import { useUnreadChat } from '../../hooks/useChat'
+import { useSport, sportOf } from '../../hooks/useSport'
+import SportSwitcher from './SportSwitcher'
 import toast from 'react-hot-toast'
 
 const NAV_BASE = [
@@ -17,8 +19,9 @@ const NAV_BASE = [
 
 export default function AppLayout({ children }) {
   const { user, profile, isAdmin, signOut } = useAuth()
-  const { competitions } = useCompetitions()
-  const [selectedComp] = useSelectedCompetition(competitions)
+  const { competitions, allCompetitions, activeSport } = useCompetitions()
+  const [selectedComp, selectComp] = useSelectedCompetition(competitions)
+  const { sports } = useSport()
 
   // Unread across every league, not just the one on screen. A badge that
   // only counted the selected competition would sit at zero while another
@@ -34,7 +37,13 @@ export default function AppLayout({ children }) {
   // Admin shows for anyone who runs at least one competition. That comes from
   // their role in each competition (my_role, from useCompetitions), not the
   // single profiles.role flag, which only ever let the first account in.
-  const showAdmin = isAdmin || competitions.some(c => c.my_role === 'admin')
+  const showAdmin = isAdmin || allCompetitions.some(c => c.my_role === 'admin')
+
+  // The sport chooser shows only to people it means something to: anyone in
+  // competitions of more than one sport, and admins, who need it to set up a
+  // competition in another sport. Everyone else sees the bar exactly as before.
+  const sportsImIn = new Set(allCompetitions.map(sportOf))
+  const showSportSwitcher = sports.length > 1 && (showAdmin || sportsImIn.size > 1)
 
   const compFormat = competitions.find(c => c.id === selectedComp)?.format
   const showBracket = competitions.some(c => c.format !== 'league')
@@ -105,6 +114,13 @@ export default function AppLayout({ children }) {
               </span>
             </span>
           </div>
+
+          {showSportSwitcher && (
+            <div className="mr-3">
+              <SportSwitcher activeSport={activeSport}
+                allCompetitions={allCompetitions} onSelectCompetition={selectComp} />
+            </div>
+          )}
 
           {/* Desktop links */}
           <div className="hidden md:flex items-center gap-0.5 flex-1">

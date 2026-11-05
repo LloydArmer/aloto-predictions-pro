@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { useSport } from '../../../hooks/useSport'
+import { useSelectedCompetitionId } from '../../../hooks/useSelectedCompetition'
 import { Card, Button, Input } from '../../ui'
 import toast from 'react-hot-toast'
 
@@ -14,6 +16,8 @@ import toast from 'react-hot-toast'
 export default function JoinCompetition({ onJoined, compact = false }) {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const { choose } = useSport()
+  const [, selectCompetition] = useSelectedCompetitionId()
 
   async function join() {
     const entered = code.trim()
@@ -40,6 +44,11 @@ export default function JoinCompetition({ onJoined, compact = false }) {
         toast.success(`Joined "${data.name}"`)
       }
       setCode('')
+      // Open on the competition just joined, in whatever sport it is. Clearing
+      // the chosen sport lets it follow the competition, so joining an NFL
+      // league from the football side doesn't leave it out of sight.
+      choose(null)
+      selectCompetition(data.competition_id)
       onJoined?.(data.competition_id)
     } catch {
       toast.error('Could not join — check your connection and try again')

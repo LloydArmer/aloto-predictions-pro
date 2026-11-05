@@ -87,6 +87,17 @@ function readStoredSelection() {
   } catch { return null }
 }
 
+/**
+ * The raw selection, with none of the fall-back-to-the-first behaviour below.
+ * For code that needs to read or set it without supplying a competition list:
+ * useCompetitions() (to work out the sport) and JoinCompetition.
+ */
+export function useSelectedCompetitionId() {
+  const ctx = useContext(SelectedCompetitionContext)
+  if (!ctx) throw new Error('useSelectedCompetitionId must be used within a SelectedCompetitionProvider')
+  return ctx
+}
+
 export function useSelectedCompetition(competitions) {
   const ctx = useContext(SelectedCompetitionContext)
   if (!ctx) throw new Error('useSelectedCompetition must be used within a SelectedCompetitionProvider')

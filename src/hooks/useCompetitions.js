@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSport, sportOf } from './useSport'
+import { useSelectedCompetitionId } from './useSelectedCompetition'
 
 /**
  * The order every competition dropdown shows — and therefore which one the
@@ -19,8 +21,27 @@ export function orderForDisplay(list) {
 }
 
 export function useCompetitions() {
-  const [competitions, setCompetitions] = useState([])
+  // Every competition this person is in, across all sports.
+  const [allCompetitions, setCompetitions] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Sports are separate: the app only ever shows ONE sport's competitions, and
+  // this is where that happens, so every page is filtered without knowing it.
+  //
+  // The sport is the one chosen in the top bar; if nothing has been chosen, the
+  // sport of the competition already selected; failing that, of the first in
+  // display order. A football player who never touches the chooser therefore
+  // sees exactly what they always have, and an NFL-only player opens on NFL.
+  const { chosen } = useSport()
+  const [selectedId] = useSelectedCompetitionId()
+  const activeSport = chosen
+    || sportOf(allCompetitions.find(c => c.id === selectedId) || allCompetitions[0])
+
+  // Memoised: pages pass this list to effects, and a fresh array on every
+  // render would re-run them on every render.
+  const competitions = useMemo(
+    () => allCompetitions.filter(c => sportOf(c) === activeSport),
+    [allCompetitions, activeSport])
 
   useEffect(() => { fetch() }, [])
 
@@ -58,7 +79,11 @@ export function useCompetitions() {
 
   async function createCompetition(comp) {
     const { data: { user } } = await supabase.auth.getUser()
-    const { data, error } = await supabase.from('competitions').insert({ ...comp, created_by: user.id }).select().single()
+    // A competition is created in the sport currently on screen. Football sends
+    // exactly what it always did — the column's default is 'football' — so
+    // creating a football competition is unchanged.
+    const sportField = activeSport !== 'football' ? { sport: activeSport } : {}
+    const { data, error } = await supabase.from('competitions').insert({ ...comp, ...sportField, created_by: user.id }).select().single()
     if (error) throw error
     // Register creator as admin — upsert handles the case where the
     // database trigger (029) already created this row, avoiding the
@@ -78,5 +103,5 @@ export function useCompetitions() {
     return data
   }
 
-  return { competitions, loading, refetch: fetch, createCompetition, updateCompetition }
+  return { competitions, allCompetitions, activeSport, loading, refetch: fetch, createCompetition, updateCompetition }
 }

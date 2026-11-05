@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { SelectedCompetitionProvider } from './hooks/useSelectedCompetition'
+import { SportProvider } from './hooks/useSport'
 import AppLayout from './components/layout/AppLayout'
 import { Login, Signup } from './components/features/auth/Auth'
 import Dashboard      from './components/features/dashboard/Dashboard'
@@ -108,8 +109,10 @@ export default function App() {
   return (
     <AuthProvider>
       <SelectedCompetitionProvider>
-        <AppRoutes />
-        {showSplash && <SplashScreen onDone={splashDone} />}
+        <SportProvider>
+          <AppRoutes />
+          {showSplash && <SplashScreen onDone={splashDone} />}
+        </SportProvider>
       </SelectedCompetitionProvider>
     </AuthProvider>
   )
