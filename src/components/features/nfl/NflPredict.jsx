@@ -7,6 +7,7 @@ import { supabase } from '../../../lib/supabase'
 import { sortGameweeks, latestGameweek } from '../../../lib/gameweeks'
 import { nflPointRules, marginScore, bandStyle, marginText } from '../../../lib/sports/nfl/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
+import NflTeamBadge, { nflTeam } from './NflTeamBadge'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import { noteGoodMoment } from '../../../lib/review'
 import toast from 'react-hot-toast'
@@ -105,7 +106,7 @@ function PointsKey({ rules }) {
           {label} <strong style={{ color }}>{pts}</strong>
         </span>
       ))}
-      <span style={{ color: 'var(--txt-muted)' }}> &nbsp;— one per game, by how close your margin was.</span>
+      <span style={{ color: 'var(--txt-muted)' }}> &nbsp;— one per game, by how close your margin was. Final scores include overtime.</span>
     </div>
   )
 }
@@ -133,9 +134,23 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
   const kickoff = new Date(fixture.kickoff_time)
   const isVoid = fixture.status === 'void'
   const isLocked = isVoid || isPast(kickoff)
+  // home_score / away_score are the FINAL score, overtime included. Nothing is
+  // scored from a score at the end of regulation: a tied game that goes to
+  // overtime is only final once overtime is over.
   const hasResult = !isVoid && fixture.home_score !== null && fixture.home_score !== undefined
   const scored = hasResult && prediction && rules ? marginScore(prediction, fixture, rules) : null
   const readout = marginText(fixture.home_team, fixture.away_team, home, away)
+
+  // Which side the pick backs, so that team's card is outlined like a choice.
+  const backs = home === '' || away === '' ? null
+    : Number(home) > Number(away) ? 'home' : Number(away) > Number(home) ? 'away' : 'tie'
+  const winner = !hasResult ? null
+    : fixture.home_score > fixture.away_score ? 'home' : fixture.away_score > fixture.home_score ? 'away' : 'tie'
+
+  const header = isVoid ? 'VOID'
+    : hasResult ? `${format(kickoff, 'EEE d MMM').toUpperCase()} · FINAL`
+    : isLocked ? `${format(kickoff, 'EEE d MMM').toUpperCase()} · LOCKED`
+    : `${format(kickoff, 'EEE d MMM').toUpperCase()} · LOCKS @ ${format(kickoff, 'HH:mm')}`
 
   async function save() {
     if (home === '' || away === '') { toast.error('Enter both scores'); return }
@@ -149,66 +164,54 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
     finally { setSaving(false) }
   }
 
+  // NFL lists the away side first ("Ravens @ Jaguars"), so the away card sits
+  // on the left and the home card on the right.
+  const sides = [
+    { key: 'away', team: fixture.away_team, value: away, onChange: setAway, final: fixture.away_score, picked: prediction?.predicted_away },
+    { key: 'home', team: fixture.home_team, value: home, onChange: setHome, final: fixture.home_score, picked: prediction?.predicted_home },
+  ]
+
   return (
-    <Card className="p-4 mb-3" style={prediction && !isLocked ? { border: '1px solid var(--green)' } : isVoid ? { opacity: 0.75 } : {}}>
-      {isVoid && (
-        <div className="mb-2 px-2 py-1 rounded" style={{ background: 'var(--amber-dim)' }}>
-          <span className="text-xs" style={{ color: 'var(--amber)' }}>
-            Void{fixture.void_reason ? ` — ${fixture.void_reason}` : ''} · scores nothing
-          </span>
-        </div>
+    <Card className="p-4 mb-3" style={isVoid ? { opacity: 0.75 } : {}}>
+      <p className="text-xs font-semibold text-center mb-3" style={{ color: 'var(--txt-muted)', letterSpacing: '0.06em' }}>
+        {weekLabel} · {header}
+      </p>
+      {isVoid && fixture.void_reason && (
+        <p className="text-xs text-center mb-2" style={{ color: 'var(--amber)' }}>{fixture.void_reason} · scores nothing</p>
       )}
-      <p className="text-base font-semibold" style={{ color: 'var(--txt-primary)' }}>
-        {fixture.home_team} <span style={{ color: 'var(--txt-muted)', fontWeight: 400 }}>vs</span> {fixture.away_team}
-      </p>
-      <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
-        {weekLabel} · Kickoff {format(kickoff, 'EEE d MMM')} at {format(kickoff, 'HH:mm')}
-      </p>
+
+      <div className="grid grid-cols-2 gap-2.5 mb-3">
+        {sides.map(s => (
+          <TeamPanel key={s.key} side={s.key} team={s.team}
+            value={s.value} onChange={s.onChange} locked={isLocked}
+            hasResult={hasResult} final={s.final} picked={s.picked}
+            highlighted={hasResult ? winner === s.key : backs === s.key} />
+        ))}
+      </div>
 
       {hasResult ? (
-        <>
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            <span className="text-base font-bold" style={{ color: 'var(--green)' }}>
-              Final: {fixture.home_score}–{fixture.away_score}
-            </span>
-            <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>
-              {marginText(fixture.home_team, fixture.away_team, fixture.home_score, fixture.away_score)}
-            </span>
-          </div>
+        <div className="text-center mb-1">
           <p className="text-sm mb-2" style={{ color: 'var(--txt-second)' }}>
-            Your pick: <strong style={{ color: 'var(--txt-primary)' }}>
-              {prediction ? `${prediction.predicted_home}–${prediction.predicted_away}` : '—'}
-            </strong>
-            {prediction && <span style={{ color: 'var(--txt-muted)' }}> ({marginText(fixture.home_team, fixture.away_team, prediction.predicted_home, prediction.predicted_away)})</span>}
+            {marginText(fixture.home_team, fixture.away_team, fixture.home_score, fixture.away_score)}
+            {prediction
+              ? <span style={{ color: 'var(--txt-muted)' }}> · you said {marginText(fixture.home_team, fixture.away_team, prediction.predicted_home, prediction.predicted_away)}</span>
+              : <span style={{ color: 'var(--txt-muted)' }}> · no pick</span>}
           </p>
           {scored && <BandChip scored={scored} />}
-        </>
+        </div>
       ) : (
-        <>
-          <div className="flex items-center gap-3 flex-wrap mb-1">
-            <div className="flex items-center gap-2">
-              <ScoreInput value={home} onChange={setHome} disabled={isLocked} label={`${fixture.home_team} points`} />
-              <span style={{ color: 'var(--txt-muted)' }} className="font-medium">–</span>
-              <ScoreInput value={away} onChange={setAway} disabled={isLocked} label={`${fixture.away_team} points`} />
-            </div>
-            {isLocked && (
-              <span className="text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1" style={{ background: 'rgba(239,68,68,0.14)', color: 'var(--red)' }}>
-                <i className="ti ti-lock text-xs" aria-hidden="true" />Locked
-              </span>
-            )}
-          </div>
-          <p className="text-sm mb-2" style={{ color: readout ? 'var(--accent)' : 'var(--txt-muted)', minHeight: 20 }}>
-            {readout || 'Enter a score to see your margin'}
-          </p>
-        </>
+        <p className="text-sm text-center mb-2 font-medium" style={{ color: readout ? 'var(--accent)' : 'var(--txt-muted)', minHeight: 20 }}>
+          {isLocked ? (prediction ? `Your pick: ${marginText(fixture.home_team, fixture.away_team, prediction.predicted_home, prediction.predicted_away)}` : 'No pick made')
+            : (readout || 'Enter both scores to see your margin')}
+        </p>
       )}
 
       {!isLocked && !hasResult && (
         <div className="flex items-center justify-between mt-1 flex-wrap gap-2">
           <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
             {prediction
-              ? <span style={{ color: 'var(--green)' }}>Saved {format(new Date(prediction.submitted_at), 'd MMM, HH:mm')} — you can change this until kickoff</span>
-              : `Locks at kickoff: ${format(kickoff, 'EEE d MMM, HH:mm')}`}
+              ? <span style={{ color: 'var(--green)' }}>Saved {format(new Date(prediction.submitted_at), 'd MMM, HH:mm')} · you can change it until kickoff</span>
+              : 'Final score, overtime included'}
           </p>
           <Button variant="primary" size="sm" onClick={save} disabled={saving}>
             <i className="ti ti-check text-xs" />{saving ? 'Saving…' : prediction ? 'Update' : 'Save'}
@@ -217,13 +220,45 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
       )}
 
       {isLocked && (
-        <button onClick={() => setShowAll(v => !v)} className="text-xs flex items-center gap-1 mt-1" style={{ color: 'var(--accent)' }}>
+        <button onClick={() => setShowAll(v => !v)} className="text-xs flex items-center gap-1 mt-2" style={{ color: 'var(--accent)' }}>
           <i className={`ti ti-chevron-${showAll ? 'up' : 'down'} text-xs`} aria-hidden="true" />
           {showAll ? 'Hide' : 'Show'} everyone's picks {count != null && `(${count})`}
         </button>
       )}
       {isLocked && showAll && <EveryonesPicks fixture={fixture} userId={userId} rules={rules} />}
     </Card>
+  )
+}
+
+// One team: its colours and badge across the top, its name, and either the box
+// for the predicted score or, once final, the real score with the pick beneath.
+function TeamPanel({ side, team, value, onChange, locked, hasResult, final, picked, highlighted }) {
+  const t = nflTeam(team)
+  return (
+    <div className="rounded-xl overflow-hidden flex flex-col"
+      style={{
+        background: 'var(--bg-elevated)',
+        border: highlighted ? '2px solid var(--accent)' : '2px solid transparent',
+      }}>
+      <div className="flex justify-center items-center py-3"
+        style={{ background: `linear-gradient(180deg, ${t.primary} 0%, ${t.primary}55 70%, transparent 100%)` }}>
+        <NflTeamBadge team={team} size={48} />
+      </div>
+      <div className="px-2 pt-2 pb-3 text-center flex flex-col items-center gap-1 flex-1">
+        <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--txt-primary)' }}>{team}</p>
+        <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{side === 'home' ? 'Home' : 'Away'}</p>
+        <div className="mt-auto pt-1">
+          {hasResult ? (
+            <div>
+              <p className="text-2xl font-bold" style={{ color: highlighted ? 'var(--green)' : 'var(--txt-primary)' }}>{final}</p>
+              <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>you said {picked ?? '—'}</p>
+            </div>
+          ) : (
+            <ScoreInput value={value} onChange={onChange} disabled={locked} label={`${team} points`} />
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
