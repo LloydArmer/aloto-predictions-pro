@@ -69,3 +69,70 @@ export function marginScore(prediction, fixture, rules) {
   const breakdown = label ? [{ label, pts: points }] : []
   return { points, breakdown, isExact, isCorrectResult, band, marginError: error }
 }
+
+// The NFL points an admin can edit, in the order the Scoring tab shows them.
+// Kept here, beside the scorer that reads them, so the two cannot drift.
+export const NFL_RULE_FIELDS = [
+  { key: 'exact_score_points',      label: 'Exact score' },
+  { key: 'margin_exact_points',     label: 'Exact margin' },
+  { key: 'margin_within_3_points',  label: 'Margin within 3 (a field goal)' },
+  { key: 'margin_within_7_points',  label: 'Margin within 7 (a touchdown)' },
+  { key: 'margin_within_14_points', label: 'Margin within 14 (two scores)' },
+  { key: 'winner_only_points',      label: 'Right winner, nothing else' },
+]
+
+// The rules an NFL competition scores by. Follows rules_source_competition_id
+// the same way football does, so an NFL cup can take its points from an NFL
+// league. Falls back to the NFL defaults if there is no rules row.
+export async function nflPointRules(supabase, competitionId) {
+  const { data: comp } = await supabase.from('competitions')
+    .select('rules_source_competition_id').eq('id', competitionId).maybeSingle()
+  const sourceId = comp?.rules_source_competition_id || competitionId
+  const { data: rules } = await supabase.from('point_rules')
+    .select('*').eq('competition_id', sourceId).maybeSingle()
+  return rules || nflDefaultRules()
+}
+
+/**
+ * Score one NFL gameweek for one competition.
+ *
+ * The NFL counterpart of football's recalculateGameweek, and deliberately
+ * simpler: each game pays its one margin band and the week's score is the sum.
+ * Triple Points and the full house bonuses are NOT applied — whether NFL has
+ * them is still to be decided, and they are added here if it does.
+ *
+ * Same ground rules as football: nothing is scored until the whole gameweek is
+ * marked completed, and voided games score nobody anything.
+ *
+ * exact_scores and correct_results are still filled in (exact score; right
+ * winner), so standings that sort on them keep working.
+ */
+export async function recalculateNflGameweek(supabase, competitionId, gameweekId, rules) {
+  const { data: gw } = await supabase.from('gameweeks').select('status').eq('id', gameweekId).single()
+  if (gw?.status !== 'completed') return { skipped: true, reason: 'Gameweek not marked completed yet' }
+
+  const { data: fixtures } = await supabase.from('fixtures').select('*').eq('gameweek_id', gameweekId)
+  const fxMap = {}
+  ;(fixtures || []).filter(f => f.status === 'completed').forEach(f => { fxMap[f.id] = f })
+
+  const { data: predictions } = await supabase.from('predictions').select('*').eq('gameweek_id', gameweekId)
+
+  const scores = {}
+  for (const pred of (predictions || [])) {
+    const fx = fxMap[pred.fixture_id]; if (!fx) continue
+    const { points, isExact, isCorrectResult } = marginScore(pred, fx, rules)
+    const uid = pred.user_id
+    if (!scores[uid]) scores[uid] = { user_id: uid, points: 0, exact_scores: 0, correct_results: 0, full_house_results: false, full_house_scores: false }
+    scores[uid].points += points
+    if (isExact)         scores[uid].exact_scores++
+    if (isCorrectResult) scores[uid].correct_results++
+    await supabase.from('predictions').update({ points_earned: points }).eq('id', pred.id)
+  }
+
+  for (const s of Object.values(scores)) {
+    await supabase.from('gameweek_scores').upsert(
+      { competition_id: competitionId, gameweek_id: gameweekId, ...s },
+      { onConflict: 'competition_id,gameweek_id,user_id' })
+  }
+  return scores
+}

@@ -5,6 +5,8 @@ import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
 import { sortGameweeks } from '../../../lib/gameweeks'
 import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound, scoreOnePrediction, resolvePointRules } from '../../../lib/scoring'
+import { NFL_RULE_FIELDS } from '../../../lib/sports/nfl/scoring'
+import { recalculateGameweekForEachSport } from '../../../lib/sports'
 import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, Badge, EmptyState, Spinner } from '../../ui'
@@ -356,6 +358,19 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
   }
 
   async function save() {
+    // NFL rules save their own fields and nothing else. Football saves exactly
+    // what it always has, below.
+    if (rules?.scoring_mode === 'margin') {
+      setSaving(true)
+      try {
+        const update = Object.fromEntries(NFL_RULE_FIELDS.map(f => [f.key, Number(rules[f.key])]))
+        const { error } = await supabase.from('point_rules').update(update).eq('competition_id', competitionId)
+        if (error) throw error
+        toast.success('Rules saved!')
+      } catch { toast.error('Could not save rules') }
+      finally { setSaving(false) }
+      return
+    }
     setSaving(true)
     try {
       const { error } = await supabase.from('point_rules').update({
@@ -373,7 +388,9 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
   if (!competitionId) return <EmptyState icon="ti-star" title="Create a competition first" />
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
 
-  const fields = [
+  // NFL competitions score on the margin, one band per game, so they show the
+  // margin points instead. Football's list is untouched.
+  const fields = rules?.scoring_mode === 'margin' ? NFL_RULE_FIELDS : [
     { key: 'exact_score_points',      label: 'Exact score bonus (on top of correct result)' },
     { key: 'correct_result_points',   label: 'Correct result (W/D/L)' },
     { key: 'full_house_results_bonus', label: 'Full house — all results correct in a GW' },
@@ -439,6 +456,12 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
   return (
     <Card className="p-4">
       <AdminLabel className="mb-3">Points & bonus rules</AdminLabel>
+      {rules.scoring_mode === 'margin' && (
+        <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>
+          Scored on the margin. Each game pays the one line it reaches, never more than one.
+          The margin counts direction, so backing the wrong side by 3 when the other side wins by 3 is out by 6.
+        </p>
+      )}
       {fields.map(f => (
         <div key={f.key} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
           <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{f.label}</span>
@@ -617,7 +640,7 @@ function GameweeksTab({ competitionId, competitions }) {
     // gameweek when a new one is set active.
     if (updates.status === 'completed') {
       try {
-        const compIds = await recalculateGameweekForAllLinkedCompetitions(supabase, id)
+        const compIds = await recalculateGameweekForEachSport(supabase, id)
         toast.success(`Gameweek completed — scores calculated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
       } catch { toast.error('Marked completed, but could not calculate scores — use "Recalculate GW" below') }
     }
@@ -990,7 +1013,7 @@ function FixturesPanel({ gameweekId }) {
         if (!quiet) toast.error('Scores only calculate once this gameweek is marked completed — nothing to recalculate yet')
         return false
       }
-      const compIds = await recalculateGameweekForAllLinkedCompetitions(supabase, gameweekId)
+      const compIds = await recalculateGameweekForEachSport(supabase, gameweekId)
       if (!quiet) toast.success(`Gameweek recalculated${compIds.length > 1 ? ` for ${compIds.length} competitions` : ''}!`)
       return true
     } catch {
