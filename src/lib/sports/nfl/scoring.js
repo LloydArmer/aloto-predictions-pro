@@ -136,3 +136,19 @@ export async function recalculateNflGameweek(supabase, competitionId, gameweekId
   }
   return scores
 }
+
+// How each band reads on screen. Green for the margin lines worth most, amber
+// for the touchdown and field goal lines, muted for the consolation and a miss.
+export function bandStyle(band) {
+  if (band === 'exact_score' || band === 'exact_margin') return { bg: 'var(--green-dim)', color: 'var(--green)' }
+  if (band === 'within_3' || band === 'within_7') return { bg: 'rgba(245,166,35,0.14)', color: 'var(--amber)' }
+  return { bg: 'var(--bg-elevated)', color: 'var(--txt-muted)' }
+}
+
+// "Philadelphia by 7", or "Tie", for a pair of scores. Null until both are in.
+export function marginText(homeTeam, awayTeam, home, away) {
+  if (home === '' || away === '' || home == null || away == null) return null
+  const h = Number(home), a = Number(away)
+  if (h === a) return 'Tie'
+  return h > a ? `${homeTeam} by ${h - a}` : `${awayTeam} by ${a - h}`
+}

@@ -6,6 +6,8 @@ import AppLayout from './components/layout/AppLayout'
 import { Login, Signup } from './components/features/auth/Auth'
 import Dashboard      from './components/features/dashboard/Dashboard'
 import Predict        from './components/features/predict/Predict'
+import NflPredict     from './components/features/nfl/NflPredict'
+import SportRoute     from './components/layout/SportRoute'
 import Standings      from './components/features/standings/Standings'
 import Admin          from './components/features/admin/Admin'
 import Settings       from './components/features/settings/Settings'
@@ -25,6 +27,9 @@ function Protected({ children }) {
   )
   return user ? children : <Navigate to="/login" replace />
 }
+
+// Pages that each sport draws its own way.
+function PredictForSport() { return <SportRoute football={Predict} nfl={NflPredict} /> }
 
 function wrap(Page) {
   return (
@@ -72,7 +77,7 @@ function AppRoutes() {
       <Route path="/login"  element={(user && !resetting) ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
       <Route path="/"             element={wrap(Dashboard)} />
-      <Route path="/predict"      element={wrap(Predict)} />
+      <Route path="/predict"      element={wrap(PredictForSport)} />
       <Route path="/standings"    element={wrap(Standings)} />
       <Route path="/chat"         element={wrap(Chat)} />
       {/* Old paths kept as redirects: they're in people's history, and the
