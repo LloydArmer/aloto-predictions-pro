@@ -1,6 +1,23 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
+/**
+ * The order every competition dropdown shows — and therefore which one the
+ * app opens on, because the picker defaults to the first.
+ *
+ * Leagues first, then cups, each oldest first. The main league is almost
+ * always the first thing somebody sets up, so it lands at the top where it
+ * belongs. The list used to come back newest-first, which meant creating a
+ * cup in November silently made that cup the default view of the whole app.
+ */
+export function orderForDisplay(list) {
+  const rank = c => (c.format === 'league' ? 0 : 1)
+  return [...(list || [])].sort((a, b) =>
+    rank(a) !== rank(b)
+      ? rank(a) - rank(b)
+      : new Date(a.created_at) - new Date(b.created_at))
+}
+
 export function useCompetitions() {
   const [competitions, setCompetitions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,8 +51,8 @@ export function useCompetitions() {
 
       const { data } = await supabase
         .from('competitions').select('*').in('id', ids)
-        .order('created_at', { ascending: false })
-      setCompetitions((data || []).map(c => ({ ...c, my_role: roleById[c.id] || 'player' })))
+      setCompetitions(orderForDisplay(
+        (data || []).map(c => ({ ...c, my_role: roleById[c.id] || 'player' }))))
     } finally { setLoading(false) }
   }
 
@@ -47,7 +64,9 @@ export function useCompetitions() {
     // database trigger (029) already created this row, avoiding the
     // duplicate-key / RLS conflict that a plain insert would cause.
     await supabase.from('participants').upsert({ competition_id: data.id, user_id: user.id, role: 'admin' }, { onConflict: 'competition_id,user_id' })
-    setCompetitions(prev => [{ ...data, my_role: 'admin' }, ...prev])
+    // Sorted in rather than pushed to the front: a cup created today must
+    // not displace the main league as what the app opens on.
+    setCompetitions(prev => orderForDisplay([...prev, { ...data, my_role: 'admin' }]))
     return data
   }
 

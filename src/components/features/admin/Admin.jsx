@@ -56,6 +56,29 @@ export default function Admin() {
   // not anyone has looked.
   const openReports = useOpenReportCount(managesSelected ? selectedComp : null, tab)
 
+  // ── The Cup tab picks its own competition ───────────────────────────────
+  //
+  // Cup covers the group stage and the knockout bracket, neither of which a
+  // league has — so offering leagues there led to a dropdown whose only
+  // outcome was "Not needed for League competitions".
+  //
+  // Its selection is kept HERE rather than in the shared one on purpose.
+  // Writing to the shared selection would mean that glancing at the cup
+  // bracket silently changed what Predict and the Dashboard showed after you
+  // left Admin.
+  const cups = useMemo(() => managed.filter(c => c.format !== 'league'), [managed])
+  const [cupId, setCupId] = useState(null)
+  useEffect(() => {
+    if (!cups.length) { setCupId(null); return }
+    if (!cupId || !cups.some(c => c.id === cupId)) setCupId(cups[0].id)
+  }, [cups, cupId])
+
+  const onCupTab   = tab === 'config'
+  const pickerList = onCupTab ? cups : managed
+  const activeComp = onCupTab ? cupId : selectedComp
+  const pickerSet  = onCupTab ? setCupId : setSelectedComp
+  const pickedOk   = pickerList.some(c => c.id === activeComp)
+
   if (compsLoading) return <div className="flex justify-center py-20"><Spinner /></div>
 
   if (!isAdmin && managed.length === 0) return (
@@ -97,19 +120,25 @@ export default function Admin() {
         ))}
       </div>
 
-      {tab !== 'competitions' && managed.length > 0 && (
+      {/* No cups yet: say so, rather than showing an empty picker. */}
+      {onCupTab && cups.length === 0 && (
+        <EmptyState icon="ti-tournament" title="No cups yet"
+          description="Cup settings cover the group stage and knockout bracket. Create a Knockout or Group + Knockout competition and it will appear here." />
+      )}
+
+      {tab !== 'competitions' && pickerList.length > 0 && (
         // The competition picker. "Managing:" was dropped — the folder icon and
         // the picker itself already say what this is, and on a phone the label
         // pushed the control onto a second line.
         <div className="flex items-center gap-2 mb-3 p-2 rounded-md" style={{ background: 'var(--accent-dim)', border: '0.5px solid rgba(79,142,247,0.3)' }}>
           <i className="ti ti-folder text-sm flex-shrink-0" style={{ color: 'var(--accent)' }} aria-hidden="true" />
-          <Select value={managesSelected ? selectedComp : ''} onChange={e => { if (e.target.value) setSelectedComp(e.target.value) }} style={{ flex: '1 1 auto', minWidth: 0, fontWeight: 600 }}>
+          <Select value={pickedOk ? activeComp : ''} onChange={e => { if (e.target.value) pickerSet(e.target.value) }} style={{ flex: '1 1 auto', minWidth: 0, fontWeight: 600 }}>
             {/* Shown when the competition selected elsewhere in the app is one
                 this person only plays in. */}
-            {!managesSelected && <option value="">Choose a competition you run</option>}
+            {!pickedOk && <option value="">Choose a competition you run</option>}
             {/* <option> cannot hold markup, so a plain-text mark stands in for
                 the icon and at least keeps the formats distinguishable. */}
-            {managed.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
+            {pickerList.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
           </Select>
         </div>
       )}
@@ -122,14 +151,14 @@ export default function Admin() {
 
       {/* The other tabs only open for a competition this person runs. They
           still receive the full list, which they use to look things up. */}
-      {tab !== 'competitions' && !managesSelected && (
+      {tab !== 'competitions' && !onCupTab && !managesSelected && (
         <EmptyState icon="ti-lock" title="You play in this competition" description="Choose a competition you run from the list above to manage it." />
       )}
-      {managesSelected && <>
+      {(onCupTab ? pickedOk : managesSelected) && <>
         {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
         {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
         {tab === 'season' && <SeasonTab competitionId={selectedComp} competitions={competitions} />}
-        {tab === 'config' && <ConfigTab competitionId={selectedComp} competitions={competitions} />}
+        {tab === 'config' && <ConfigTab competitionId={cupId} competitions={competitions} />}
         {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
         {tab === 'chat' && <ChatModerationTab competitionId={selectedComp} />}
       </>}
