@@ -68,7 +68,7 @@ export default function AppLayout({ children }) {
       {/* app-top-nav adds the status-bar inset. In a browser that's 0, so
           nothing changes; inside the native shell it stops the bar rendering
           underneath the clock and battery. */}
-      <nav className="sticky top-0 z-40 app-top-nav"
+      <nav className={`sticky top-0 z-40 app-top-nav${showSportSwitcher ? ' aloto-has-sport' : ''}`}
         style={{ borderBottom: '0.5px solid var(--border)' }}>
         {/* Written as a media query rather than a Tailwind arbitrary
             breakpoint, which needs 3.2+ and would silently do nothing on an
@@ -78,6 +78,13 @@ export default function AppLayout({ children }) {
           @media (max-width: 379px) {
             .aloto-brand-sub { display: none; }
           }
+          /* With the sport chooser in the bar there is no room for the
+             second line of the name at any width: on a phone it pushed the
+             menu off the right-hand edge, and on an iPad and a desktop it
+             pushed the page links under Chat. The bar is capped at the page
+             width, so a bigger screen doesn't buy more room. ALOTO alone
+             still names the app. */
+          .aloto-has-sport .aloto-brand-sub { display: none; }
         `}</style>
         {/* 46px on mobile rather than 52 — with a tab bar at the bottom too,
             every pixel of chrome is one less of content. */}
@@ -95,7 +102,7 @@ export default function AppLayout({ children }) {
 
               So the two words share a wrapper of their own and the outer row
               centres the icon against that wrapper. */}
-          <div className="flex items-center gap-2 mr-5 flex-shrink-0" style={{ minWidth: 0 }}>
+          <div className="flex items-center gap-2 mr-3 lg:mr-5 flex-shrink-0" style={{ minWidth: 0 }}>
             <img src="/icon.png" alt="" width={26} height={26}
               style={{ borderRadius: 6, flexShrink: 0, display: 'block' }} />
 
@@ -116,44 +123,51 @@ export default function AppLayout({ children }) {
           </div>
 
           {showSportSwitcher && (
-            <div className="mr-3">
+            <div className="mr-2 lg:mr-3 flex-shrink-0">
               <SportSwitcher activeSport={activeSport}
                 allCompetitions={allCompetitions} onSelectCompetition={selectComp} />
             </div>
           )}
 
           {/* Desktop links */}
-          <div className="hidden md:flex items-center gap-0.5 flex-1">
+          <div className="hidden md:flex items-center gap-0.5 flex-1 min-w-0">
             {NAV.map(item => (
               <NavLink key={item.to} to={item.to} end={item.to === '/'}
                 className={({ isActive }) =>
-                  `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors ${isActive ? 'font-medium' : ''}`
+                  `flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-md text-xs whitespace-nowrap flex-shrink-0 transition-colors ${isActive ? 'font-medium' : ''}`
                 }
                 style={({ isActive }) => ({
                   color: isActive ? 'var(--accent)' : 'var(--txt-second)',
                   background: isActive ? 'var(--accent-dim)' : 'transparent',
                 })}>
-                <i className={`ti ${item.icon} text-sm`} aria-hidden="true" />
+                {/* Icons from desktop width only: on an iPad in portrait the words
+                    alone fit beside the sport chooser, the icons didn't. */}
+                <i className={`ti ${item.icon} text-sm hidden lg:inline`} aria-hidden="true" />
                 {item.label === 'Cup' ? 'Cup Competitions' : item.label}
               </NavLink>
             ))}
             {showAdmin && (
               <NavLink to="/admin"
                 className={({ isActive }) =>
-                  `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors ${isActive ? 'font-medium' : ''}`
+                  `flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-md text-xs whitespace-nowrap flex-shrink-0 transition-colors ${isActive ? 'font-medium' : ''}`
                 }
                 style={({ isActive }) => ({
                   color: isActive ? 'var(--amber)' : 'var(--txt-second)',
                   background: isActive ? 'var(--amber-dim)' : 'transparent',
                 })}>
-                <i className="ti ti-shield text-sm" aria-hidden="true" />
+                <i className="ti ti-shield text-sm hidden lg:inline" aria-hidden="true" />
                 Admin
               </NavLink>
             )}
           </div>
 
           {/* Right side — desktop only */}
-          <div className="ml-auto flex items-center gap-2">
+          {/* Name and sign out sit in the bar only on a desktop-wide screen.
+              On an iPad they don't fit beside the page links, so they live in
+              the menu there, as they do on a phone. The old Admin badge is
+              gone: the Admin link in the bar already says it, and the two
+              together pushed Chat over the Admin link. */}
+          <div className="ml-auto flex items-center gap-1.5 lg:gap-2 flex-shrink-0">
             {/* Chat lives here rather than in the tab bar.
                 
                 Four tabs was a deliberate choice — see NAV_BASE above —
@@ -161,12 +175,11 @@ export default function AppLayout({ children }) {
                 unread count where people already look for one, and it stays
                 visible on every screen rather than only when the tab bar is. */}
             <ChatLink unread={totalUnread} />
-            {showAdmin && <span className="badge badge-admin hidden md:inline-flex">Admin</span>}
             <div className="avatar w-7 h-7 text-xs">{initials}</div>
-            <span className="hidden md:block text-xs" style={{ color: 'var(--txt-second)' }}>
+            <span className="hidden lg:block text-xs" style={{ color: 'var(--txt-second)' }}>
               {profile?.display_name || 'Player'}
             </span>
-            <button onClick={handleSignOut} className="btn btn-ghost btn-sm hidden md:inline-flex" title="Sign out">
+            <button onClick={handleSignOut} className="btn btn-ghost btn-sm hidden lg:inline-flex" title="Sign out">
               <i className="ti ti-logout text-sm" aria-hidden="true" />
             </button>
             {/* Mobile: sign out, plus the admin link for admins.
@@ -174,7 +187,7 @@ export default function AppLayout({ children }) {
                 button beside it is desktop-only — so an ordinary player on a
                 phone had no way to sign out at all. It shows for everyone now;
                 only the Admin link inside it is still gated. */}
-            <div className="md:hidden relative">
+            <div className="lg:hidden relative">
                 <button className="btn btn-ghost btn-sm" onClick={() => setMenuOpen(o => !o)}>
                   <i className={`ti ${menuOpen ? 'ti-x' : 'ti-dots-vertical'} text-sm`} />
                 </button>
