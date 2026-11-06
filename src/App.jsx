@@ -22,7 +22,7 @@ import SplashScreen    from './components/ui/SplashScreen'
 function Protected({ children }) {
   const { user, loading } = useAuth()
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'transparent' }}>
       <Spinner size="lg" />
     </div>
   )

@@ -100,7 +100,7 @@ export default function Privacy() {
 
 export function LegalShell({ title, updated, children }) {
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
+    <div style={{ minHeight: '100vh', background: 'transparent' }}>
       <div className="max-w-2xl mx-auto px-5 py-8">
         <Link to="/" className="text-xs" style={{ color: 'var(--accent)' }}>← ALOTO Prediction Pro</Link>
 

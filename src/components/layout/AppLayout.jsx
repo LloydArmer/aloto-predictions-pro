@@ -62,7 +62,7 @@ export default function AppLayout({ children }) {
     : '?'
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg-base)' }}>
+    <div className="min-h-screen" style={{ background: 'transparent' }}>
 
       {/* ── Top nav bar ── */}
       {/* app-top-nav adds the status-bar inset. In a browser that's 0, so

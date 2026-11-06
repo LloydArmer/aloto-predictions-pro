@@ -4,12 +4,11 @@
 
 @layer base {
   :root {
-    /* Theme colours. Dark is the default and is written here on :root so the
-       app is never unstyled; the light set below overrides it when
-       <html data-theme="light"> is set by src/lib/theme.js. Every colour the
-       app paints comes from these variables, so football and NFL change
-       together. Brand purple is the logo's #581ED2; on dark it is lifted to
-       #7C4DFF so it stays readable against a near-black background. */
+    /* Theme colours: dark, with the logo's purple. Every colour the app
+       paints comes from these variables, so football and NFL change together.
+       The logo purple (#581ED2) is lifted to #7C4DFF for text and buttons so
+       it stays readable on a near-black background; the deeper shades live in
+       the background gradient below. */
     color-scheme: dark;
     --bg-base:     #0e0a1a;
     --bg-surface:  #161126;
@@ -66,61 +65,29 @@
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  /* Light theme: white cards on a soft lilac-grey, the logo purple as is.
-     Status colours are darker shades so they pass contrast on white. */
-  :root[data-theme="light"] {
-    color-scheme: light;
-    --bg-base:     #f6f4fb;
-    --bg-surface:  #ffffff;
-    --bg-raised:   #f3f0fa;
-    --bg-elevated: #f3f0fa;
-    --border:      #e6e1f2;
-    --border-med:  #cfc6e8;
-    --border-hi:   #cfc6e8;
-    --txt-primary: #150c2e;
-    --txt-second:  #4b4366;
-    --txt-muted:   #6b6385;
-    --accent:      #581ed2;
-    --accent-hover:#4a17b5;
-    --on-accent:   #ffffff;
-    --accent-dim:  #efe8fd;
-    --accent-txt:  #4a17b5;
-    --accent-soft: rgba(88,30,210,0.05);
-    --accent-line: rgba(88,30,210,0.28);
-    --accent-glow: rgba(88,30,210,0.35);
-    --gold:        #a16207;
-    --gold-dim:    #fbf1d0;
-    --gold-line:   rgba(161,98,7,0.3);
-    --green:       #047857;
-    --green-dim:   #d9f4ea;
-    --green-soft:  rgba(4,120,87,0.14);
-    --green-line:  rgba(4,120,87,0.3);
-    --red:         #b91c1c;
-    --red-dim:     #fde4e4;
-    --red-soft:    rgba(185,28,28,0.08);
-    --red-line:    rgba(185,28,28,0.28);
-    --amber:       #b45309;
-    --amber-dim:   #fdf0d8;
-    --amber-soft:  rgba(180,83,9,0.1);
-    --amber-line:  rgba(180,83,9,0.3);
-    --bonus:       #a21caf;
-    --bonus-dim:   rgba(162,28,175,0.1);
-    --silver:      #6b7280;
-    --bronze:      #b4532a;
-    --hairline:    rgba(21,12,46,0.06);
-    --sheen:       rgba(255,255,255,0);
-    --shadow-col:  rgba(40,20,90,0.1);
-    --tab-bar-bg:  rgba(255,255,255,0.94);
-  }
-
   *, *::before, *::after { box-sizing: border-box; }
 
+  html { background-color: var(--bg-base); }
+
   html, body {
-    background-color: var(--bg-base);
     color: var(--txt-primary);
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
+  }
+
+  /* The graded background: a purple glow from the top of the screen fading
+     into near-black. A fixed layer rather than background-attachment: fixed,
+     which iOS ignores, so the glow stays put while the page scrolls over it.
+     body itself is left transparent so the layer shows through. */
+  body { background: transparent; }
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(140% 65% at 50% -10%, rgba(124,77,255,0.55) 0%, rgba(88,30,210,0.3) 40%, transparent 78%),
+      radial-gradient(100% 50% at 100% 105%, rgba(88,30,210,0.28) 0%, transparent 70%),
+      linear-gradient(180deg, #241052 0%, #170c36 50%, #0e0a1a 100%);
   }
 
   input[type="number"]::-webkit-inner-spin-button,

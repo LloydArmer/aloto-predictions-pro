@@ -12,7 +12,6 @@ import ProUpgrade from './ProUpgrade'
 import BadgePicker from './BadgePicker'
 import Diagnostics from './Diagnostics'
 import toast from 'react-hot-toast'
-import { THEME_OPTIONS, getThemePref, setThemePref } from '../../../lib/theme'
 
 export default function Settings() {
   const { user, profile, isAdmin, fetchProfile, signOut } = useAuth()
@@ -251,8 +250,6 @@ export default function Settings() {
           which makes a better first thing to meet than a price. */}
       <BadgePicker />
 
-      <AppearanceCard />
-
       {/* Near the top, above the housekeeping. Someone who has hit a limit is
           sent here, and hunting past reminder settings for the upgrade would be
           a poor way to treat the one screen that earns anything. */}
@@ -469,22 +466,3 @@ export default function Settings() {
   )
 }
 
-// Light, dark, or whatever the phone is set to. Kept on this device only, so
-// it is instant and works signed out too. See src/lib/theme.js.
-function AppearanceCard() {
-  const [pref, setPref] = useState(getThemePref)
-  function choose(v) { setPref(v); setThemePref(v) }
-  return (
-    <Card className="p-4 mb-5">
-      <p className="text-xs font-medium mb-2.5" style={{ color: 'var(--txt-muted)' }}>Appearance</p>
-      <div className="seg-control" role="radiogroup" aria-label="Appearance">
-        {THEME_OPTIONS.map(o => (
-          <button key={o.value} type="button" role="radio" aria-checked={pref === o.value}
-            className={`seg-btn${pref === o.value ? ' active' : ''}`} onClick={() => choose(o.value)}>
-            {o.label}
-          </button>
-        ))}
-      </div>
-    </Card>
-  )
-}

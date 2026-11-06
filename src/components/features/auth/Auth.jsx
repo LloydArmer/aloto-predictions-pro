@@ -19,7 +19,7 @@ function AuthShell({ title, subtitle, children }) {
     // screen is what put the large gap above the logo.
     <div className="flex flex-col items-center px-4"
       style={{
-        background: 'var(--bg-base)',
+        background: 'transparent',
         minHeight: '100dvh',
         justifyContent: 'flex-start',
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)',
