@@ -13,7 +13,7 @@ export function nflDefaultRules() {
     exact_score_points: 20, correct_result_points: 0,
     full_house_results_bonus: 0, full_house_scores_bonus: 0,
     margin_exact_points: 12, margin_within_3_points: 9, margin_within_7_points: 6,
-    margin_within_14_points: 3, winner_only_points: 1,
+    margin_within_14_points: 3, winner_only_points: 2,
   }
 }
 
@@ -29,19 +29,25 @@ export function marginError(prediction, fixture) {
   return Math.abs((ph - pa) - (ah - aa))
 }
 
-// Margin scoring. Exactly ONE band pays — the best one the prediction reaches —
-// never a stack of them:
+// Margin scoring, in two parts that add together:
 //
-//   exact score        exact_score_points        (20 by default for NFL)
-//   exact margin       margin_exact_points       (12)
-//   out by 1 to 3      margin_within_3_points    (9)  a field goal
-//   out by 4 to 7      margin_within_7_points    (6)  a touchdown
-//   out by 8 to 14     margin_within_14_points   (3)  two scores
-//   further out, right winner   winner_only_points   (1)
-//   anything else      0
+// 1. BASE POINTS for the right winner (a tie called as a tie counts):
+//      winner_only_points        (2)   Lloyd, 6 Nov 2026
 //
-// correct_result_points is not used here at all: calling the winner is what
-// winner_only_points pays, and NFL rules carry correct_result_points = 0.
+// 2. ON TOP, the ONE best band the prediction reaches (never a stack of them):
+//      exact score        exact_score_points        (20)
+//      exact margin       margin_exact_points       (12)
+//      out by 1 to 3      margin_within_3_points    (9)  a field goal
+//      out by 4 to 7      margin_within_7_points    (6)  a touchdown
+//      out by 8 to 14     margin_within_14_points   (3)  two scores
+//
+// So an exact score is 2 + 20 = 22, a margin within 3 is 2 + 9 = 11, and the
+// right winner alone is 2. The bands sit ON TOP of the winner, so a wrong
+// winner scores nothing at all, however close the margin (backing the home
+// side by 2 in a game the away side wins by 1 is out by 3, but scores 0).
+//
+// The column is still called winner_only_points (migration 111); migration 113
+// turned it into the base. correct_result_points is not used here at all.
 //
 // isExact and isCorrectResult mean what they mean in football (exact score;
 // right winner, or a tie called as a tie), so gameweek_scores counts and the
@@ -57,28 +63,38 @@ export function marginScore(prediction, fixture, rules) {
   const isExact         = ph === ah && pa === aa
   const isCorrectResult = getResult(ph, pa) === getResult(ah, aa)
 
-  let band, label, points
-  if (isExact)               { band = 'exact_score';  label = 'Exact score';        points = r('exact_score_points') }
-  else if (error === 0)      { band = 'exact_margin'; label = 'Exact margin';       points = r('margin_exact_points') }
-  else if (error <= 3)       { band = 'within_3';     label = 'Margin within 3';    points = r('margin_within_3_points') }
-  else if (error <= 7)       { band = 'within_7';     label = 'Margin within 7';    points = r('margin_within_7_points') }
-  else if (error <= 14)      { band = 'within_14';    label = 'Margin within 14';   points = r('margin_within_14_points') }
-  else if (isCorrectResult)  { band = 'winner_only';  label = 'Right winner';       points = r('winner_only_points') }
-  else                       { band = 'miss';         label = null;                 points = 0 }
+  let band, bandLabel, bandPts
+  if (isExact)               { band = 'exact_score';  bandLabel = 'Exact score';      bandPts = r('exact_score_points') }
+  else if (error === 0)      { band = 'exact_margin'; bandLabel = 'Exact margin';     bandPts = r('margin_exact_points') }
+  else if (!isCorrectResult) { band = 'miss';         bandLabel = null;               bandPts = 0 }
+  else if (error <= 3)       { band = 'within_3';     bandLabel = 'Margin within 3';  bandPts = r('margin_within_3_points') }
+  else if (error <= 7)       { band = 'within_7';     bandLabel = 'Margin within 7';  bandPts = r('margin_within_7_points') }
+  else if (error <= 14)      { band = 'within_14';    bandLabel = 'Margin within 14'; bandPts = r('margin_within_14_points') }
+  else                       { band = 'winner_only';  bandLabel = null;               bandPts = 0 }
 
-  const breakdown = label ? [{ label, pts: points }] : []
-  return { points, breakdown, isExact, isCorrectResult, band, marginError: error }
+  const basePts = isCorrectResult ? r('winner_only_points') : 0
+  const breakdown = []
+  if (basePts)   breakdown.push({ label: 'Right winner', pts: basePts })
+  if (bandLabel) breakdown.push({ label: bandLabel, pts: bandPts })
+  const points = basePts + bandPts
+
+  // One short line for the screens: "Winner + exact score", "Right winner"
+  // (nothing else), or null for a miss.
+  const label = basePts && bandLabel ? `Winner + ${bandLabel.toLowerCase()}`
+    : bandLabel || (basePts ? 'Right winner' : null)
+
+  return { points, breakdown, label, isExact, isCorrectResult, band, marginError: error }
 }
 
 // The NFL points an admin can edit, in the order the Scoring tab shows them.
 // Kept here, beside the scorer that reads them, so the two cannot drift.
 export const NFL_RULE_FIELDS = [
+  { key: 'winner_only_points',      label: 'Right winner (base points, added to all of the below)' },
   { key: 'exact_score_points',      label: 'Exact score' },
   { key: 'margin_exact_points',     label: 'Exact margin' },
   { key: 'margin_within_3_points',  label: 'Margin within 3 (a field goal)' },
   { key: 'margin_within_7_points',  label: 'Margin within 7 (a touchdown)' },
   { key: 'margin_within_14_points', label: 'Margin within 14 (two scores)' },
-  { key: 'winner_only_points',      label: 'Right winner, nothing else' },
 ]
 
 // The rules an NFL competition scores by. Follows rules_source_competition_id

@@ -39,8 +39,14 @@ const TABS = [
 
 export default function Admin() {
   const { user, profile, isAdmin } = useAuth()
-  const { competitions, loading: compsLoading, createCompetition, refetch: refetchComps } = useCompetitions()
+  const { competitions, loading: compsLoading, createCompetition, refetch: refetchComps, activeSport } = useCompetitions()
   const [tab, setTab] = useState('competitions')
+
+  // NFL has no cup competitions (Lloyd, 6 Nov 2026), so its Admin has no Cup
+  // tab. Football keeps every tab exactly as before.
+  const isNflSport = activeSport === 'nfl'
+  const tabs = useMemo(() => isNflSport ? TABS.filter(t => t.key !== 'config') : TABS, [isNflSport])
+  useEffect(() => { if (isNflSport && tab === 'config') setTab('competitions') }, [isNflSport, tab])
   // The shared selection is passed the FULL list, exactly as before. Admin must
   // not hand it a filtered list: that would move the selection for every other
   // page whenever Admin opened. Filtering happens below, for display only.
@@ -102,7 +108,7 @@ export default function Admin() {
 
       {/* One scrolling line rather than wrapping to three rows on a phone. */}
       <div className="tab-strip mb-3">
-        {TABS.map(t => (
+        {tabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             // Scrolls the selected tab into view. Six tabs don't fit a 390px
             // screen however short the labels, so rather than shaving pixels the
@@ -149,7 +155,7 @@ export default function Admin() {
       {tab === 'competitions' && (
         <CompetitionsTab user={user} competitions={managed} loading={compsLoading}
           createCompetition={createCompetition} refetchComps={refetchComps}
-          selectedComp={selectedComp} setSelectedComp={setSelectedComp} />
+          selectedComp={selectedComp} setSelectedComp={setSelectedComp} leagueOnly={isNflSport} />
       )}
 
       {/* The other tabs only open for a competition this person runs. They
@@ -160,7 +166,7 @@ export default function Admin() {
       {(onCupTab ? pickedOk : managesSelected) && <>
         {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
         {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
-        {tab === 'season' && <SeasonTab competitionId={selectedComp} competitions={competitions} />}
+        {tab === 'season' && <SeasonTab competitionId={selectedComp} competitions={competitions} sport={isNflSport ? 'nfl' : 'football'} />}
         {tab === 'config' && <ConfigTab competitionId={cupId} competitions={competitions} />}
         {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
         {tab === 'chat' && <ChatModerationTab competitionId={selectedComp} />}
@@ -171,7 +177,7 @@ export default function Admin() {
 
 
 // ───────────────────────── Competitions ─────────────────────────
-function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp }) {
+function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp, leagueOnly = false }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
   const [isPro, setIsPro] = useState(null)   // null while unknown
@@ -235,7 +241,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name</p>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Premier League Preds 2025/26" />
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder={leagueOnly ? "NFL Pick Em 2026" : "Premier League Preds 2025/26"} />
           </div>
           <div>
             {/* The icon follows the format — there is nothing to choose, so
@@ -244,11 +250,16 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
             <div className="flex items-center gap-2.5">
               <CompetitionIcon format={format} size="md" />
+              {/* NFL is league only: no cups, so nothing to choose. */}
+              {leagueOnly ? (
+                <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>League</span>
+              ) : (
               <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
                 <option value="league">League</option>
                 <option value="knockout">Knockout{cupLimitReached ? ' — Pro' : ''}</option>
                 <option value="group_knockout">Group + Knockout{cupLimitReached ? ' — Pro' : ''}</option>
               </Select>
+              )}
             </div>
           </div>
           <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Creating…' : 'Create competition'}</Button>

@@ -10,6 +10,7 @@ import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import NflTeamBadge, { nflTeam } from './NflTeamBadge'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
 import { noteGoodMoment } from '../../../lib/review'
+import SeasonPredictions from '../season/SeasonPredictions'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
 
@@ -45,6 +46,10 @@ export default function NflPredict() {
   // (the feed itself updates every 30) and every three minutes otherwise, so a
   // kickoff is noticed without a reload. Only the live columns are re-read.
   const [live, setLive] = useState({})
+  // Weekly games, or the season questions (Super Bowl, MVP, divisions). The
+  // season side is the same screen football uses: it only reads the questions
+  // the admin set up, so nothing in it is football specific.
+  const [tab, setTab] = useState('week')
   useEffect(() => {
     if (!selectedGW?.id) { setLive({}); return }
     let cancelled = false, timer
@@ -90,12 +95,26 @@ export default function NflPredict() {
         <Select value={comp || ''} onChange={e => setComp(e.target.value)} style={{ flex: '1 1 200px' }}>
           {competitions.map(c => <option key={c.id} value={c.id}>{FORMAT_MARK[c.format] || ''} {c.name}</option>)}
         </Select>
+        {tab === 'week' && (
         <Select value={selectedGW?.id || ''} onChange={e => setSelectedGW(gameweeks.find(g => g.id === e.target.value) || null)} style={{ flex: '1 1 140px' }}>
           {gameweeks.length === 0 && <option value="">No weeks yet</option>}
           {gameweeks.map(gw => <option key={gw.id} value={gw.id}>{gw.number}{gw.status === 'active' ? ' (current)' : ''}</option>)}
         </Select>
+        )}
       </div>
 
+      <div className="flex gap-4 mb-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
+        {[['week', 'This week'], ['season', 'Season']].map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} className="text-sm pb-2"
+            style={{ color: tab === k ? 'var(--accent)' : 'var(--txt-muted)', fontWeight: tab === k ? 600 : 400, borderBottom: tab === k ? '2px solid var(--accent)' : '2px solid transparent', marginBottom: -1 }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'season' && comp && <SeasonPredictions competitionId={comp} userId={user?.id} />}
+
+      {tab === 'week' && <>
       {rules && <PointsKey rules={rules} />}
 
       {lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg" /></div>
@@ -105,6 +124,7 @@ export default function NflPredict() {
             count={counts[f.id]} rules={rules} weekLabel={selectedGW?.number}
             onSave={(fid, h, a) => savePrediction(fid, h, a, selectedGW.id, user.id)} />
         ))}
+      </>}
     </div>
   )
 }
@@ -118,7 +138,8 @@ function quarterLabel(code) {
   return { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th', HT: 'Half time', OT: 'Overtime', FT: 'Final', AOT: 'Final (OT)' }[code] || code
 }
 
-// The points, as one line above the games.
+// The points, as one line above the games. The winner's base points come
+// first because everything else is added on top of them.
 function PointsKey({ rules }) {
   const items = [
     ['Exact score', rules.exact_score_points, 'var(--green)'],
@@ -126,17 +147,17 @@ function PointsKey({ rules }) {
     ['Within 3', rules.margin_within_3_points, 'var(--amber)'],
     ['Within 7', rules.margin_within_7_points, 'var(--amber)'],
     ['Within 14', rules.margin_within_14_points, 'var(--txt-primary)'],
-    ['Right winner', rules.winner_only_points, 'var(--txt-primary)'],
   ]
   return (
     <div className="mb-4 p-3 rounded-md text-xs" style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)', color: 'var(--txt-second)' }}>
+      Right winner <strong style={{ color: 'var(--txt-primary)' }}>{rules.winner_only_points}</strong>, plus your closest of: &nbsp;
       {items.map(([label, pts, color], i) => (
         <span key={label}>
           {i > 0 && <> &nbsp;·&nbsp; </>}
           {label} <strong style={{ color }}>{pts}</strong>
         </span>
       ))}
-      <span style={{ color: 'var(--txt-muted)' }}> &nbsp;— one per game, by how close your margin was. Final scores include overtime.</span>
+      <span style={{ color: 'var(--txt-muted)' }}> &nbsp;— by how close your margin was. Final scores include overtime.</span>
     </div>
   )
 }
@@ -233,7 +254,7 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
 
       {liveScored && (
         <p className="text-xs text-center mb-2" style={{ color: 'var(--amber)' }}>
-          {liveScored.breakdown[0]?.label || 'No points'} · {liveScored.points}pts so far
+          {liveScored.label || 'No points'} · {liveScored.points}pts so far
         </p>
       )}
 
@@ -315,10 +336,10 @@ function TeamPanel({ side, team, value, onChange, locked, hasResult, final, pick
   )
 }
 
-// The band a pick landed in and what it paid, e.g. "Margin within 3 · 9pts".
+// What a pick paid, e.g. "Winner + margin within 3 · 11pts".
 function BandChip({ scored }) {
   const s = bandStyle(scored.band)
-  const label = scored.breakdown[0]?.label || 'No points'
+  const label = scored.label || 'No points'
   return (
     <span className="inline-flex text-xs font-medium px-2.5 py-1 rounded-md mb-2" style={{ background: s.bg, color: s.color }}>
       {label} · {scored.points}pts

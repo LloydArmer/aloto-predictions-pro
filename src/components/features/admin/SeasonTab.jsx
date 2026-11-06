@@ -4,6 +4,7 @@ import { Card, Button, Input, Select, SectionLabel, EmptyState, Spinner } from '
 import TableOrderEditor from '../season/TableOrderEditor'
 import { calculateSeasonScores, deadlineLabel } from '../../../lib/seasonScoring'
 import { looksCorrect, groupAnswers, similarity } from '../../../lib/fuzzyMatch'
+import { NFL_SEASON_QUESTIONS } from '../../../lib/sports/nfl/season'
 import toast from 'react-hot-toast'
 
 // Suggestions only — the admin can name anything. These exist so the common
@@ -31,6 +32,7 @@ const PICK_SUGGESTIONS = [
   'Conference League Winners',
   'Premier League Golden Boot',
 ]
+
 
 /**
  * A number input that can be emptied while you type.
@@ -78,7 +80,11 @@ const toLocalInput = iso => {
  * column in the overall standings — which is why there is no "which gameweek do
  * these count in" control here.
  */
-export default function SeasonTab({ competitionId, competitions = [] }) {
+export default function SeasonTab({ competitionId, competitions = [], sport = 'football' }) {
+  // NFL has no league finishing order to predict and none of football's
+  // questions. Football gets exactly what it always had.
+  const isNfl = sport === 'nfl'
+  const pickSuggestions = isNfl ? [] : PICK_SUGGESTIONS
   const [loading, setLoading] = useState(true)
   const [tableConfig, setTableConfig] = useState(null)
   const [teams, setTeams] = useState([])
@@ -300,6 +306,28 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
     load()
   }
 
+  // NFL: add questions with their dropdown already filled in — every team for
+  // the Super Bowl, the four teams of the division for a division winner — or
+  // a typed answer for the MVP. One at a time or all at once; any already
+  // there are skipped. Points start at the column default, set like football.
+  async function addNflQuestions(list) {
+    let order = picks.length, added = 0
+    for (const q of list) {
+      const { data: pick, error } = await supabase.from('season_picks').insert({
+        config_id: pickConfig.id, label: q.label, sort_order: order++, allow_free_text: !q.options,
+      }).select('id').single()
+      if (error || !pick) { toast.error(`Could not add ${q.label}`); break }
+      if (q.options) {
+        const { error: optErr } = await supabase.from('season_pick_options').insert(
+          q.options.map((name, i) => ({ pick_id: pick.id, name, sort_order: i })))
+        if (optErr) { toast.error(`${q.label} added, but its teams could not be added`); break }
+      }
+      added++
+    }
+    if (added) toast.success(added === 1 ? `${list[0].label} added — set its points below` : `${added} questions added — set their points below`)
+    load()
+  }
+
   async function updatePick(id, patch) {
     setPicks(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
     const { error } = await supabase.from('season_picks').update(patch).eq('id', id)
@@ -338,6 +366,9 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
     } finally { setScoring(false) }
   }
 
+  // The NFL questions not added yet.
+  const nflToAdd = isNfl ? NFL_SEASON_QUESTIONS.filter(q => !picks.some(p => p.label.toLowerCase() === q.label.toLowerCase())) : []
+
   if (!competitionId) return <EmptyState icon="ti-calendar-star" title="Choose a competition first" />
 
   // Season predictions are a LEAGUE feature. Their points are added to the
@@ -357,6 +388,8 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
   return (
     <div>
       {/* ================= FINAL LEAGUE TABLE ================= */}
+      {/* Football only. */}
+      {!isNfl && <>
       <SectionLabel className="mb-2">Final league table</SectionLabel>
 
       {!tableConfig ? (
@@ -467,8 +500,10 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
         </Card>
       )}
 
+      </>}
+
       {/* ================= INDIVIDUAL PICKS ================= */}
-      <SectionLabel className="mb-2">Individual Predictions</SectionLabel>
+      <SectionLabel className="mb-2">{isNfl ? 'Season predictions' : 'Individual Predictions'}</SectionLabel>
 
       {!pickConfig ? (
         isPro === null ? (
@@ -482,10 +517,12 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
         ) : (
           <Card className="p-4 mb-5">
             <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
-              One-off calls — who wins each competition, the golden boot, or any question you write yourself.
-              Set the questions and the points for each.
+              {isNfl
+                ? 'Super Bowl winner, MVP, division winners, or any question you write yourself. Set the questions, the points for each and the deadline.'
+                : 'One-off calls — who wins each competition, the golden boot, or any question you write yourself.'}
+              {!isNfl && ' Set the questions and the points for each.'}
             </p>
-            <Button variant="primary" onClick={createPickConfig}>Set up Individual Predictions</Button>
+            <Button variant="primary" onClick={createPickConfig}>{isNfl ? 'Set up season predictions' : 'Set up Individual Predictions'}</Button>
           </Card>
         )
       ) : (
@@ -525,13 +562,24 @@ export default function SeasonTab({ competitionId, competitions = [] }) {
           </div>
 
           <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>Add a question</p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {PICK_SUGGESTIONS
+          {pickSuggestions.length > 0 && <div className="flex flex-wrap gap-2 mb-4">
+            {pickSuggestions
               .filter(label => !picks.some(p => p.label === label))
               .map(label => (
                 <Button key={label} className="btn-sm" onClick={() => addPick(label)}>+ {label}</Button>
               ))}
-          </div>
+          </div>}
+
+          {isNfl && nflToAdd.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {nflToAdd.length > 1 && (
+                <Button className="btn-sm" variant="primary" onClick={() => addNflQuestions(nflToAdd)}>+ Add all {nflToAdd.length}</Button>
+              )}
+              {nflToAdd.map(q => (
+                <Button key={q.label} className="btn-sm" onClick={() => addNflQuestions([q])}>+ {q.label}</Button>
+              ))}
+            </div>
+          )}
 
           <CustomPickForm onCreate={addPick}/>
 

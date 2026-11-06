@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { fetchSeasonPoints } from '../../../lib/seasonScoring'
+import SeasonResults from '../season/SeasonResults'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
@@ -21,6 +23,17 @@ export default function NflStandings() {
   const { competitions, loading } = useCompetitions()
   const [comp, setComp] = useSelectedCompetition(competitions)
   const [view, setView] = useState('table')
+  // The Season tab appears once season questions have been scored, the same
+  // as football: an empty tab before then looks broken.
+  const [hasSeason, setHasSeason] = useState(false)
+  useEffect(() => {
+    if (!comp) { setHasSeason(false); return }
+    let cancelled = false
+    supabase.from('season_scores').select('id', { count: 'exact', head: true }).eq('competition_id', comp)
+      .then(({ count }) => { if (!cancelled) setHasSeason((count ?? 0) > 0) })
+    return () => { cancelled = true }
+  }, [comp])
+  useEffect(() => { if (view === 'season' && !hasSeason) setView('table') }, [view, hasSeason])
 
   if (loading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
   if (!competitions.length) return (
@@ -32,7 +45,7 @@ export default function NflStandings() {
     <div>
       <CompetitionSelector value={comp} onChange={setComp} />
       <div className="flex gap-4 mb-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
-        {[['table', 'Table'], ['week', 'Week results']].map(([k, label]) => (
+        {[['table', 'Table'], ['week', 'Week results'], ...(hasSeason ? [['season', 'Season']] : [])].map(([k, label]) => (
           <button key={k} onClick={() => setView(k)} className="text-sm pb-2"
             style={{ color: view === k ? 'var(--accent)' : 'var(--txt-muted)', fontWeight: view === k ? 600 : 400, borderBottom: view === k ? '2px solid var(--accent)' : '2px solid transparent', marginBottom: -1 }}>
             {label}
@@ -41,6 +54,7 @@ export default function NflStandings() {
       </div>
       {comp && view === 'table' && <SeasonTable competitionId={comp} userId={user?.id} />}
       {comp && view === 'week' && <WeekResults competitionId={comp} userId={user?.id} />}
+      {comp && view === 'season' && <SeasonResults competitionId={comp} userId={user?.id} />}
     </div>
   )
 }
@@ -62,7 +76,9 @@ function SeasonTable({ competitionId, userId }) {
       const { data: gws } = await supabase.from('gameweeks').select('id, number, status')
         .in('id', [...new Set((scores || []).map(s => s.gameweek_id))])
       const latest = latestGameweek((gws || []).filter(g => g.status === 'completed'))
-      const ids = [...new Set((scores || []).map(s => s.user_id))]
+      // Season question points go into the total, as they do for football.
+      const seasonPts = await fetchSeasonPoints(competitionId)
+      const ids = [...new Set([...(scores || []).map(s => s.user_id), ...Object.keys(seasonPts)])]
       const { data: profs } = ids.length
         ? await supabase.from('profiles').select('id, display_name').in('id', ids)
         : { data: [] }
@@ -78,9 +94,15 @@ function SeasonTable({ competitionId, userId }) {
         u.best = Math.max(u.best, s.points || 0)
         if (latest && s.gameweek_id === latest.id) u.lastWeek = s.points || 0
       }
+      for (const [uid, pts] of Object.entries(seasonPts)) {
+        const u = byUser[uid] ||= { user_id: uid, name: names[uid] || 'Player', points: 0, exact: 0, winners: 0, weeks: 0, best: 0, lastWeek: null }
+        u.season = pts
+        u.points += pts
+      }
+      const hasSeason = Object.values(seasonPts).some(p => p > 0)
       const sorted = Object.values(byUser).sort((a, b) =>
         b.points - a.points || b.exact - a.exact || b.winners - a.winners || a.name.localeCompare(b.name))
-      if (!cancelled) setRows({ list: sorted, latestLabel: latest?.number })
+      if (!cancelled) setRows({ list: sorted, latestLabel: latest?.number, hasSeason })
     })()
     return () => { cancelled = true }
   }, [competitionId])
@@ -98,6 +120,7 @@ function SeasonTable({ competitionId, userId }) {
         <span style={{ width: 28 }}>#</span>
         <span className="flex-1">Player</span>
         {rows.latestLabel && <span style={{ width: 56, textAlign: 'right' }}>{rows.latestLabel}</span>}
+        {rows.hasSeason && <span style={{ width: 52, textAlign: 'right' }}>Season</span>}
         <span style={{ width: 52, textAlign: 'right' }}>Pts</span>
       </div>
       {rows.list.map((r, i) => {
@@ -115,6 +138,7 @@ function SeasonTable({ competitionId, userId }) {
                 {r.name}{isMe && ' (you)'}
               </span>
               {rows.latestLabel && <span className="text-xs" style={{ width: 56, textAlign: 'right', color: 'var(--txt-second)' }}>{r.lastWeek ?? '—'}</span>}
+              {rows.hasSeason && <span className="text-xs" style={{ width: 52, textAlign: 'right', color: r.season > 0 ? 'var(--gold)' : 'var(--txt-muted)' }}>{r.season > 0 ? `+${r.season}` : '–'}</span>}
               <span className="text-sm font-bold" style={{ width: 52, textAlign: 'right', color: 'var(--txt-primary)' }}>{r.points}</span>
             </button>
             {isOpen && (
@@ -269,7 +293,7 @@ function PlayerWeek({ fixtures, picks }) {
             </span>
             {s && (
               <span className="font-medium px-2 py-0.5 rounded" style={{ background: st.bg, color: st.color }}>
-                {(s.breakdown[0]?.label || 'Miss')} · {s.points}
+                {(s.label || 'Miss')} · {s.points}
               </span>
             )}
           </div>
