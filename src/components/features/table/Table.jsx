@@ -14,7 +14,7 @@ import { buildMonthlyMessage, openWhatsApp } from '../../../lib/whatsapp'
 import { format } from 'date-fns'
 
 function Pos({ n }) {
-  const colors = { 1:'var(--gold)', 2:'#b4b2a9', 3:'#f0997b' }
+  const colors = { 1:'var(--gold)', 2:'var(--silver)', 3:'var(--bronze)' }
   return <span style={{ fontSize:12, fontWeight:500, color:colors[n]||'var(--txt-muted)' }}>{n}</span>
 }
 
@@ -185,7 +185,7 @@ function OverallPane({ competitionId, userId }) {
                           <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{correctResults}</td>
                           <td className="text-xs text-right" style={{ color:'var(--green)' }}>{correctScores}</td>
                           <td className="text-xs text-right hidden sm:table-cell" style={{ color: resultsBonusPts > 0 ? 'var(--amber)' : 'var(--txt-muted)' }}>{resultsBonusPts > 0 ? `+${resultsBonusPts}` : '–'}</td>
-                          <td className="text-xs text-right hidden sm:table-cell" style={{ color: scoresBonusPts > 0 ? '#c88bfa' : 'var(--txt-muted)' }}>{scoresBonusPts > 0 ? `+${scoresBonusPts}` : '–'}</td>
+                          <td className="text-xs text-right hidden sm:table-cell" style={{ color: scoresBonusPts > 0 ? 'var(--bonus)' : 'var(--txt-muted)' }}>{scoresBonusPts > 0 ? `+${scoresBonusPts}` : '–'}</td>
                           <td className="text-xs text-right sm:hidden" style={{ color: (resultsBonusPts + scoresBonusPts) > 0 ? 'var(--amber)' : 'var(--txt-muted)' }}>{(resultsBonusPts + scoresBonusPts) > 0 ? `+${resultsBonusPts + scoresBonusPts}` : '–'}</td>
                           <td className="text-xs text-right hidden sm:table-cell" style={{ color: p.tp1_gameweek_id ? 'var(--gold)' : 'var(--txt-muted)' }}>{tp1Label}</td>
                           <td className="text-xs text-right hidden sm:table-cell" style={{ color: p.tp2_gameweek_id ? 'var(--gold)' : 'var(--txt-muted)' }}>{tp2Label}</td>
@@ -218,7 +218,7 @@ function OverallPane({ competitionId, userId }) {
                                 )}
                                 {fh.scores.length > 0 && (
                                   <span className="text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                                    style={{ background:'rgba(200,139,250,0.14)', color:'#c88bfa' }}>
+                                    style={{ background:'var(--bonus-dim)', color:'var(--bonus)' }}>
                                     <i className="ti ti-star-filled" style={{ fontSize:10 }} aria-hidden="true"/>
                                     All scores: {fh.scores.join(', ')}
                                   </span>
@@ -361,7 +361,7 @@ function MonthlyPane({ competitionId, months, userId }) {
                     const scoresBonusPts  = (p.full_house_scores_count  || 0) * (rules?.full_house_scores_bonus  || 0)
                     return (
                     <tr key={p.user_id} className={p.user_id===userId?'highlight':''}>
-                      <td style={{ paddingLeft:14 }}><span style={{ fontSize:12,fontWeight:500,color:i===0?'var(--gold)':i===1?'#b4b2a9':i===2?'#f0997b':'var(--txt-muted)' }}>{i+1}</span></td>
+                      <td style={{ paddingLeft:14 }}><span style={{ fontSize:12,fontWeight:500,color:i===0?'var(--gold)':i===1?'var(--silver)':i===2?'var(--bronze)':'var(--txt-muted)' }}>{i+1}</span></td>
                       {/* Shortened, and no "(you)" — the row is already
                           highlighted, so the label was costing four characters
                           to repeat something visible, which is what pushed
@@ -380,7 +380,7 @@ function MonthlyPane({ competitionId, months, userId }) {
                       <td className="text-xs text-right" style={{ color:'var(--accent)' }}>{p.correct_results||0}</td>
                       <td className="text-xs text-right" style={{ color:'var(--green)' }}>{p.exact_scores||0}</td>
                       <td className="text-xs text-right hidden sm:table-cell" style={{ color: resultsBonusPts>0?'var(--amber)':'var(--txt-muted)' }}>{resultsBonusPts>0?`+${resultsBonusPts}`:'\u2013'}</td>
-                      <td className="text-xs text-right hidden sm:table-cell" style={{ color: scoresBonusPts>0?'#c88bfa':'var(--txt-muted)' }}>{scoresBonusPts>0?`+${scoresBonusPts}`:'\u2013'}</td>
+                      <td className="text-xs text-right hidden sm:table-cell" style={{ color: scoresBonusPts>0?'var(--bonus)':'var(--txt-muted)' }}>{scoresBonusPts>0?`+${scoresBonusPts}`:'\u2013'}</td>
                       <td className="text-xs text-right sm:hidden" style={{ color: (resultsBonusPts+scoresBonusPts)>0?'var(--amber)':'var(--txt-muted)' }}>{(resultsBonusPts+scoresBonusPts)>0?`+${resultsBonusPts+scoresBonusPts}`:'\u2013'}</td>
                       <td className="text-xs text-right" style={{ color: tpGwThisMonth.length?'var(--gold)':'var(--txt-muted)' }}>{tpLabel}</td>
                       <td style={{ textAlign:'right',paddingRight:14 }}><span className="text-sm font-medium" style={{ color:'var(--accent)' }}>{p.total_points}</span></td>
@@ -458,7 +458,7 @@ function MobileOverall({ overall, userId, rules, badgesByUser, gwNumbers, hasSea
               <tr key={p.user_id} className={isMe ? 'is-me' : ''}>
                 <td style={{
                   paddingLeft: 10,
-                  color: i === 0 ? 'var(--gold)' : i === 1 ? 'var(--txt-second)' : i === 2 ? '#cd7f32' : 'var(--txt-muted)',
+                  color: i === 0 ? 'var(--gold)' : i === 1 ? 'var(--txt-second)' : i === 2 ? 'var(--bronze)' : 'var(--txt-muted)',
                   fontSize: 11,
                 }}>
                   {i + 1}

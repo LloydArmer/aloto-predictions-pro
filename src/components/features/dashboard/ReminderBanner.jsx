@@ -97,7 +97,7 @@ export default function ReminderBanner({ userId, pendingGws }) {
 
   return (
     <div className="mb-4 p-3 rounded-md flex items-start gap-3"
-      style={{ background: 'var(--amber-dim)', border: '0.5px solid rgba(245,166,35,0.3)' }}>
+      style={{ background: 'var(--amber-dim)', border: '0.5px solid var(--amber-line)' }}>
       <i className="ti ti-bell-off text-base flex-shrink-0" style={{ color: 'var(--amber)', marginTop: 1 }} aria-hidden="true" />
 
       <div style={{ flex: '1 1 auto', minWidth: 0 }}>
@@ -114,7 +114,7 @@ export default function ReminderBanner({ userId, pendingGws }) {
               On iPhone, tap Share then <strong>Add to Home Screen</strong>, open ALOTO from the new
               icon, and turn reminders on in Settings.
             </p>
-          : <Link to="/settings" className="btn btn-sm" style={{ background: 'var(--amber)', color: '#1a1400', fontWeight: 600 }}>
+          : <Link to="/settings" className="btn btn-sm" style={{ background: 'var(--amber)', color: 'var(--bg-base)', fontWeight: 600 }}>
               Turn on reminders
             </Link>}
       </div>

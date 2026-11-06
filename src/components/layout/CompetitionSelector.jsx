@@ -87,7 +87,7 @@ export default function CompetitionSelector({ value, onChange, excludeFormats = 
       <div style={{
         position: 'absolute', right: -16, top: 0, bottom: 0, width: 28,
         pointerEvents: 'none',
-        background: 'linear-gradient(to right, transparent, var(--bg-base, #0d0f14))',
+        background: 'linear-gradient(to right, transparent, var(--bg-base))',
       }}/>
     </div>
   )

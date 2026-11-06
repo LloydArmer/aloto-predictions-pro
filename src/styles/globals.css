@@ -4,28 +4,54 @@
 
 @layer base {
   :root {
-    /* Colors matched directly to the "A League of Their Own" reference app */
-    --bg-base:     #0d0f14;
-    --bg-surface:  #161a23;
-    --bg-raised:   #1c2130;
-    --bg-elevated: #1c2130;
-    --border:      #2a3044;
-    --border-med:  #3d4f72;
-    --border-hi:   #3d4f72;
-    --txt-primary: #f0f4ff;
-    --txt-second:  #a0aec0;
-    --txt-muted:   #6b7a99;
-    --accent:      #4f9cf9;
-    --accent-dim:  #1e3a5f;
-    --accent-txt:  #93beff;
+    /* Theme colours. Dark is the default and is written here on :root so the
+       app is never unstyled; the light set below overrides it when
+       <html data-theme="light"> is set by src/lib/theme.js. Every colour the
+       app paints comes from these variables, so football and NFL change
+       together. Brand purple is the logo's #581ED2; on dark it is lifted to
+       #7C4DFF so it stays readable against a near-black background. */
+    color-scheme: dark;
+    --bg-base:     #0e0a1a;
+    --bg-surface:  #161126;
+    --bg-raised:   #1f1834;
+    --bg-elevated: #241c3d;
+    --border:      #2c2347;
+    --border-med:  #40345f;
+    --border-hi:   #40345f;
+    --txt-primary: #f3f0ff;
+    --txt-second:  #b6aed6;
+    --txt-muted:   #8a82aa;
+    --accent:      #7c4dff;
+    --accent-hover:#6a3df0;
+    --on-accent:   #ffffff;
+    --accent-dim:  #2a1c55;
+    --accent-txt:  #c4b0ff;
+    --accent-soft: rgba(124,77,255,0.08);
+    --accent-line: rgba(124,77,255,0.38);
+    --accent-glow: rgba(124,77,255,0.6);
     --gold:        #f5c842;
-    --gold-dim:    #3d300a;
-    --green:       #3ddc84;
-    --green-dim:   #0d2e1a;
-    --red:         #ff5f5f;
-    --red-dim:     #2e0f0f;
-    --amber:       #ffaa33;
-    --amber-dim:   #2e1e00;
+    --gold-dim:    #3a2f0b;
+    --gold-line:   rgba(245,200,66,0.35);
+    --green:       #3ddc97;
+    --green-dim:   #0e2e20;
+    --green-soft:  rgba(61,220,151,0.2);
+    --green-line:  rgba(61,220,151,0.3);
+    --red:         #ff6b7a;
+    --red-dim:     #341418;
+    --red-soft:    rgba(255,107,122,0.12);
+    --red-line:    rgba(255,107,122,0.3);
+    --amber:       #ffb547;
+    --amber-dim:   #33240a;
+    --amber-soft:  rgba(255,181,71,0.16);
+    --amber-line:  rgba(255,181,71,0.32);
+    --bonus:       #f08cff;
+    --bonus-dim:   rgba(240,140,255,0.14);
+    --silver:      #c3bfd6;
+    --bronze:      #f0997b;
+    --hairline:    rgba(255,255,255,0.05);
+    --sheen:       rgba(255,255,255,0.035);
+    --shadow-col:  rgba(0,0,0,0.4);
+    --tab-bar-bg:  rgba(22,17,38,0.92);
 
     /* Height of the mobile tab bar. The main content's bottom padding is
        derived from this, so the two can never drift apart — previously the
@@ -38,6 +64,53 @@
        without this the top nav renders underneath the status bar. */
     --safe-top:    env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Light theme: white cards on a soft lilac-grey, the logo purple as is.
+     Status colours are darker shades so they pass contrast on white. */
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg-base:     #f6f4fb;
+    --bg-surface:  #ffffff;
+    --bg-raised:   #f3f0fa;
+    --bg-elevated: #f3f0fa;
+    --border:      #e6e1f2;
+    --border-med:  #cfc6e8;
+    --border-hi:   #cfc6e8;
+    --txt-primary: #150c2e;
+    --txt-second:  #4b4366;
+    --txt-muted:   #6b6385;
+    --accent:      #581ed2;
+    --accent-hover:#4a17b5;
+    --on-accent:   #ffffff;
+    --accent-dim:  #efe8fd;
+    --accent-txt:  #4a17b5;
+    --accent-soft: rgba(88,30,210,0.05);
+    --accent-line: rgba(88,30,210,0.28);
+    --accent-glow: rgba(88,30,210,0.35);
+    --gold:        #a16207;
+    --gold-dim:    #fbf1d0;
+    --gold-line:   rgba(161,98,7,0.3);
+    --green:       #047857;
+    --green-dim:   #d9f4ea;
+    --green-soft:  rgba(4,120,87,0.14);
+    --green-line:  rgba(4,120,87,0.3);
+    --red:         #b91c1c;
+    --red-dim:     #fde4e4;
+    --red-soft:    rgba(185,28,28,0.08);
+    --red-line:    rgba(185,28,28,0.28);
+    --amber:       #b45309;
+    --amber-dim:   #fdf0d8;
+    --amber-soft:  rgba(180,83,9,0.1);
+    --amber-line:  rgba(180,83,9,0.3);
+    --bonus:       #a21caf;
+    --bonus-dim:   rgba(162,28,175,0.1);
+    --silver:      #6b7280;
+    --bronze:      #b4532a;
+    --hairline:    rgba(21,12,46,0.06);
+    --sheen:       rgba(255,255,255,0);
+    --shadow-col:  rgba(40,20,90,0.1);
+    --tab-bar-bg:  rgba(255,255,255,0.94);
   }
 
   *, *::before, *::after { box-sizing: border-box; }
@@ -74,10 +147,10 @@
     font-family: 'Inter', sans-serif; transition: background 0.15s;
   }
   .btn:hover { background: var(--bg-raised); }
-  .btn-primary { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
-  .btn-primary:hover { background: #3a7de0 !important; }
+  .btn-primary { background: var(--accent) !important; color: var(--on-accent) !important; border-color: var(--accent) !important; }
+  .btn-primary:hover { background: var(--accent-hover) !important; }
   .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
-  .btn-danger { background: var(--red-dim) !important; color: var(--red) !important; border-color: rgba(242,86,74,0.2) !important; }
+  .btn-danger { background: var(--red-dim) !important; color: var(--red) !important; border-color: var(--red-line) !important; }
   .btn-ghost { background: transparent !important; border-color: transparent !important; color: var(--txt-second) !important; }
   .btn-ghost:hover { background: var(--bg-elevated) !important; color: var(--txt-primary) !important; }
 
@@ -115,8 +188,8 @@
   .badge-upcoming { background: var(--bg-elevated); color: var(--txt-second); border: 0.5px solid var(--border-med); }
   .badge-admin   { background: var(--amber-dim); color: var(--amber); }
   .badge-gold    { background: var(--gold-dim); color: var(--gold); }
-  .badge-silver  { background: rgba(180,178,169,0.1); color: #b4b2a9; }
-  .badge-bronze  { background: rgba(240,153,123,0.12); color: #f0997b; }
+  .badge-silver  { background: var(--bg-elevated); color: var(--silver); }
+  .badge-bronze  { background: var(--red-soft); color: var(--bronze); }
 
   .section-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; color: var(--txt-muted); }
 
@@ -157,11 +230,11 @@
   .pip-d { background: var(--bg-elevated); color: var(--txt-second); }
   .pip-l { background: var(--red-dim); color: var(--red); }
 
-  .avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent-dim); color: var(--accent-txt); border: 0.5px solid rgba(79,142,247,0.25); font-size: 11px; font-weight: 500; flex-shrink: 0; }
+  .avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent-dim); color: var(--accent-txt); border: 0.5px solid var(--accent-line); font-size: 11px; font-weight: 500; flex-shrink: 0; }
 
   .pill { display: inline-flex; align-items: center; padding: 5px 13px; border-radius: 100px; font-size: 12px; border: 0.5px solid var(--border-med); cursor: pointer; color: var(--txt-second); background: var(--bg-surface); white-space: nowrap; transition: color 0.15s; }
   .pill:hover { color: var(--txt-primary); }
-  .pill.active { background: var(--accent-dim); color: var(--accent-txt); border-color: rgba(79,142,247,0.4); font-weight: 500; }
+  .pill.active { background: var(--accent-dim); color: var(--accent-txt); border-color: var(--accent-line); font-weight: 500; }
 
   .seg-control { display: flex; border-radius: 10px; padding: 3px; gap: 3px; background: var(--bg-surface); border: 0.5px solid var(--border); }
   .seg-btn { flex: 1; padding: 7px 10px; border-radius: 8px; font-size: 13px; border: none; background: transparent; color: var(--txt-second); cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.15s; }
@@ -173,10 +246,10 @@
 
   .stat-card { padding: 12px 13px; border-radius: 10px; background: var(--bg-surface); border: 0.5px solid var(--border); }
 
-  .wa-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; cursor: pointer; background: var(--green-dim); color: var(--green); border: 0.5px solid rgba(61,220,132,0.3); font-family: 'Inter', sans-serif; transition: background 0.15s; }
-  .wa-btn:hover { background: rgba(52,208,122,0.2); }
+  .wa-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; cursor: pointer; background: var(--green-dim); color: var(--green); border: 0.5px solid var(--green-line); font-family: 'Inter', sans-serif; transition: background 0.15s; }
+  .wa-btn:hover { background: var(--green-soft); }
 
-  .winner-banner { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 14px; background: var(--gold-dim); border: 0.5px solid rgba(245,200,66,0.3); }
+  .winner-banner { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 14px; background: var(--gold-dim); border: 0.5px solid var(--gold-line); }
 
   .podium-card { padding: 14px 10px; border-radius: 14px; text-align: center; background: var(--bg-surface); border: 0.5px solid var(--border); }
 
@@ -189,13 +262,13 @@
     display: flex;
     height: calc(var(--tab-bar-h) + var(--safe-bottom));
     padding-bottom: var(--safe-bottom);
-    background: rgba(22, 26, 35, 0.92);
+    background: var(--tab-bar-bg);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     /* A full 1px in the mid-tone. The old 0.5px hairline in --border was so
        close to the surface colour that the bar had no visible edge at all. */
     border-top: 1px solid var(--border-med);
-    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 -8px 24px var(--shadow-col);
   }
 
   .tab-item {
@@ -221,7 +294,7 @@
     width: 26px; height: 2.5px;
     border-radius: 0 0 3px 3px;
     background: var(--accent);
-    box-shadow: 0 0 10px rgba(79, 156, 249, 0.6);
+    box-shadow: 0 0 10px var(--accent-glow);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -278,7 +351,7 @@
     .btn-sm { height: 30px; }
     .pill { padding: 5px 11px; }
   }
-  .podium-card.first { background: var(--gold-dim); border: 1.5px solid rgba(245,200,66,0.5); }
+  .podium-card.first { background: var(--gold-dim); border: 1.5px solid var(--gold-line); }
 
   .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-right: 4px; animation: pulse 1.5s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }

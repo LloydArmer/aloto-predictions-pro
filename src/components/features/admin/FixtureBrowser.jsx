@@ -163,7 +163,7 @@ export default function FixtureBrowser({ gameweekId, onAdded }) {
                           border: `1px solid ${picked ? 'var(--accent)' : 'var(--border-med)'}`,
                           background: picked ? 'var(--accent)' : 'transparent',
                         }}>
-                        {picked && <i className="ti ti-check text-xs" style={{ color: '#fff' }} aria-hidden="true"/>}
+                        {picked && <i className="ti ti-check text-xs" style={{ color: 'var(--on-accent)' }} aria-hidden="true"/>}
                       </span>
 
                       <span style={{ flex: '1 1 auto', minWidth: 0 }}>

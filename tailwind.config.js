@@ -5,10 +5,10 @@ export default {
     extend: {
       colors: {
         bg: {
-          base:     '#0f1117',
-          surface:  '#181c27',
-          raised:   '#1f2436',
-          elevated: '#252b3b',
+          base:     'var(--bg-base)',
+          surface:  'var(--bg-surface)',
+          raised:   'var(--bg-raised)',
+          elevated: 'var(--bg-elevated)',
         },
       },
       fontFamily: {

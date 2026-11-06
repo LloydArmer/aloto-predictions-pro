@@ -20,7 +20,7 @@ const ROUND_SEQUENCE = ['playoff', 'r64', 'r32', 'r16', 'qf', 'sf', 'f']
 function ParticipantRow({ name, kit, pts, isWinner, isMe, isLive, showWinnerHighlight }) {
   return (
     <div className="flex items-center justify-between px-3 py-2.5"
-      style={{ background: showWinnerHighlight && isWinner ? 'var(--accent-dim)' : isMe ? 'rgba(79,142,247,0.06)' : '' }}>
+      style={{ background: showWinnerHighlight && isWinner ? 'var(--accent-dim)' : isMe ? 'var(--accent-soft)' : '' }}>
       {/* The kit matters most here. A cup tie is two names in a narrow card,
           and initials collide — Matt and Mark Haworth are both "MH", which
           tells you nothing about who you are actually playing. */}

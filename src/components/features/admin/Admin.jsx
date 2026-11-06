@@ -139,7 +139,7 @@ export default function Admin() {
         // The competition picker. "Managing:" was dropped — the folder icon and
         // the picker itself already say what this is, and on a phone the label
         // pushed the control onto a second line.
-        <div className="flex items-center gap-2 mb-3 p-2 rounded-md" style={{ background: 'var(--accent-dim)', border: '0.5px solid rgba(79,142,247,0.3)' }}>
+        <div className="flex items-center gap-2 mb-3 p-2 rounded-md" style={{ background: 'var(--accent-dim)', border: '0.5px solid var(--accent-line)' }}>
           <i className="ti ti-folder text-sm flex-shrink-0" style={{ color: 'var(--accent)' }} aria-hidden="true" />
           <Select value={pickedOk ? activeComp : ''} onChange={e => { if (e.target.value) pickerSet(e.target.value) }} style={{ flex: '1 1 auto', minWidth: 0, fontWeight: 600 }}>
             {/* Shown when the competition selected elsewhere in the app is one
@@ -532,12 +532,13 @@ function PredictionTracker({ competitionId, gameweekId, gwLabel }) {
 
   if (!gameweekId) return null
   if (loading) return <div className="flex justify-center py-4"><Spinner /></div>
-  if (!data.length) return null
+  if (!data.length) return <p className="text-sm text-center py-8" style={{ color: 'var(--txt-muted)' }}>No players in this competition yet.</p>
 
+  const done = data.filter(p => p.hasPredicted).length
   return (
     <Card className="p-4 mb-4">
-      <AdminLabel className="mb-3">Prediction tracker — {gwLabel}</AdminLabel>
-      <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Shows who has saved at least one prediction. Actual scores are hidden.</p>
+      <p className="text-sm font-semibold mb-1" style={{ color: 'var(--txt-primary)' }}>{done} of {data.length} have predicted {gwLabel}</p>
+      <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Shows who has saved at least one prediction. Their scores stay hidden.</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         {data.map(p => (
           <div key={p.user_id} className="flex items-center gap-2">
@@ -565,8 +566,10 @@ function GameweeksTab({ competitionId, competitions }) {
   const [linksByGw, setLinksByGw] = useState({}) // { gameweek_id: [competition_id, ...] }
   const [loading, setLoading] = useState(false)
   const [openGw, setOpenGw] = useState(null)
-  const [showCompleted, setShowCompleted] = useState(false)
-  const [openLinks, setOpenLinks] = useState(null)
+  const [gwFilter, setGwFilter] = useState('current') // current | upcoming | done
+  const [gwTab, setGwTab] = useState('fixtures')       // inside an open gameweek
+  const [showAdd, setShowAdd] = useState(false)
+  const [fxStats, setFxStats] = useState({})           // { gameweek_id: { total, results, first } }
   const [newNumber, setNewNumber] = useState('')
   const [closedMonths, setClosedMonths] = useState([])
 
@@ -591,7 +594,26 @@ function GameweeksTab({ competitionId, competitions }) {
         // competitions each having a "1" showed as three identical cards.
         ? await supabase.from('gameweeks').select('*, competitions(name)').in('id', gwIds)
         : { data: [] }
-      setGws(sortGameweeks(data))
+      const sorted = sortGameweeks(data)
+      setGws(sorted)
+      // Nothing live: start on Upcoming rather than an empty Current list.
+      setGwFilter(f => f === 'current' && !sorted.some(g => g.status === 'active') ? 'upcoming' : f)
+
+      // One line per gameweek in the list says how far along it is.
+      if (data?.length) {
+        const { data: fxs } = await supabase.from('fixtures')
+          .select('gameweek_id, status, home_score, away_score, kickoff_time')
+          .in('gameweek_id', data.map(g => g.id))
+        const stats = {}
+        ;(fxs || []).forEach(f => {
+          if (f.status === 'void') return
+          const st = stats[f.gameweek_id] || (stats[f.gameweek_id] = { total: 0, results: 0, first: null })
+          st.total++
+          if (f.status === 'completed' && f.home_score !== null && f.away_score !== null) st.results++
+          if (f.kickoff_time && (!st.first || f.kickoff_time < st.first)) st.first = f.kickoff_time
+        })
+        setFxStats(stats)
+      } else setFxStats({})
 
       // Which OTHER competitions is each of these gameweeks also linked to?
       if (data?.length) {
@@ -682,214 +704,371 @@ function GameweeksTab({ competitionId, competitions }) {
 
   if (!competitionId) return <EmptyState icon="ti-calendar" title="Create a competition first" />
 
+  // ── Layout ────────────────────────────────────────────────────────────
+  // Two levels instead of one long page. The list shows one line per
+  // gameweek, filtered to Current / Upcoming / Done. Opening one shows just
+  // that gameweek, split into Fixtures, Predictions and Settings tabs, with
+  // the rarely used actions (complete, share, delete) behind a ⋯ menu.
+  // Previously every gameweek card showed every setting and every button at
+  // once, which is what made this screen so dense.
+  const months = [...new Set(gws.map(g => g.month_key).filter(Boolean))].sort()
+  const selected = gws.find(g => g.id === openGw)
+
+  if (selected) {
+    const gw = selected
+    const otherComps = competitions.filter(c => c.id !== competitionId)
+    const linkedElsewhere = (linksByGw[gw.id] || []).filter(id => id !== competitionId)
+    const fromOther = gw.competition_id !== competitionId && gw.competitions?.name
+    const tabs = [
+      { key: 'fixtures',    label: 'Fixtures' },
+      { key: 'predictions', label: 'Predictions' },
+      { key: 'settings',    label: 'Settings' },
+    ]
+    const gwMenu = [
+      gw.status === 'active'
+        ? { label: 'Mark completed', icon: 'ti-circle-check', onClick: () => updateGw(gw.id, { status: 'completed' }) }
+        : { label: 'Set as current', icon: 'ti-player-play', onClick: () => setActive(gw) },
+      { label: 'Share on WhatsApp', icon: 'ti-brand-whatsapp', href: gameweekShareLink(gw, comp?.name) },
+      { label: 'Delete gameweek', icon: 'ti-trash', tone: 'red', onClick: () => deleteGameweek(gw) },
+    ]
+
+    return (
+      <div>
+        {/* Header: back, which gameweek, its status, and the ⋯ menu. */}
+        <div className="flex items-center gap-2.5 mb-3">
+          <button type="button" onClick={() => setOpenGw(null)} aria-label="Back to gameweeks"
+            className="flex items-center justify-center flex-shrink-0"
+            style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border-med)', background: 'var(--bg-raised)', color: 'var(--txt-primary)' }}>
+            <i className="ti ti-chevron-left text-base" aria-hidden="true" />
+          </button>
+          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+            <p className="text-base font-semibold" style={{ color: 'var(--txt-primary)', lineHeight: 1.2 }}>{gw.number}</p>
+            <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+              {fromOther ? `From ${compAbbrev(gw.competitions.name)} · ` : ''}{statusLabel(gw.status)}
+            </p>
+          </div>
+          <GwStatusBadge status={gw.status} />
+          <ActionMenu label={`${gw.number} actions`} items={gwMenu} />
+        </div>
+
+        <div className="flex gap-5 mb-3" role="tablist" style={{ borderBottom: '1px solid var(--border)' }}>
+          {tabs.map(t => (
+            <button key={t.key} type="button" role="tab" aria-selected={gwTab === t.key} onClick={() => setGwTab(t.key)}
+              className="text-sm py-2.5" style={{
+                color: gwTab === t.key ? 'var(--accent-txt)' : 'var(--txt-second)',
+                fontWeight: gwTab === t.key ? 600 : 400,
+                borderBottom: `2px solid ${gwTab === t.key ? 'var(--accent)' : 'transparent'}`,
+                marginBottom: -1,
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {gwTab === 'fixtures' && (
+          <FixturesPanel gameweekId={gw.id} nfl={isNfl} gwNumber={gw.number} onChanged={load} />
+        )}
+
+        {gwTab === 'predictions' && (
+          <PredictionTracker competitionId={competitionId} gameweekId={gw.id} gwLabel={gw.number} />
+        )}
+
+        {gwTab === 'settings' && (
+          <div className="flex flex-col gap-3">
+            <Card className="px-3.5">
+              <SettingRow label="Month" hint="Which month's table this gameweek counts towards">
+                <input type="month" value={gw.month_key || ''} aria-label="Month"
+                  style={{ width: 150, background: 'var(--bg-raised)', border: '0.5px solid var(--border-med)', borderRadius: 8, padding: '6px 8px', color: 'var(--txt-primary)', fontSize: 13, fontFamily: 'inherit' }}
+                  onChange={e => { setGws(prev => prev.map(g => g.id === gw.id ? { ...g, month_key: e.target.value } : g)); updateGw(gw.id, { month_key: e.target.value }) }} />
+              </SettingRow>
+              <SettingRow label="Block Triple Points" hint="Nobody can play Triple Points this gameweek" last>
+                <Toggle checked={!!gw.triple_points_blocked} label="Block Triple Points"
+                  onChange={v => updateGw(gw.id, { triple_points_blocked: v })} />
+              </SettingRow>
+            </Card>
+
+            {/* Blank means the competition's normal bonus, which is what almost
+                every gameweek uses, so these stay folded away until needed. */}
+            <Collapsible title="Full house bonus"
+              summary={gw.full_house_results_bonus == null && gw.full_house_scores_bonus == null ? 'Competition default' : 'Custom for this gameweek'}>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'full_house_results_bonus', label: 'All results right' },
+                  { key: 'full_house_scores_bonus',  label: 'All scores exact' },
+                ].map(f => (
+                  <label key={f.key} className="flex flex-col gap-1.5 text-xs" style={{ color: 'var(--txt-second)' }}>
+                    {f.label}
+                    <input type="number" min="0" placeholder="Default" className="input"
+                      value={gw[f.key] ?? ''}
+                      onChange={e => {
+                        const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
+                        setGws(prev => prev.map(g => g.id === gw.id ? { ...g, [f.key]: v } : g))
+                        updateGw(gw.id, { [f.key]: v })
+                      }} />
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Leave blank to use the competition's normal bonus.</p>
+            </Collapsible>
+
+            {!isNfl && (
+              <Card className="p-3.5">
+                <p className="text-sm mb-1" style={{ color: 'var(--txt-primary)' }}>Where results come from</p>
+                <GameweekFixtureLink gameweek={gw} onLinked={load} />
+              </Card>
+            )}
+
+            {otherComps.length > 0 && (
+              <Collapsible title="Also used in"
+                summary={linkedElsewhere.length ? competitions.filter(c => linkedElsewhere.includes(c.id)).map(c => c.name).join(', ') : 'This competition only'}>
+                <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>Predictions are shared. Each competition scores them with its own rules.</p>
+                <div className="flex flex-col">
+                  {otherComps.map(c => {
+                    const linked = linkedElsewhere.includes(c.id)
+                    return (
+                      <label key={c.id} className="flex items-center gap-2.5 text-sm py-2" style={{ color: 'var(--txt-primary)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={linked} onChange={() => toggleLink(gw.id, c.id, linked)} style={{ accentColor: 'var(--accent)', width: 16, height: 16 }} />
+                        {FORMAT_MARK[c.format] || ''} {c.name}
+                      </label>
+                    )
+                  })}
+                </div>
+              </Collapsible>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── The list ──────────────────────────────────────────────────────────
+  const groups = {
+    current:  gws.filter(g => g.status === 'active'),
+    upcoming: gws.filter(g => g.status !== 'active' && g.status !== 'completed'),
+    done:     gws.filter(g => g.status === 'completed').slice().reverse(),
+  }
+  const filters = [
+    { key: 'current',  label: 'Current' },
+    { key: 'upcoming', label: 'Upcoming' },
+    { key: 'done',     label: 'Done' },
+  ]
+  const shown = groups[gwFilter]
+  const openGameweek = id => { setGwTab('fixtures'); setOpenGw(id) }
+
   return (
     <div>
-      <Card className="p-4 mb-4">
-        <AdminLabel className="mb-3">Add a gameweek</AdminLabel>
-        <form onSubmit={addGameweek} className="flex items-end gap-2">
-          <div>
-            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Gameweek label</p>
-            <Input value={newNumber} onChange={e => setNewNumber(e.target.value)} placeholder="1, R16, QF1…" style={{ width: 100 }} />
-          </div>
-          <Button type="submit" variant="primary" size="sm">Add gameweek</Button>
-        </form>
-      </Card>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <div className="seg-control" style={{ flex: '1 1 auto' }}>
+          {filters.map(f => (
+            <button key={f.key} type="button" className={`seg-btn${gwFilter === f.key ? ' active' : ''}`} onClick={() => setGwFilter(f.key)}
+              style={{ whiteSpace: 'nowrap', padding: '7px 6px' }}>
+              {f.label}{groups[f.key].length ? ` ${groups[f.key].length}` : ''}
+            </button>
+          ))}
+        </div>
+        <Button variant="primary" size="sm" onClick={() => setShowAdd(v => !v)} aria-expanded={showAdd}>
+          <i className={`ti ${showAdd ? 'ti-x' : 'ti-plus'} text-sm`} aria-hidden="true" />Gameweek
+        </Button>
+      </div>
+
+      {showAdd && (
+        <Card className="p-3.5 mb-3">
+          <form onSubmit={e => { addGameweek(e); setShowAdd(false); setGwFilter('upcoming') }} className="flex items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--txt-muted)' }}>
+              Gameweek label
+              <Input value={newNumber} onChange={e => setNewNumber(e.target.value)} placeholder="1, R16, QF1…" style={{ width: 120 }} autoFocus />
+            </label>
+            <Button type="submit" variant="primary" size="sm">Add</Button>
+          </form>
+        </Card>
+      )}
 
       {loading ? <div className="flex justify-center py-10"><Spinner /></div>
-        : gws.length === 0 ? <EmptyState icon="ti-calendar" title="No gameweeks yet" description="Add one above to start"/>
-        : (() => {
-            const activeGws = gws.filter(g => g.status === 'active')
-            const otherGws = gws.filter(g => g.status !== 'active')
-            const renderGw = (gw) => {
-              const otherComps = competitions.filter(c => c.id !== competitionId)
-              const linkedElsewhere = (linksByGw[gw.id] || []).filter(id => id !== competitionId)
-            return (
-            <Card key={gw.id} className="p-3 mb-2">
-              {/* Three bands rather than one wrapping row.
-                  Previously every control — status, month, checkbox, two bonus
-                  boxes, four buttons — sat in a single flex-wrap, so on a phone
-                  they landed wherever they fitted and nothing lined up with
-                  anything. Now: what this gameweek IS, then its settings on a
-                  labelled grid, then what you can DO with it. */}
-
-              {/* Band 1 — identity and status */}
-              <div className="flex items-center gap-2 flex-wrap mb-3">
-                {/* The rule carries the status colour, so a glance down a list
-                    of gameweeks shows which is live without reading a word. */}
-                <span style={{
-                  width: 3, height: 15, borderRadius: 2, flexShrink: 0,
-                  background: gw.status === 'active' ? 'var(--green)'
-                    : gw.status === 'completed' ? 'var(--txt-muted)'
-                    : 'var(--accent)',
-                }}/>
-                <span className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>{gw.number}</span>
-
-                {/* Whose gameweek this actually is. Only shown when it belongs
-                    to another competition — assigning a gameweek to a cup tie
-                    links it here automatically, so this list can hold three
-                    gameweeks all called "1" from three different competitions. */}
-                {gw.competition_id !== competitionId && gw.competitions?.name && (
-                  <span className="text-xs px-1.5 py-0.5 rounded" title={gw.competitions.name}
-                    style={{ background: 'var(--bg-elevated)', color: 'var(--txt-muted)', border: '0.5px solid var(--border)' }}>
-                    from {compAbbrev(gw.competitions.name)}
-                  </span>
-                )}
-                <Badge variant={gw.status === 'active' ? 'result' : gw.status === 'completed' ? 'exact' : 'upcoming'}>{gw.status}</Badge>
-                <span style={{ flex: '1 1 auto' }} />
-                {gw.status !== 'active' && <Button size="sm" onClick={() => setActive(gw)}>Set as current</Button>}
-                {gw.status === 'active' && <Button size="sm" onClick={() => updateGw(gw.id, { status: 'completed' })}>Mark completed</Button>}
-                <button onClick={() => deleteGameweek(gw)} title="Delete gameweek"
-                  className="flex items-center justify-center flex-shrink-0" style={{ width: 28, height: 28, color: 'var(--txt-muted)' }}>
-                  <i className="ti ti-trash text-sm" aria-hidden="true" />
-                </button>
-              </div>
-
-              {/* Band 2 — settings, each with a label above it so the fields
-                  line up in a column instead of trailing off a wrapped row. */}
-              {/* Darker than the card, not lighter. A lighter panel reads as
-                  sitting ON TOP of its parent; darker reads as inside it,
-                  which is what it is. */}
-              <div className="mb-3 p-3 rounded-lg" style={{
-                background: 'var(--bg-base, #0d0f14)',
-                border: '1px solid var(--border)',
-              }}>
-                <p className="text-xs font-semibold mb-2.5" style={{
-                  color: 'var(--txt-muted)', letterSpacing: '0.1em', textTransform: 'uppercase',
-                }}>
-                  Gameweek settings
-                </p>
-                <div className="flex flex-wrap gap-x-4 gap-y-2.5">
-                  <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Month</p>
-                    <input type="month" value={gw.month_key || ''}
-                      style={{ width: 150, background:'var(--bg-surface)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }}
-                      onChange={e => { setGws(prev => prev.map(g => g.id === gw.id ? { ...g, month_key: e.target.value } : g)); updateGw(gw.id, { month_key: e.target.value }) }} />
-                  </div>
-
-                  {/* Full house bonus overrides. Blank means the competition's
-                      normal rule — which is what almost every gameweek should
-                      use, so the placeholder says so rather than showing a
-                      cryptic "Res" / "Sc". */}
-                  <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>
-                      Full house bonus for this gameweek
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs" style={{ color: 'var(--txt-second)', width: 46 }}>Results</span>
-                        <input type="number" min="0" placeholder="default"
-                          value={gw.full_house_results_bonus ?? ''}
-                          onChange={e => {
-                            const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
-                            setGws(prev => prev.map(g => g.id === gw.id ? { ...g, full_house_results_bonus: v } : g))
-                            updateGw(gw.id, { full_house_results_bonus: v })
-                          }}
-                          style={{ width: 76, background:'var(--bg-surface)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs" style={{ color: 'var(--txt-second)', width: 44 }}>Scores</span>
-                        <input type="number" min="0" placeholder="default"
-                          value={gw.full_house_scores_bonus ?? ''}
-                          onChange={e => {
-                            const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
-                            setGws(prev => prev.map(g => g.id === gw.id ? { ...g, full_house_scores_bonus: v } : g))
-                            updateGw(gw.id, { full_house_scores_bonus: v })
-                          }}
-                          style={{ width: 76, background:'var(--bg-surface)', border:'0.5px solid var(--border-med)', borderRadius:8, padding:'6px 8px', color:'var(--txt-primary)', fontSize:13, fontFamily:'inherit' }} />
-                      </div>
-                    </div>
-                    <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>
-                      Leave blank to use the competition's normal bonus
-                    </p>
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-2 text-xs mt-2.5" style={{ color: 'var(--txt-second)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={gw.triple_points_blocked || false}
-                    onChange={e => updateGw(gw.id, { triple_points_blocked: e.target.checked })}
-                    style={{ accentColor: 'var(--accent)' }} />
-                  Block Triple Points this gameweek
-                </label>
-              </div>
-
-              {/* Band 3 — actions */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {otherComps.length > 0 && (
-                  <Button size="sm" onClick={() => setOpenLinks(openLinks === gw.id ? null : gw.id)}>
-                    {linkedElsewhere.length > 0 ? `In ${linkedElsewhere.length} other comp${linkedElsewhere.length !== 1 ? 's' : ''}` : 'Use elsewhere'}
-                  </Button>
-                )}
-                <a href={gameweekShareLink(gw, comp?.name)} target="_blank" rel="noreferrer"
-                  className="text-xs px-2.5 py-1.5 rounded flex items-center gap-1" style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '0.5px solid rgba(52,208,122,0.3)' }}>
-                  <i className="ti ti-brand-whatsapp text-xs" aria-hidden="true"/>Share
-                </a>
-                <Button size="sm" onClick={() => setOpenGw(openGw === gw.id ? null : gw.id)}>
-                  {openGw === gw.id ? 'Hide fixtures' : 'Manage fixtures'}
-                </Button>
-              </div>
-
-              {/* Where results come from: typed in, or pulled from a real
-                  competition. Below the actions rather than among them — it's a
-                  setting for the gameweek, not something you do to it, and it
-                  states the current position even when collapsed. */}
-              {!isNfl && <GameweekFixtureLink gameweek={gw} onLinked={load} />}
-
-              {openLinks === gw.id && (
-                <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
-                  <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>Which other competitions should also use {gw.number}'s fixtures? Predictions are shared — each competition scores them with its own rules.</p>
-                  <div className="flex flex-wrap gap-2">
-                    {otherComps.map(c => {
-                      const linked = linkedElsewhere.includes(c.id)
-                      return (
-                        <label key={c.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-elevated)', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={linked} onChange={() => toggleLink(gw.id, c.id, linked)} />
-                          {FORMAT_MARK[c.format] || ''} {c.name}
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {gw.status === 'active' && <PredictionTracker competitionId={competitionId} gameweekId={gw.id} gwLabel={gw.number} />}
-              {openGw === gw.id && <FixturesPanel gameweekId={gw.id} nfl={isNfl} gwNumber={gw.number} />}
-            </Card>
-          )
-        }
-        return (
-          <>
-            {activeGws.map(gw => renderGw(gw))}
-            {otherGws.length > 0 && (
-              <button className="w-full text-xs py-2 mb-2 rounded-md flex items-center justify-center gap-1"
-                style={{ color: 'var(--txt-muted)', border: '0.5px dashed var(--border)' }}
-                onClick={() => setShowCompleted(v => !v)}>
-                <i className={`ti ti-chevron-${showCompleted ? 'up' : 'down'} text-xs`} aria-hidden="true"/>
-                {showCompleted ? 'Hide' : 'Show'} {otherGws.length} completed/upcoming gameweek{otherGws.length !== 1 ? 's' : ''}
-              </button>
-            )}
-            {showCompleted && otherGws.map(gw => renderGw(gw))}
-          </>
+        : gws.length === 0 ? <EmptyState icon="ti-calendar" title="No gameweeks yet" description="Tap + Gameweek to add the first one" />
+        : shown.length === 0 ? (
+          <p className="text-sm text-center py-8" style={{ color: 'var(--txt-muted)' }}>
+            {gwFilter === 'current' ? 'No gameweek is live. Open one from Upcoming and set it as current.' : gwFilter === 'upcoming' ? 'Nothing upcoming.' : 'No completed gameweeks yet.'}
+          </p>
         )
-      })()
+        : gwFilter === 'current' ? (
+          shown.map(gw => {
+            const st = fxStats[gw.id] || { total: 0, results: 0 }
+            return (
+              <Card key={gw.id} className="p-3.5 mb-2.5" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-base font-semibold" style={{ color: 'var(--txt-primary)' }}>{gw.number}</span>
+                  <GwStatusBadge status={gw.status} />
+                  {gw.competition_id !== competitionId && gw.competitions?.name && (
+                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>from {compAbbrev(gw.competitions.name)}</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <MiniStat label="Fixtures" value={st.total} />
+                  <MiniStat label="Results in" value={`${st.results} / ${st.total}`} />
+                </div>
+                <Button variant="primary" className="w-full justify-center" onClick={() => openGameweek(gw.id)}>Open gameweek</Button>
+              </Card>
+            )
+          })
+        ) : (
+          <Card className="overflow-hidden">
+            {shown.map((gw, i) => {
+              const st = fxStats[gw.id] || { total: 0, results: 0, first: null }
+              return (
+                <button key={gw.id} type="button" onClick={() => openGameweek(gw.id)}
+                  className="flex items-center gap-3 w-full text-left px-3.5"
+                  style={{ minHeight: 54, borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--txt-primary)', minWidth: 48 }}>{gw.number}</span>
+                  <span className="text-xs" style={{ flex: '1 1 auto', minWidth: 0, color: st.total ? 'var(--txt-second)' : 'var(--amber)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {st.total
+                      ? `${st.first ? formatUK(st.first, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' : ''}${st.total} fixture${st.total !== 1 ? 's' : ''}`
+                      : 'No fixtures yet'}
+                  </span>
+                  {gw.competition_id !== competitionId && gw.competitions?.name && (
+                    <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>{compAbbrev(gw.competitions.name)}</span>
+                  )}
+                  <i className="ti ti-chevron-right text-sm" style={{ color: 'var(--txt-muted)' }} aria-hidden="true" />
+                </button>
+              )
+            })}
+          </Card>
+        )
       }
 
-      {[...new Set(gws.map(g => g.month_key).filter(Boolean))].length > 0 && (
-        <Card className="p-4 mt-4">
-          <AdminLabel className="mb-2">Monthly closure</AdminLabel>
-          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Close a month once every gameweek that belongs to it is done — this is what lets the Table page's Monthly tab safely declare a winner.</p>
-          {[...new Set(gws.map(g => g.month_key).filter(Boolean))].sort().map(monthKey => {
-            const isClosed = closedMonths.includes(monthKey)
-            return (
-              <div key={monthKey} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-                <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{monthKey}</span>
-                <div className="flex items-center gap-2">
-                  <Badge variant={isClosed ? 'result' : 'upcoming'}>{isClosed ? 'Closed' : 'Open'}</Badge>
-                  <Button size="sm" onClick={() => toggleMonthClosed(monthKey, isClosed)}>{isClosed ? 'Reopen' : 'Close month'}</Button>
+      {months.length > 0 && (
+        <div className="mt-4">
+          <Collapsible title="Monthly closure"
+            summary={`${months.filter(m => !closedMonths.includes(m)).length} open · ${months.filter(m => closedMonths.includes(m)).length} closed`}>
+            <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>Close a month once every gameweek in it is done. That lets the Table page's Monthly tab declare a winner.</p>
+            {months.map(monthKey => {
+              const isClosed = closedMonths.includes(monthKey)
+              return (
+                <div key={monthKey} className="flex items-center justify-between py-2" style={{ borderTop: '1px solid var(--border)' }}>
+                  <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{monthKey}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={isClosed ? 'result' : 'upcoming'}>{isClosed ? 'Closed' : 'Open'}</Badge>
+                    <Button size="sm" onClick={() => toggleMonthClosed(monthKey, isClosed)}>{isClosed ? 'Reopen' : 'Close'}</Button>
+                  </div>
                 </div>
-              </div>
+              )
+            })}
+          </Collapsible>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function statusLabel(status) {
+  return status === 'active' ? 'Live now' : status === 'completed' ? 'Completed' : 'Upcoming'
+}
+
+function GwStatusBadge({ status }) {
+  return (
+    <Badge variant={status === 'active' ? 'exact' : status === 'completed' ? 'upcoming' : 'result'}>
+      {status === 'active' ? 'Live' : status === 'completed' ? 'Done' : 'Upcoming'}
+    </Badge>
+  )
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div>
+      <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{label}</p>
+      <p className="text-base font-semibold num" style={{ color: 'var(--txt-primary)' }}>{value}</p>
+    </div>
+  )
+}
+
+/** One labelled setting on a line, the control on the right. */
+function SettingRow({ label, hint, children, last = false }) {
+  return (
+    <div className="flex items-center gap-3 py-3" style={{ borderBottom: last ? 'none' : '1px solid var(--border)' }}>
+      <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+        <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>{label}</p>
+        {hint && <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>{hint}</p>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/** An on/off switch. A real checkbox underneath, so it works with a keyboard. */
+function Toggle({ checked, onChange, label }) {
+  return (
+    <label className="flex-shrink-0" style={{ position: 'relative', width: 44, height: 26, cursor: 'pointer' }}>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} aria-label={label}
+        style={{ position: 'absolute', opacity: 0, width: '100%', height: '100%', margin: 0, cursor: 'pointer' }} />
+      <span aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 13, background: checked ? 'var(--accent)' : 'var(--border-med)', transition: 'background 0.15s' }} />
+      <span aria-hidden="true" style={{ position: 'absolute', top: 3, left: checked ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#fff', transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.25)' }} />
+    </label>
+  )
+}
+
+/** A card that folds away: title and a one-line summary when closed. */
+function Collapsible({ title, summary, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <Card className="overflow-hidden">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="flex items-center gap-3 w-full text-left px-3.5" style={{ minHeight: 54 }}>
+        <span style={{ flex: '1 1 auto', minWidth: 0 }}>
+          <span className="text-sm block" style={{ color: 'var(--txt-primary)' }}>{title}</span>
+          {summary && <span className="text-xs block" style={{ color: 'var(--txt-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</span>}
+        </span>
+        <i className={`ti ti-chevron-${open ? 'up' : 'down'} text-sm`} style={{ color: 'var(--txt-muted)' }} aria-hidden="true" />
+      </button>
+      {open && <div className="px-3.5 pb-3.5">{children}</div>}
+    </Card>
+  )
+}
+
+/**
+ * A ⋯ button that opens a short list of actions. Used for the things you do
+ * now and then (void, delete, share) so they stop taking up a row of buttons
+ * on every gameweek and fixture.
+ *
+ * items: [{ label, icon?, onClick?, href?, tone?: 'red' | 'amber' }]
+ */
+function ActionMenu({ items, label = 'More actions', size = 36 }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    // Next tick, so the click that opened the menu doesn't also close it.
+    const t = setTimeout(() => document.addEventListener('click', close), 0)
+    const onKey = e => { if (e.key === 'Escape') close() }
+    document.addEventListener('keydown', onKey)
+    return () => { clearTimeout(t); document.removeEventListener('click', close); document.removeEventListener('keydown', onKey) }
+  }, [open])
+  const toneColour = t => t === 'red' ? 'var(--red)' : t === 'amber' ? 'var(--amber)' : 'var(--txt-primary)'
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center justify-center"
+        style={{ width: size, height: size, borderRadius: 10, border: size >= 36 ? '1px solid var(--border-med)' : 'none', background: size >= 36 ? 'var(--bg-raised)' : 'transparent', color: size >= 36 ? 'var(--txt-primary)' : 'var(--txt-muted)' }}>
+        <i className="ti ti-dots text-base" aria-hidden="true" />
+      </button>
+      {open && (
+        <div role="menu" className="flex flex-col p-1.5" style={{
+          position: 'absolute', right: 0, top: size + 6, zIndex: 30, minWidth: 200,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-med)', borderRadius: 12,
+          boxShadow: '0 12px 32px var(--shadow-col)',
+        }}>
+          {items.filter(Boolean).map(it => {
+            const inner = (
+              <>
+                {it.icon && <i className={`ti ${it.icon} text-sm`} aria-hidden="true" />}
+                {it.label}
+              </>
             )
+            const style = { minHeight: 40, padding: '0 10px', borderRadius: 8, color: toneColour(it.tone), fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', width: '100%' }
+            return it.href
+              ? <a key={it.label} role="menuitem" href={it.href} target="_blank" rel="noreferrer" style={style} onClick={() => setOpen(false)}>{inner}</a>
+              : <button key={it.label} role="menuitem" type="button" style={style} onClick={() => { setOpen(false); it.onClick?.() }}>{inner}</button>
           })}
-        </Card>
+        </div>
       )}
     </div>
   )
@@ -907,7 +1086,9 @@ function parseScore(v) {
   return /^\d{1,2}$/.test(t) ? Number(t) : null
 }
 
-function FixturesPanel({ gameweekId, nfl = false, gwNumber }) {
+function FixturesPanel({ gameweekId, nfl = false, gwNumber, onChanged }) {
+  // null, 'pick' (from the fixture list / NFL schedule) or 'manual'.
+  const [addMode, setAddMode] = useState(null)
   const [fixtures, setFixtures] = useState([])
   const [loading, setLoading] = useState(false)
   const [home, setHome] = useState('')
@@ -1038,104 +1219,114 @@ function FixturesPanel({ gameweekId, nfl = false, gwNumber }) {
     finally { setRecalculating(false) }
   }
 
-  return (
-    <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
-      {/* Picking real fixtures comes first: it's the route that works without
-          anything having to match, and it fills in the official team names.
-          Typing them by hand stays below for anything not covered. */}
-      {nfl
-        ? <NflGamePicker gameweekId={gameweekId} gwNumber={gwNumber} onAdded={load} />
-        : <FixtureBrowser gameweekId={gameweekId} onAdded={load} />}
+  const resultsIn = fixtures.filter(fx => fx.status === 'completed' && fx.home_score !== null && fx.away_score !== null).length
+  const counted = fixtures.filter(fx => fx.status !== 'void').length
 
-      {/* Labelled fields on a grid rather than a wrapping row of placeholders.
-          Three inputs and a button in one flex-wrap landed differently at every
-          width, and a placeholder disappears the moment you start typing — so
-          on a narrow screen you couldn't tell which box was the away team. */}
-      <form onSubmit={addFixture} className="mb-3">
-        <div className="flex flex-wrap gap-2 mb-2">
-          <div style={{ flex: '1 1 140px', minWidth: 0 }}>
-            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Home team</p>
-            <Input value={home} onChange={e => setHome(e.target.value)} className="w-full" />
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-2.5">
+        <span className="text-sm" style={{ color: 'var(--txt-second)' }}>
+          {fixtures.length ? `${resultsIn} of ${counted} results entered` : 'No fixtures yet'}
+        </span>
+        {/* Adding is one button that opens the two ways to do it, rather than
+            both forms sitting open above the list all the time. */}
+        <Button size="sm" onClick={() => setAddMode(m => m ? null : 'pick')} aria-expanded={!!addMode}>
+          <i className={`ti ${addMode ? 'ti-x' : 'ti-plus'} text-sm`} aria-hidden="true" />{addMode ? 'Close' : 'Add fixtures'}
+        </Button>
+      </div>
+
+      {addMode && (
+        <Card className="p-3.5 mb-3">
+          <div className="seg-control mb-3">
+            <button type="button" className={`seg-btn${addMode === 'pick' ? ' active' : ''}`} onClick={() => setAddMode('pick')}>
+              {nfl ? 'From NFL schedule' : 'From fixture list'}
+            </button>
+            <button type="button" className={`seg-btn${addMode === 'manual' ? ' active' : ''}`} onClick={() => setAddMode('manual')}>Type manually</button>
           </div>
-          <div style={{ flex: '1 1 140px', minWidth: 0 }}>
-            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Away team</p>
-            <Input value={away} onChange={e => setAway(e.target.value)} className="w-full" />
-          </div>
-          <div style={{ flex: '0 1 210px', minWidth: 0 }}>
-            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Kick-off</p>
-            {/* Capped rather than full-width. A datetime-local input stretches
-                to whatever it's given, and at full width its picker controls
-                sat marooned at the far right of an otherwise empty box. It only
-                needs room for "28/08/2026, 15:00". */}
-            <Input type="datetime-local" value={kickoff} onChange={e => setKickoff(e.target.value)}
-              style={{ width: '100%', maxWidth: 210 }} />
-          </div>
-        </div>
-        <Button type="submit" variant="primary" size="sm">Add fixture</Button>
-      </form>
-      <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Kickoff times are treated as UK local time (GMT/BST automatically) and locked for predictions exactly at kickoff.</p>
+
+          {addMode === 'pick' && (nfl
+            ? <NflGamePicker gameweekId={gameweekId} gwNumber={gwNumber} onAdded={() => { load(); onChanged?.() }} />
+            : <FixtureBrowser gameweekId={gameweekId} onAdded={() => { load(); onChanged?.() }} />)}
+
+          {addMode === 'manual' && (
+            <form onSubmit={addFixture}>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <label className="flex flex-col gap-1 text-xs" style={{ flex: '1 1 140px', minWidth: 0, color: 'var(--txt-muted)' }}>
+                  Home team
+                  <Input value={home} onChange={e => setHome(e.target.value)} className="w-full" />
+                </label>
+                <label className="flex flex-col gap-1 text-xs" style={{ flex: '1 1 140px', minWidth: 0, color: 'var(--txt-muted)' }}>
+                  Away team
+                  <Input value={away} onChange={e => setAway(e.target.value)} className="w-full" />
+                </label>
+                <label className="flex flex-col gap-1 text-xs" style={{ flex: '0 1 210px', minWidth: 0, color: 'var(--txt-muted)' }}>
+                  Kick-off (UK time)
+                  <Input type="datetime-local" value={kickoff} onChange={e => setKickoff(e.target.value)} style={{ width: '100%', maxWidth: 210 }} />
+                </label>
+              </div>
+              <Button type="submit" variant="primary" size="sm">Add fixture</Button>
+              <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>Predictions lock exactly at kick-off.</p>
+            </form>
+          )}
+        </Card>
+      )}
 
       {loading ? <div className="flex justify-center py-6"><Spinner size="sm"/></div>
-        : fixtures.length === 0 ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No fixtures yet</p>
+        : fixtures.length === 0 ? null
         : <>
-          {fixtures.map(fx => (
-            <div key={fx.id} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: 'var(--border)' }}>
-              <div style={{ minWidth: 0, flex: '1 1 160px' }}>
-                <p className="text-sm" style={{ color: fx.status === 'void' ? 'var(--txt-muted)' : 'var(--txt-primary)', textDecoration: fx.status === 'void' ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fx.home_team} vs {fx.away_team}</p>
-                <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
-                  {formatUK(fx.kickoff_time, { weekday: 'short', day: '2-digit', month: 'short' })} UK
-                  {fx.status === 'void' && <span style={{ color: 'var(--amber)' }}> · Void{fx.void_reason ? ` — ${fx.void_reason}` : ''}</span>}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {(() => {
-                  if (fx.status === 'void') return <Badge variant="live">Void</Badge>
-
-                  // Only a result with BOTH scores counts as saved. A half-saved
-                  // one falls through to the boxes, pre-filled, so it can be put
-                  // right instead of sitting there as "0 –" with no way to fix it.
-                  const hasResult = fx.status === 'completed' && fx.home_score !== null && fx.away_score !== null
-                  if (hasResult && !editing[fx.id]) return (
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant="result">{fx.home_score} – {fx.away_score}</Badge>
-                      <button onClick={() => startEdit(fx)} title="Correct result"
-                        className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
-                        <i className="ti ti-pencil text-sm" aria-hidden="true" />
-                      </button>
-                    </div>
-                  )
-
-                  const v = boxValues(fx)
-                  const valid = parseScore(v.home) !== null && parseScore(v.away) !== null
-                  return (
-                    <div className="flex items-center gap-1.5">
-                      <Input type="number" min="0" step="1" inputMode="numeric" placeholder="H" style={{ width: 46 }}
-                        value={v.home} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...boxValues(fx), ...s[fx.id], home: e.target.value } }))} />
-                      <span style={{ color: 'var(--txt-muted)' }}>–</span>
-                      <Input type="number" min="0" step="1" inputMode="numeric" placeholder="A" style={{ width: 46 }}
-                        value={v.away} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...boxValues(fx), ...s[fx.id], away: e.target.value } }))} />
-                      <Button size="sm" onClick={() => saveResult(fx)} disabled={!valid || recalculating}>Save</Button>
-                      {editing[fx.id] && <Button size="sm" onClick={() => cancelEdit(fx)}>Cancel</Button>}
-                    </div>
-                  )
-                })()}
-                {/* Void, not delete. Deleting removes the predictions people
-                    already made; voiding keeps them and simply stops the fixture
-                    counting, which is what a postponement actually is. */}
-                <button onClick={() => toggleVoid(fx)} title={fx.status === 'void' ? 'Restore fixture' : 'Void fixture (postponed / abandoned)'}
-                  className="flex items-center justify-center" style={{ width: 24, height: 24, color: fx.status === 'void' ? 'var(--amber)' : 'var(--txt-muted)' }}>
-                  <i className={`ti ${fx.status === 'void' ? 'ti-rotate' : 'ti-ban'} text-sm`} aria-hidden="true" />
-                </button>
-                <button onClick={() => deleteFixture(fx)} title="Delete fixture"
-                  className="flex items-center justify-center" style={{ width: 24, height: 24, color: 'var(--txt-muted)' }}>
-                  <i className="ti ti-trash text-sm" aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-          ))}
-          <Button variant="primary" size="sm" className="mt-3" onClick={() => recalc()} disabled={recalculating}>
-            {recalculating ? 'Recalculating…' : 'Recalculate GW'}
-          </Button>
+          <Card className="overflow-hidden">
+            {fixtures.map((fx, i) => {
+              const isVoid = fx.status === 'void'
+              // Only a result with BOTH scores counts as saved. A half-saved
+              // one falls through to the boxes, pre-filled, so it can be put
+              // right instead of sitting there as "0 –" with no way to fix it.
+              const hasResult = fx.status === 'completed' && fx.home_score !== null && fx.away_score !== null
+              const entering = !isVoid && (!hasResult || editing[fx.id])
+              const v = boxValues(fx)
+              const valid = parseScore(v.home) !== null && parseScore(v.away) !== null
+              const menu = [
+                hasResult && !editing[fx.id] && { label: 'Correct result', icon: 'ti-pencil', onClick: () => startEdit(fx) },
+                { label: isVoid ? 'Restore fixture' : 'Void (postponed)', icon: isVoid ? 'ti-rotate' : 'ti-ban', tone: 'amber', onClick: () => toggleVoid(fx) },
+                { label: 'Delete fixture', icon: 'ti-trash', tone: 'red', onClick: () => deleteFixture(fx) },
+              ]
+              return (
+                <div key={fx.id} className="flex items-center gap-2 px-3 flex-wrap"
+                  style={{ minHeight: 58, paddingTop: 8, paddingBottom: 8, borderTop: i ? '1px solid var(--border)' : 'none', background: entering && (scores[fx.id] || editing[fx.id]) ? 'var(--bg-raised)' : 'transparent' }}>
+                  <div style={{ minWidth: 0, flex: '1 1 110px' }}>
+                    <p className="text-sm" style={{ color: isVoid ? 'var(--txt-muted)' : 'var(--txt-primary)', textDecoration: isVoid ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fx.home_team} v {fx.away_team}</p>
+                    <p className="text-xs" style={{ color: isVoid ? 'var(--amber)' : 'var(--txt-muted)' }}>
+                      {isVoid
+                        ? `Void${fx.void_reason ? ` · ${fx.void_reason}` : ''}`
+                        : formatUK(fx.kickoff_time, { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {hasResult && !editing[fx.id] && (
+                      <span className="text-sm font-semibold num px-2.5 py-1 rounded-md" style={{ background: 'var(--accent-dim)', color: 'var(--accent-txt)' }}>
+                        {fx.home_score} – {fx.away_score}
+                      </span>
+                    )}
+                    {entering && (
+                      <>
+                        <Input type="number" min="0" step="1" inputMode="numeric" placeholder="H" aria-label={`${fx.home_team} score`} style={{ width: 42, padding: 0, textAlign: 'center' }}
+                          value={v.home} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...boxValues(fx), ...s[fx.id], home: e.target.value } }))} />
+                        <Input type="number" min="0" step="1" inputMode="numeric" placeholder="A" aria-label={`${fx.away_team} score`} style={{ width: 42, padding: 0, textAlign: 'center' }}
+                          value={v.away} onChange={e => setScores(s => ({ ...s, [fx.id]: { ...boxValues(fx), ...s[fx.id], away: e.target.value } }))} />
+                        <Button size="sm" variant={valid ? 'primary' : 'default'} onClick={() => saveResult(fx)} disabled={!valid || recalculating}>Save</Button>
+                        {editing[fx.id] && <Button size="sm" variant="ghost" onClick={() => cancelEdit(fx)}>Cancel</Button>}
+                      </>
+                    )}
+                    <ActionMenu label={`${fx.home_team} v ${fx.away_team} actions`} size={32} items={menu} />
+                  </div>
+                </div>
+              )
+            })}
+          </Card>
+          <div className="flex gap-2 mt-3">
+            <Button variant="primary" className="flex-1 justify-center" onClick={() => recalc()} disabled={recalculating}>
+              {recalculating ? 'Recalculating…' : 'Recalculate gameweek'}
+            </Button>
+          </div>
         </>
       }
     </div>
@@ -1500,7 +1691,7 @@ function GroupStageTab({ competitionId, competitions }) {
       })}
 
       {standings.length > 0 && (
-        <Card className="p-4 mt-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
+        <Card className="p-4 mt-4" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)' }}>
           <AdminLabel className="mb-2">Progress to knockout</AdminLabel>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>Once the group table is where you want it, set who qualifies directly, who's eliminated, and which round the rest play into.</p>
           <div className="flex flex-wrap gap-2 items-end mb-3">
@@ -1839,7 +2030,7 @@ function BracketTab({ competitionId, competitions }) {
   return (
     <div>
       {!hasAnyMatches && preview && (
-        <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.35)' }}>
+        <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)' }}>
           <AdminLabel className="mb-2">Generate knockout bracket</AdminLabel>
           {preview.playoffCount === 0
             ? <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>{preview.N} participants — a clean bracket. {preview.N / 2} matches from <strong>{ROUND_OPTIONS.find(r => r.value === preview.targetRoundValue)?.label}</strong> to the Final, all linked automatically.</p>
@@ -1994,7 +2185,7 @@ function BracketTab({ competitionId, competitions }) {
       )}
 
       {hasAnyMatches && currentRoundResolved && nextRound && !nextRoundHasMatches && (
-        <Card className="p-4 mt-2" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.35)' }}>
+        <Card className="p-4 mt-2" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)' }}>
           <AdminLabel className="mb-2">Draw {roundLabel(nextRound)}</AdminLabel>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
             {roundLabel(currentRound)} is complete. {getNextRoundPool().length} participants will be randomly drawn: {getNextRoundPool().map(id => participants.find(p => p.user_id === id)?.profiles?.display_name).filter(Boolean).join(', ')}.
@@ -2150,7 +2341,7 @@ function JoinCodeCard({ competitionId, competitionName, initialCode, onChanged }
   if (!code) return null
 
   return (
-    <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
+    <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)' }}>
       <p className="text-xs font-medium mb-1" style={{ color: 'var(--accent)' }}>Join code</p>
       <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
         Share this and people can add themselves — no need to add them here one by one.
@@ -2452,7 +2643,7 @@ function AdminCard({ title, tone, children, className = '', right }) {
 function AdminPanel({ title, children, className = '' }) {
   return (
     <div className={`rounded-lg p-3 ${className}`} style={{
-      background: 'var(--bg-base, #0d0f14)',
+      background: 'var(--bg-base)',
       border: '1px solid var(--border)',
     }}>
       {title && (
@@ -2468,18 +2659,18 @@ function AdminPanel({ title, children, className = '' }) {
 }
 
 const ADMIN_CARD = {
-  background: 'var(--bg-surface, #141822)',
+  background: 'var(--bg-surface)',
   // A step brighter than the old border, plus a hairline highlight along the
   // top and a soft shadow beneath. Cards lift off the background instead of
   // dissolving into it.
   border: '1px solid var(--border-med)',
   borderRadius: 14,
   overflow: 'hidden',
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 12px rgba(0,0,0,0.35)',
+  boxShadow: 'inset 0 1px 0 var(--hairline), 0 2px 12px var(--shadow-col)',
 }
 
 const ADMIN_HEAD = {
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.035), transparent)',
+  background: 'linear-gradient(180deg, var(--sheen), transparent)',
   borderBottom: '1px solid var(--border-med)',
 }
 
@@ -2495,11 +2686,11 @@ function AdminStyles() {
     <style>{`
       .aloto-admin .card {
         border-color: var(--border-med);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 12px rgba(0,0,0,0.35);
+        box-shadow: inset 0 1px 0 var(--hairline), 0 2px 12px var(--shadow-col);
       }
       /* A card nested inside another goes darker, so depth reads correctly. */
       .aloto-admin .card .card {
-        background: var(--bg-base, #0d0f14);
+        background: var(--bg-base);
         border-color: var(--border);
         box-shadow: none;
       }

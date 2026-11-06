@@ -612,7 +612,7 @@ export default function SeasonTab({ competitionId, competitions = [], sport = 'f
 
       {/* ================= SCORING ================= */}
       {(tableConfig || pickConfig) && (
-        <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
+        <Card className="p-4 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)' }}>
           <p className="text-sm font-medium mb-1" style={{ color: 'var(--accent)' }}>Calculate season points</p>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-second)' }}>
             Run this once the season's final gameweek has been played. It scores everyone against the final
@@ -944,7 +944,7 @@ function CustomPickForm({ onCreate }) {
 /** Shown where the setup would be, for an admin on the free plan. */
 function ProLockedPicks() {
   return (
-    <Card className="p-4 mb-5" style={{ background: 'var(--gold-dim)', borderColor: 'rgba(245,200,66,0.35)' }}>
+    <Card className="p-4 mb-5" style={{ background: 'var(--gold-dim)', borderColor: 'var(--gold-line)' }}>
       <div className="flex items-center gap-2 mb-1.5">
         <i className="ti ti-crown text-sm" style={{ color: 'var(--gold)' }} aria-hidden="true"/>
         <p className="text-sm font-semibold" style={{ color: 'var(--gold)' }}>Part of ALOTO Pro</p>

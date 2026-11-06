@@ -83,7 +83,7 @@ export default function KitPrompt() {
   if (profile?.badge_kit || dismissed) return null
 
   return (
-    <Card className="p-4 mb-3" style={{ borderColor: 'rgba(79,156,249,0.35)', background: 'var(--accent-dim)' }}>
+    <Card className="p-4 mb-3" style={{ borderColor: 'var(--accent-line)', background: 'var(--accent-dim)' }}>
       <div className="flex items-start gap-3">
         {/* An example kit, so what is being offered is obvious before reading
             a word of it. */}

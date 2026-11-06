@@ -168,7 +168,7 @@ export default function SeasonPredictions({ competitionId, userId }) {
       {/* Results live in Standings, not here. This screen is for entering
           predictions; Standings is for seeing how everyone did. */}
       {scored && (
-        <Card className="p-3 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'rgba(79,142,247,0.3)' }}>
+        <Card className="p-3 mb-4" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)' }}>
           <p className="text-xs" style={{ color: 'var(--accent)' }}>
             Season predictions have been scored — see how everyone did under Standings → Season.
           </p>

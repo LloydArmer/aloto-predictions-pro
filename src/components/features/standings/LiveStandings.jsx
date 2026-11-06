@@ -105,7 +105,7 @@ export default function LiveStandings({ competitionId }) {
 
   return (
     <Card className="p-0 mb-4 overflow-hidden"
-      style={{ borderColor: 'rgba(255,170,51,0.35)' }}>
+      style={{ borderColor: 'var(--amber-line)' }}>
 
       <div className="px-3 py-2.5 flex items-center justify-between gap-2 flex-wrap"
         style={{ background: 'var(--amber-dim)' }}>

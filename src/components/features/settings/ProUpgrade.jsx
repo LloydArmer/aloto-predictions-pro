@@ -107,7 +107,7 @@ export default function ProUpgrade() {
     const renews = status.willRenew
 
     return (
-      <Card className="p-4 mb-5" style={{ background: 'var(--gold-dim)', borderColor: 'rgba(245,200,66,0.35)' }}>
+      <Card className="p-4 mb-5" style={{ background: 'var(--gold-dim)', borderColor: 'var(--gold-line)' }}>
         <div className="flex items-center gap-2 mb-1.5">
           <i className="ti ti-crown text-sm" style={{ color: 'var(--gold)' }} aria-hidden="true"/>
           <p className="text-sm font-semibold" style={{ color: 'var(--gold)' }}>ALOTO Pro</p>

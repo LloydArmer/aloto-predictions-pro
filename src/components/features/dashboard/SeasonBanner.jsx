@@ -91,7 +91,7 @@ export default function SeasonBanner({ competitionId, userId }) {
         return (
           <Link key={item.key} to="/predict" className="block mb-3">
             <Card className="p-3.5 flex items-center justify-between gap-3 flex-wrap"
-              style={{ background: 'var(--amber-dim)', borderColor: 'rgba(245,166,35,0.35)' }}>
+              style={{ background: 'var(--amber-dim)', borderColor: 'var(--amber-line)' }}>
               <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
                 <i className="ti ti-calendar-star text-base flex-shrink-0"
                   style={{ color: 'var(--amber)' }} aria-hidden="true" />
@@ -110,7 +110,7 @@ export default function SeasonBanner({ competitionId, userId }) {
                   match with the gameweek reminders above it. */}
               <span className="text-xs font-semibold px-2 py-1 rounded flex-shrink-0"
                 style={{
-                  background: urgent ? 'var(--red-dim)' : 'rgba(245,166,35,0.18)',
+                  background: urgent ? 'var(--red-dim)' : 'var(--amber-soft)',
                   color: urgent ? 'var(--red)' : 'var(--amber)',
                 }}>
                 {deadlineLabel(item.deadline)}

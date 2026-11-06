@@ -12,6 +12,7 @@ import ProUpgrade from './ProUpgrade'
 import BadgePicker from './BadgePicker'
 import Diagnostics from './Diagnostics'
 import toast from 'react-hot-toast'
+import { THEME_OPTIONS, getThemePref, setThemePref } from '../../../lib/theme'
 
 export default function Settings() {
   const { user, profile, isAdmin, fetchProfile, signOut } = useAuth()
@@ -250,6 +251,8 @@ export default function Settings() {
           which makes a better first thing to meet than a price. */}
       <BadgePicker />
 
+      <AppearanceCard />
+
       {/* Near the top, above the housekeeping. Someone who has hit a limit is
           sent here, and hunting past reminder settings for the upgrade would be
           a poor way to treat the one screen that earns anything. */}
@@ -267,7 +270,7 @@ export default function Settings() {
           every new user. Joining someone else's league with a code is the other
           route, and both are on this screen. */}
       {!compsLoading && !runsACompetition && (
-        <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'rgba(79,142,247,0.35)' }}>
+        <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'var(--accent-line)' }}>
           <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>Run your own league</p>
           <p className="text-xs mb-3" style={{ color:'var(--txt-second)' }}>
             Create a league, add your fixtures, and invite your friends with a join code.
@@ -356,7 +359,7 @@ export default function Settings() {
           deadline means a zero for that gameweek, which is worth knowing before
           you opt out rather than after. */}
       {!deviceOn && deviceCount === 0 && capability?.supported && (
-        <Card className="p-4 mb-4" style={{ background:'var(--amber-dim)', borderColor:'rgba(245,166,35,0.3)' }}>
+        <Card className="p-4 mb-4" style={{ background:'var(--amber-dim)', borderColor:'var(--amber-line)' }}>
           <p className="text-xs font-medium mb-1" style={{ color:'var(--amber)' }}>Reminders are off</p>
           <p className="text-xs" style={{ color:'var(--amber)' }}>
             You won't be told when a gameweek opens or when a deadline is close. Each fixture locks at
@@ -367,7 +370,7 @@ export default function Settings() {
       )}
 
       {needsIosInstall && (
-        <Card className="p-4 mb-4" style={{ background:'var(--accent-dim)', borderColor:'rgba(79,142,247,0.35)' }}>
+        <Card className="p-4 mb-4" style={{ background:'var(--accent-dim)', borderColor:'var(--accent-line)' }}>
           <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>Add to Home Screen first</p>
           <p className="text-xs" style={{ color:'var(--txt-second)' }}>
             iPhone and iPad only allow notifications for web apps installed on the Home Screen.
@@ -397,7 +400,7 @@ export default function Settings() {
           featured in is left with a gap. */}
       <Diagnostics userId={user?.id}/>
 
-      <Card className="p-4 mb-4" style={{ borderColor: 'rgba(255,95,95,0.3)' }}>
+      <Card className="p-4 mb-4" style={{ borderColor: 'var(--red-line)' }}>
         <p className="text-xs font-medium mb-1" style={{ color: 'var(--red)' }}>Delete account</p>
 
         {!deleteOpen ? (
@@ -406,7 +409,7 @@ export default function Settings() {
               Permanently deletes your account and everything in it. This can't be undone.
             </p>
             <Button onClick={openDelete} className="btn-sm"
-              style={{ background: 'var(--red-dim)', color: 'var(--red)', borderColor: 'rgba(255,95,95,0.25)' }}>
+              style={{ background: 'var(--red-dim)', color: 'var(--red)', borderColor: 'var(--red-line)' }}>
               Delete my account
             </Button>
           </>
@@ -451,7 +454,7 @@ export default function Settings() {
             <div className="flex gap-2">
               <Button onClick={doDelete} disabled={deleting || confirmText.trim().toUpperCase() !== 'DELETE'}
                 className="btn-sm"
-                style={{ background: 'var(--red-dim)', color: 'var(--red)', borderColor: 'rgba(255,95,95,0.25)' }}>
+                style={{ background: 'var(--red-dim)', color: 'var(--red)', borderColor: 'var(--red-line)' }}>
                 {deleting ? 'Deleting…' : 'Delete permanently'}
               </Button>
               <Button onClick={() => setDeleteOpen(false)} disabled={deleting} className="btn-sm">
@@ -463,5 +466,25 @@ export default function Settings() {
       </Card>
 
     </div>
+  )
+}
+
+// Light, dark, or whatever the phone is set to. Kept on this device only, so
+// it is instant and works signed out too. See src/lib/theme.js.
+function AppearanceCard() {
+  const [pref, setPref] = useState(getThemePref)
+  function choose(v) { setPref(v); setThemePref(v) }
+  return (
+    <Card className="p-4 mb-5">
+      <p className="text-xs font-medium mb-2.5" style={{ color: 'var(--txt-muted)' }}>Appearance</p>
+      <div className="seg-control" role="radiogroup" aria-label="Appearance">
+        {THEME_OPTIONS.map(o => (
+          <button key={o.value} type="button" role="radio" aria-checked={pref === o.value}
+            className={`seg-btn${pref === o.value ? ' active' : ''}`} onClick={() => choose(o.value)}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </Card>
   )
 }

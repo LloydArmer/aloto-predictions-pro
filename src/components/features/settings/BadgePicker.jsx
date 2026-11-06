@@ -174,7 +174,7 @@ function ColourRow({ value, onChange, allowNone, noneLabel }) {
             // A ring rather than a border, so selecting doesn't shift the
             // swatch or change its apparent size.
             boxShadow: value === c.hex ? '0 0 0 2px var(--bg-surface), 0 0 0 4px var(--accent)' : 'none',
-            border: '0.5px solid rgba(255,255,255,0.15)',
+            border: '0.5px solid var(--border-med)',
           }}/>
       ))}
     </div>

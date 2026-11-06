@@ -217,7 +217,7 @@ export default function Dashboard() {
     no_prediction: { label: 'No prediction entered', variant: 'miss' },
     upcoming:      { label: 'Upcoming',           variant: 'upcoming' },
   }
-  const ptColors = ['var(--gold)','#b4b2a9','#f0997b']
+  const ptColors = ['var(--gold)','var(--silver)','var(--bronze)']
   const ROUND_LABELS = { playoff:'Playoff', r64:'Round of 64', r32:'Round of 32', r16:'Round of 16', qf:'Quarter-finals', sf:'Semi-finals', f:'Final' }
 
   // Still checking whether the account belongs to any competition at all
@@ -277,7 +277,7 @@ export default function Dashboard() {
                 {['first','second'].map(half => {
                   const play = myTpPlays.find(p => p.half === half)
                   return (
-                    <Card key={half} className="p-3" style={{ background: play ? 'var(--gold-dim)' : 'var(--bg-surface)', borderColor: play ? 'rgba(245,200,66,0.3)' : undefined }}>
+                    <Card key={half} className="p-3" style={{ background: play ? 'var(--gold-dim)' : 'var(--bg-surface)', borderColor: play ? 'var(--gold-line)' : undefined }}>
                       <p className="text-xs mb-0.5" style={{ color: 'var(--txt-muted)' }}>⚡ Triple Points {half === 'first' ? '1 (Aug–Dec)' : '2 (Jan–May)'}</p>
                       {play
                         ? <><p className="text-sm font-bold" style={{ color: 'var(--gold)' }}>GW{play.gameweek_number} — {play.points} pts</p>
@@ -359,7 +359,7 @@ export default function Dashboard() {
 
           {pendingGws.map(pg => (
             <Link key={pg.id} to="/predict" className="block mb-3">
-              <Card className="p-3.5 flex items-center justify-between gap-3 flex-wrap" style={{ background: 'var(--amber-dim)', borderColor: 'rgba(245,166,35,0.35)' }}>
+              <Card className="p-3.5 flex items-center justify-between gap-3 flex-wrap" style={{ background: 'var(--amber-dim)', borderColor: 'var(--amber-line)' }}>
                 <div className="flex items-center gap-2.5">
                   <i className="ti ti-clock-exclamation text-lg" style={{ color: 'var(--amber)' }} aria-hidden="true"/>
                   <div>
@@ -422,7 +422,7 @@ export default function Dashboard() {
                   return (
                     <Link key={f.id} to="/predict"
                       className="flex items-center gap-2.5 px-4 py-2.5"
-                      style={{ borderTop: '1px solid rgba(255,255,255,0.04)', textDecoration: 'none' }}>
+                      style={{ borderTop: '1px solid var(--hairline)', textDecoration: 'none' }}>
 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p className="text-sm" style={{

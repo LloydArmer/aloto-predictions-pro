@@ -60,7 +60,7 @@ export default function TableOrderEditor({ teams, value, onChange, count, disabl
             <div key={pos} className="flex items-center gap-2 px-2.5 py-2"
               style={{
                 borderBottom: pos < count ? '0.5px solid var(--border)' : 'none',
-                background: isRight ? 'var(--green-dim)' : isWrong ? 'rgba(255,90,90,0.08)' : 'var(--bg-surface)',
+                background: isRight ? 'var(--green-dim)' : isWrong ? 'var(--red-soft)' : 'var(--bg-surface)',
               }}>
               <span className="text-xs font-semibold text-center flex-shrink-0"
                 style={{ width: 22, color: pos <= 4 ? 'var(--accent)' : pos > count - 3 ? 'var(--red)' : 'var(--txt-muted)' }}>

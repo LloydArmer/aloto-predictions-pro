@@ -20,7 +20,7 @@ import { format, isPast } from 'date-fns'
 function pointsStyle(points, rules) {
   if (!rules) return { bg: 'var(--bg-elevated)', color: 'var(--txt-muted)' }
   if (points >= rules.exact_score_points && rules.exact_score_points > 0) return { bg: 'var(--green-dim)', color: 'var(--green)' }
-  if (points >= rules.correct_result_points && rules.correct_result_points > 0) return { bg: 'rgba(245,166,35,0.14)', color: 'var(--amber)' }
+  if (points >= rules.correct_result_points && rules.correct_result_points > 0) return { bg: 'var(--amber-soft)', color: 'var(--amber)' }
   return { bg: 'var(--bg-elevated)', color: 'var(--txt-muted)' }
 }
 
@@ -247,7 +247,7 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <span className="text-base font-bold" style={{ color:'var(--green)' }}>Result: {fixture.home_score}–{fixture.away_score}</span>
           {prediction && <span className="text-xs font-medium px-2.5 py-1 rounded-md" style={{ background: ps.bg, color: ps.color }}>{displayPts}pts</span>}
-          <span className="text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1" style={{ background:'rgba(239,68,68,0.14)', color:'var(--red)' }}>
+          <span className="text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1" style={{ background:'var(--red-soft)', color:'var(--red)' }}>
             <i className="ti ti-lock text-xs" aria-hidden="true"/>Locked
           </span>
         </div>
@@ -259,7 +259,7 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
             <ScoreInput value={away} onChange={setAway} disabled={isLocked}/>
           </div>
           {isLocked && (
-            <span className="text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1" style={{ background:'rgba(239,68,68,0.14)', color:'var(--red)' }}>
+            <span className="text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1" style={{ background:'var(--red-soft)', color:'var(--red)' }}>
               <i className="ti ti-lock text-xs" aria-hidden="true"/>Locked
             </span>
           )}
@@ -631,7 +631,7 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, pre
   const otherPlay = half === 'first' ? tp2 : tp1
 
   return (
-    <Card className="p-3.5 mb-4" style={{ background: activeThisGw ? 'var(--gold-dim)' : 'var(--bg-surface)', borderColor: activeThisGw ? 'rgba(245,200,66,0.4)' : undefined }}>
+    <Card className="p-3.5 mb-4" style={{ background: activeThisGw ? 'var(--gold-dim)' : 'var(--bg-surface)', borderColor: activeThisGw ? 'var(--gold-line)' : undefined }}>
       {/* Always show the status of both chips clearly */}
       <div className="flex flex-col gap-2">
         {/* Chip 1 */}
@@ -654,7 +654,7 @@ function TriplePointsCard({ competitionId, competitions, gameweek, fixtures, pre
 
       {/* Action section — only shown when relevant */}
       {activeThisGw ? (
-        <div className="flex items-center gap-2 mt-2.5 pt-2.5" style={{ borderTop: '0.5px solid rgba(245,200,66,0.3)' }}>
+        <div className="flex items-center gap-2 mt-2.5 pt-2.5" style={{ borderTop: '0.5px solid var(--gold-line)' }}>
           <i className="ti ti-bolt text-sm" style={{ color: 'var(--gold)' }} aria-hidden="true"/>
           <span className="text-xs font-medium" style={{ color: 'var(--gold)' }}>Active this gameweek — every point is ×3</span>
         </div>

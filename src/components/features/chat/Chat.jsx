@@ -319,7 +319,7 @@ export default function Chat() {
       {/* ── The composer ── */}
       {banned ? (
         <div className="mt-2 p-3 rounded-md text-xs"
-          style={{ background: 'var(--amber-dim)', border: '0.5px solid rgba(245,166,35,0.3)', color: 'var(--txt-second)' }}>
+          style={{ background: 'var(--amber-dim)', border: '0.5px solid var(--amber-line)', color: 'var(--txt-second)' }}>
           You have been removed from this league's chat by an admin. You can still
           predict, and your points and position are unaffected.
         </div>
