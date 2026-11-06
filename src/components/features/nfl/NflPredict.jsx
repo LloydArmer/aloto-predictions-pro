@@ -41,6 +41,27 @@ export default function NflPredict() {
   useEffect(() => { if (comp) { loadWeeks(); nflPointRules(supabase, comp).then(setRules) } }, [comp])
   useEffect(() => { if (selectedGW) loadCounts() }, [selectedGW])
 
+  // Live scores from the NFL feed, polled every 30 seconds while a game is on
+  // (the feed itself updates every 30) and every three minutes otherwise, so a
+  // kickoff is noticed without a reload. Only the live columns are re-read.
+  const [live, setLive] = useState({})
+  useEffect(() => {
+    if (!selectedGW?.id) { setLive({}); return }
+    let cancelled = false, timer
+    async function poll() {
+      const { data } = await supabase.from('fixtures')
+        .select('id, live_home_score, live_away_score, live_status, live_clock, live_updated_at, home_score, away_score, status')
+        .eq('gameweek_id', selectedGW.id)
+      if (cancelled) return
+      const map = {}; (data || []).forEach(f => { map[f.id] = f })
+      setLive(map)
+      const playing = (data || []).some(f => isPlaying(f.live_status))
+      timer = setTimeout(poll, playing ? 30000 : 180000)
+    }
+    poll()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [selectedGW?.id])
+
   async function loadWeeks() {
     const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', comp)
     const ids = (links || []).map(l => l.gameweek_id)
@@ -80,12 +101,21 @@ export default function NflPredict() {
       {lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg" /></div>
         : fixtures.length === 0 ? <EmptyState icon="ti-calendar-off" title="No games this week" description="Games will appear when the admin adds them" />
         : fixtures.map(f => (
-          <GameCard key={f.id} fixture={f} prediction={predictions[f.id]} userId={user?.id}
+          <GameCard key={f.id} fixture={{ ...f, ...(live[f.id] || {}) }} prediction={predictions[f.id]} userId={user?.id}
             count={counts[f.id]} rules={rules} weekLabel={selectedGW?.number}
             onSave={(fid, h, a) => savePrediction(fid, h, a, selectedGW.id, user.id)} />
         ))}
     </div>
   )
+}
+
+// The feed's in-play codes. FT and AOT (after overtime) are final; a game tied
+// after the fourth quarter shows OT, never FT, so it is never final too early.
+const FINAL_CODES = ['FT', 'AOT']
+const PLAYING_CODES = ['Q1', 'Q2', 'Q3', 'Q4', 'HT', 'OT', 'LIVE']
+function isPlaying(code) { return PLAYING_CODES.includes(code) }
+function quarterLabel(code) {
+  return { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th', HT: 'Half time', OT: 'Overtime', FT: 'Final', AOT: 'Final (OT)' }[code] || code
 }
 
 // The points, as one line above the games.
@@ -139,6 +169,15 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
   // overtime is only final once overtime is over.
   const hasResult = !isVoid && fixture.home_score !== null && fixture.home_score !== undefined
   const scored = hasResult && prediction && rules ? marginScore(prediction, fixture, rules) : null
+
+  // The feed's score while the result isn't confirmed. Provisional, in amber,
+  // and never used for points that count.
+  const inPlay = !isVoid && !hasResult && isPlaying(fixture.live_status)
+  const feedFinal = !isVoid && !hasResult && FINAL_CODES.includes(fixture.live_status)
+  const showLive = (inPlay || feedFinal) && fixture.live_home_score != null
+  const liveScored = showLive && prediction && rules
+    ? marginScore(prediction, { home_score: fixture.live_home_score, away_score: fixture.live_away_score }, rules)
+    : null
   const readout = marginText(fixture.home_team, fixture.away_team, home, away)
 
   // Which side the pick backs, so that team's card is outlined like a choice.
@@ -149,6 +188,8 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
 
   const header = isVoid ? 'VOID'
     : hasResult ? `${format(kickoff, 'EEE d MMM').toUpperCase()} · FINAL`
+    : inPlay ? `LIVE · ${quarterLabel(fixture.live_status).toUpperCase()}${fixture.live_clock && fixture.live_status !== 'HT' ? ` ${fixture.live_clock}` : ''}`
+    : feedFinal ? `${quarterLabel(fixture.live_status).toUpperCase()} · AWAITING CONFIRMATION`
     : isLocked ? `${format(kickoff, 'EEE d MMM').toUpperCase()} · LOCKED`
     : `${format(kickoff, 'EEE d MMM').toUpperCase()} · LOCKS @ ${format(kickoff, 'HH:mm')}`
 
@@ -167,13 +208,14 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
   // NFL lists the away side first ("Ravens @ Jaguars"), so the away card sits
   // on the left and the home card on the right.
   const sides = [
-    { key: 'away', team: fixture.away_team, value: away, onChange: setAway, final: fixture.away_score, picked: prediction?.predicted_away },
-    { key: 'home', team: fixture.home_team, value: home, onChange: setHome, final: fixture.home_score, picked: prediction?.predicted_home },
+    { key: 'away', team: fixture.away_team, value: away, onChange: setAway, final: fixture.away_score, picked: prediction?.predicted_away, liveScore: showLive ? fixture.live_away_score : null },
+    { key: 'home', team: fixture.home_team, value: home, onChange: setHome, final: fixture.home_score, picked: prediction?.predicted_home, liveScore: showLive ? fixture.live_home_score : null },
   ]
 
   return (
     <Card className="p-4 mb-3" style={isVoid ? { opacity: 0.75 } : {}}>
-      <p className="text-xs font-semibold text-center mb-3" style={{ color: 'var(--txt-muted)', letterSpacing: '0.06em' }}>
+      <p className="text-xs font-semibold text-center mb-3 flex items-center justify-center gap-1.5" style={{ color: inPlay ? 'var(--amber)' : 'var(--txt-muted)', letterSpacing: '0.06em' }}>
+        {inPlay && <span className="live-dot" aria-hidden="true" />}
         {weekLabel} · {header}
       </p>
       {isVoid && fixture.void_reason && (
@@ -184,10 +226,16 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
         {sides.map(s => (
           <TeamPanel key={s.key} side={s.key} team={s.team}
             value={s.value} onChange={s.onChange} locked={isLocked}
-            hasResult={hasResult} final={s.final} picked={s.picked}
+            hasResult={hasResult} final={s.final} picked={s.picked} liveScore={s.liveScore}
             highlighted={hasResult ? winner === s.key : backs === s.key} />
         ))}
       </div>
+
+      {liveScored && (
+        <p className="text-xs text-center mb-2" style={{ color: 'var(--amber)' }}>
+          {liveScored.breakdown[0]?.label || 'No points'} · {liveScored.points}pts so far
+        </p>
+      )}
 
       {hasResult ? (
         <div className="text-center mb-1">
@@ -232,7 +280,7 @@ function GameCard({ fixture, prediction, userId, count, rules, weekLabel, onSave
 
 // One team: its colours and badge across the top, its name, and either the box
 // for the predicted score or, once final, the real score with the pick beneath.
-function TeamPanel({ side, team, value, onChange, locked, hasResult, final, picked, highlighted }) {
+function TeamPanel({ side, team, value, onChange, locked, hasResult, final, picked, highlighted, liveScore }) {
   const t = nflTeam(team)
   return (
     <div className="rounded-xl overflow-hidden flex flex-col"
@@ -251,6 +299,11 @@ function TeamPanel({ side, team, value, onChange, locked, hasResult, final, pick
           {hasResult ? (
             <div>
               <p className="text-2xl font-bold" style={{ color: highlighted ? 'var(--green)' : 'var(--txt-primary)' }}>{final}</p>
+              <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>you said {picked ?? '—'}</p>
+            </div>
+          ) : liveScore != null ? (
+            <div>
+              <p className="text-2xl font-bold" style={{ color: 'var(--amber)' }}>{liveScore}</p>
               <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>you said {picked ?? '—'}</p>
             </div>
           ) : (

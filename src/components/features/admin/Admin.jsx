@@ -7,6 +7,7 @@ import { sortGameweeks } from '../../../lib/gameweeks'
 import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound, scoreOnePrediction, resolvePointRules } from '../../../lib/scoring'
 import { NFL_RULE_FIELDS } from '../../../lib/sports/nfl/scoring'
 import { recalculateGameweekForEachSport } from '../../../lib/sports'
+import NflGamePicker from '../nfl/NflGamePicker'
 import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
 import { ukLocalToISO, formatUK } from '../../../lib/time'
 import { Card, Button, Input, Select, Badge, EmptyState, Spinner } from '../../ui'
@@ -545,6 +546,9 @@ function PredictionTracker({ competitionId, gameweekId, gwLabel }) {
 }
 
 function GameweeksTab({ competitionId, competitions }) {
+  // NFL competitions pick their games from the NFL feed instead of football's
+  // fixture finder, and have no football results link.
+  const isNfl = competitions.find(c => c.id === competitionId)?.sport === 'nfl'
   const comp = competitions.find(c => c.id === competitionId)
   const [gws, setGws] = useState([])
   const [linksByGw, setLinksByGw] = useState({}) // { gameweek_id: [competition_id, ...] }
@@ -817,7 +821,7 @@ function GameweeksTab({ competitionId, competitions }) {
                   competition. Below the actions rather than among them — it's a
                   setting for the gameweek, not something you do to it, and it
                   states the current position even when collapsed. */}
-              <GameweekFixtureLink gameweek={gw} onLinked={load} />
+              {!isNfl && <GameweekFixtureLink gameweek={gw} onLinked={load} />}
 
               {openLinks === gw.id && (
                 <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
@@ -837,7 +841,7 @@ function GameweeksTab({ competitionId, competitions }) {
               )}
 
               {gw.status === 'active' && <PredictionTracker competitionId={competitionId} gameweekId={gw.id} gwLabel={gw.number} />}
-              {openGw === gw.id && <FixturesPanel gameweekId={gw.id} />}
+              {openGw === gw.id && <FixturesPanel gameweekId={gw.id} nfl={isNfl} gwNumber={gw.number} />}
             </Card>
           )
         }
@@ -892,7 +896,7 @@ function parseScore(v) {
   return /^\d{1,2}$/.test(t) ? Number(t) : null
 }
 
-function FixturesPanel({ gameweekId }) {
+function FixturesPanel({ gameweekId, nfl = false, gwNumber }) {
   const [fixtures, setFixtures] = useState([])
   const [loading, setLoading] = useState(false)
   const [home, setHome] = useState('')
@@ -1028,7 +1032,9 @@ function FixturesPanel({ gameweekId }) {
       {/* Picking real fixtures comes first: it's the route that works without
           anything having to match, and it fills in the official team names.
           Typing them by hand stays below for anything not covered. */}
-      <FixtureBrowser gameweekId={gameweekId} onAdded={load} />
+      {nfl
+        ? <NflGamePicker gameweekId={gameweekId} gwNumber={gwNumber} onAdded={load} />
+        : <FixtureBrowser gameweekId={gameweekId} onAdded={load} />}
 
       {/* Labelled fields on a grid rather than a wrapping row of placeholders.
           Three inputs and a button in one flex-wrap landed differently at every
