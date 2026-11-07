@@ -894,7 +894,7 @@ function GameweeksTab({ competitionId, competitions }) {
           shown.map(gw => {
             const st = fxStats[gw.id] || { total: 0, results: 0 }
             return (
-              <Card key={gw.id} className="p-3.5 mb-2.5" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)' }}>
+              <Card key={gw.id} className="p-3.5 mb-2.5" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)', boxShadow: 'var(--card-glow-strong)' }}>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-base font-semibold" style={{ color: 'var(--txt-primary)' }}>{gw.number}</span>
                   <GwStatusBadge status={gw.status} />
@@ -2666,7 +2666,7 @@ const ADMIN_CARD = {
   border: '1px solid var(--border-med)',
   borderRadius: 14,
   overflow: 'hidden',
-  boxShadow: 'inset 0 1px 0 var(--hairline), 0 2px 12px var(--shadow-col)',
+  boxShadow: 'inset 0 1px 0 var(--hairline), var(--card-glow)',
 }
 
 const ADMIN_HEAD = {
@@ -2686,7 +2686,7 @@ function AdminStyles() {
     <style>{`
       .aloto-admin .card {
         border-color: var(--border-med);
-        box-shadow: inset 0 1px 0 var(--hairline), 0 2px 12px var(--shadow-col);
+        box-shadow: inset 0 1px 0 var(--hairline), var(--card-glow);
       }
       /* A card nested inside another goes darker, so depth reads correctly. */
       .aloto-admin .card .card {

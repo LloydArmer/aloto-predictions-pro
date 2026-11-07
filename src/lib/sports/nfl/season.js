@@ -21,8 +21,21 @@ export const NFL_DIVISIONS = [
 const nameOf = abbr => NFL_TEAMS.find(t => t.abbr === abbr).name
 const allTeams = () => NFL_TEAMS.map(t => t.name).sort()
 
+const conferenceTeams = conf => NFL_DIVISIONS
+  .filter(d => d.name.startsWith(conf))
+  .flatMap(d => d.teams)
+  .map(nameOf)
+  .sort()
+
+// free: true marks the questions an admin without Pro can add (Lloyd, 7 Nov
+// 2026). The database decides, from public.free_season_questions (migration
+// 114); this flag only decides what the Season tab offers, so the two lists
+// must name the same questions. Anything not flagged is Pro, including any
+// question added here later.
 export const NFL_SEASON_QUESTIONS = [
-  { label: 'Super Bowl Winner', options: allTeams() },
+  { label: 'Super Bowl Winner', options: allTeams(), free: true },
+  { label: 'AFC Champion', options: conferenceTeams('AFC'), free: true },
+  { label: 'NFC Champion', options: conferenceTeams('NFC'), free: true },
   { label: 'NFL MVP', options: null },
   ...NFL_DIVISIONS.map(d => ({ label: `${d.name} Winner`, options: d.teams.map(nameOf).sort() })),
 ]

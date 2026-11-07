@@ -10,24 +10,27 @@
        it stays readable on a near-black background; the deeper shades live in
        the background gradient below. */
     color-scheme: dark;
-    --bg-base:     #0e0a1a;
-    --bg-surface:  #161126;
-    --bg-raised:   #1f1834;
-    --bg-elevated: #241c3d;
-    --border:      #2c2347;
-    --border-med:  #40345f;
-    --border-hi:   #40345f;
-    --txt-primary: #f3f0ff;
-    --txt-second:  #b6aed6;
-    --txt-muted:   #8a82aa;
+    --bg-base:     #050508;
+    --bg-surface:  #0f0e15;
+    --bg-raised:   #17151f;
+    --bg-elevated: #1b1824;
+    --border:      #26213a;
+    --border-med:  #372f55;
+    --border-hi:   #372f55;
+    --txt-primary: #f4f2fb;
+    --txt-second:  #b3adc9;
+    --txt-muted:   #857f9e;
     --accent:      #7c4dff;
     --accent-hover:#6a3df0;
     --on-accent:   #ffffff;
-    --accent-dim:  #2a1c55;
+    --accent-dim:  #221846;
     --accent-txt:  #c4b0ff;
     --accent-soft: rgba(124,77,255,0.08);
     --accent-line: rgba(124,77,255,0.38);
     --accent-glow: rgba(124,77,255,0.6);
+    /* The purple glow around cards: a faint purple edge plus a soft halo. */
+    --card-glow:   0 0 0 1px rgba(124,77,255,0.14), 0 0 22px -4px rgba(124,77,255,0.32);
+    --card-glow-strong: 0 0 0 1px rgba(124,77,255,0.35), 0 0 28px -2px rgba(124,77,255,0.5);
     --gold:        #f5c842;
     --gold-dim:    #3a2f0b;
     --gold-line:   rgba(245,200,66,0.35);
@@ -50,7 +53,7 @@
     --hairline:    rgba(255,255,255,0.05);
     --sheen:       rgba(255,255,255,0.035);
     --shadow-col:  rgba(0,0,0,0.4);
-    --tab-bar-bg:  rgba(22,17,38,0.92);
+    --tab-bar-bg:  rgba(10,9,15,0.92);
 
     /* Height of the mobile tab bar. The main content's bottom padding is
        derived from this, so the two can never drift apart — previously the
@@ -67,27 +70,12 @@
 
   *, *::before, *::after { box-sizing: border-box; }
 
-  html { background-color: var(--bg-base); }
-
   html, body {
+    background-color: var(--bg-base);
     color: var(--txt-primary);
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
-  }
-
-  /* The graded background: a purple glow from the top of the screen fading
-     into near-black. A fixed layer rather than background-attachment: fixed,
-     which iOS ignores, so the glow stays put while the page scrolls over it.
-     body itself is left transparent so the layer shows through. */
-  body { background: transparent; }
-  body::before {
-    content: '';
-    position: fixed; inset: 0; z-index: -1; pointer-events: none;
-    background:
-      radial-gradient(140% 65% at 50% -10%, rgba(124,77,255,0.55) 0%, rgba(88,30,210,0.3) 40%, transparent 78%),
-      radial-gradient(100% 50% at 100% 105%, rgba(88,30,210,0.28) 0%, transparent 70%),
-      linear-gradient(180deg, #241052 0%, #170c36 50%, #0e0a1a 100%);
   }
 
   input[type="number"]::-webkit-inner-spin-button,
@@ -102,8 +90,8 @@
 }
 
 @layer components {
-  .card { background: var(--bg-surface); border: 0.5px solid var(--border); border-radius: 14px; }
-  .card-raised { background: var(--bg-raised); border: 0.5px solid var(--border-med); border-radius: 14px; }
+  .card { background: var(--bg-surface); border: 0.5px solid var(--border); border-radius: 14px; box-shadow: var(--card-glow); }
+  .card-raised { background: var(--bg-raised); border: 0.5px solid var(--border-med); border-radius: 14px; box-shadow: var(--card-glow-strong); }
 
   .btn {
     display: inline-flex; align-items: center; gap: 6px;
@@ -211,14 +199,14 @@
      top-three lists, anywhere a total sits at the end of a row. */
   .num { font-variant-numeric: tabular-nums; }
 
-  .stat-card { padding: 12px 13px; border-radius: 10px; background: var(--bg-surface); border: 0.5px solid var(--border); }
+  .stat-card { padding: 12px 13px; border-radius: 10px; background: var(--bg-surface); border: 0.5px solid var(--border); box-shadow: var(--card-glow); }
 
   .wa-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; cursor: pointer; background: var(--green-dim); color: var(--green); border: 0.5px solid var(--green-line); font-family: 'Inter', sans-serif; transition: background 0.15s; }
   .wa-btn:hover { background: var(--green-soft); }
 
   .winner-banner { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 14px; background: var(--gold-dim); border: 0.5px solid var(--gold-line); }
 
-  .podium-card { padding: 14px 10px; border-radius: 14px; text-align: center; background: var(--bg-surface); border: 0.5px solid var(--border); }
+  .podium-card { padding: 14px 10px; border-radius: 14px; text-align: center; background: var(--bg-surface); border: 0.5px solid var(--border); box-shadow: var(--card-glow); }
 
   /* ── Mobile tab bar ────────────────────────────────────────────────────
      Reads as a layer sitting above the page rather than a strip painted on

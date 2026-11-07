@@ -218,9 +218,11 @@ function ProBenefits() {
     <div className="text-xs" style={{ color: 'var(--txt-second)', lineHeight: 1.7 }}>
       <p>· Unlimited leagues and cups</p>
       <p>· Individual season predictions, including questions you write yourself</p>
+      <p>· NFL: MVP and division winner questions, and your own</p>
       <p>· A full archive of past seasons</p>
       <p style={{ color: 'var(--txt-muted)', marginTop: 6 }}>
-        The free plan includes one league, one cup and the final league table prediction.
+        The free plan includes one league, one cup and the final league table prediction,
+        and NFL Super Bowl winner, AFC champion and NFC champion predictions.
         Playing is always free, however many competitions you are in.
       </p>
     </div>

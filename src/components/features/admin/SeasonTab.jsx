@@ -316,7 +316,12 @@ export default function SeasonTab({ competitionId, competitions = [], sport = 'f
       const { data: pick, error } = await supabase.from('season_picks').insert({
         config_id: pickConfig.id, label: q.label, sort_order: order++, allow_free_text: !q.options,
       }).select('id').single()
-      if (error || !pick) { toast.error(`Could not add ${q.label}`); break }
+      if (error || !pick) {
+        toast.error(String(error?.message || '').includes('FREE_TIER_QUESTION_LIMIT')
+          ? `${q.label} is part of ALOTO Pro — upgrade in Settings.`
+          : `Could not add ${q.label}`)
+        break
+      }
       if (q.options) {
         const { error: optErr } = await supabase.from('season_pick_options').insert(
           q.options.map((name, i) => ({ pick_id: pick.id, name, sort_order: i })))
@@ -366,8 +371,13 @@ export default function SeasonTab({ competitionId, competitions = [], sport = 'f
     } finally { setScoring(false) }
   }
 
-  // The NFL questions not added yet.
+  // The NFL questions not added yet. Without Pro only the free ones can be
+  // added (migration 114 enforces it); the rest are shown locked so the admin
+  // can see what Pro adds.
   const nflToAdd = isNfl ? NFL_SEASON_QUESTIONS.filter(q => !picks.some(p => p.label.toLowerCase() === q.label.toLowerCase())) : []
+  const nflFreeOnly = isNfl && isPro === false
+  const nflAddable = nflFreeOnly ? nflToAdd.filter(q => q.free) : nflToAdd
+  const nflLocked = nflFreeOnly ? nflToAdd.filter(q => !q.free) : []
 
   if (!competitionId) return <EmptyState icon="ti-calendar-star" title="Choose a competition first" />
 
@@ -508,7 +518,7 @@ export default function SeasonTab({ competitionId, competitions = [], sport = 'f
       {!pickConfig ? (
         isPro === null ? (
           <Card className="p-4 mb-5"><div className="flex justify-center py-2"><Spinner size="sm"/></div></Card>
-        ) : !isPro ? (
+        ) : !isPro && !isNfl ? (
           // Only CREATING them needs Pro. A set already running keeps working
           // whatever happens to the subscription afterwards — an admin locked
           // out of marking answers would leave their players unscored, which
@@ -518,7 +528,9 @@ export default function SeasonTab({ competitionId, competitions = [], sport = 'f
           <Card className="p-4 mb-5">
             <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
               {isNfl
-                ? 'Super Bowl winner, MVP, division winners, or any question you write yourself. Set the questions, the points for each and the deadline.'
+                ? (isPro
+                    ? 'Super Bowl winner, AFC and NFC champions, MVP, division winners, or any question you write yourself. Set the questions, the points for each and the deadline.'
+                    : 'Super Bowl winner, AFC champion and NFC champion are free. MVP, division winners and your own questions are part of ALOTO Pro.')
                 : 'One-off calls — who wins each competition, the golden boot, or any question you write yourself.'}
               {!isNfl && ' Set the questions and the points for each.'}
             </p>
@@ -570,18 +582,37 @@ export default function SeasonTab({ competitionId, competitions = [], sport = 'f
               ))}
           </div>}
 
-          {isNfl && nflToAdd.length > 0 && (
+          {isNfl && nflAddable.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-4">
-              {nflToAdd.length > 1 && (
-                <Button className="btn-sm" variant="primary" onClick={() => addNflQuestions(nflToAdd)}>+ Add all {nflToAdd.length}</Button>
+              {nflAddable.length > 1 && (
+                <Button className="btn-sm" variant="primary" onClick={() => addNflQuestions(nflAddable)}>+ Add all {nflAddable.length}</Button>
               )}
-              {nflToAdd.map(q => (
+              {nflAddable.map(q => (
                 <Button key={q.label} className="btn-sm" onClick={() => addNflQuestions([q])}>+ {q.label}</Button>
               ))}
             </div>
           )}
 
-          <CustomPickForm onCreate={addPick}/>
+          {nflFreeOnly ? (
+            // Shown, not hidden, so the admin can see what Pro adds.
+            <div className="mb-4">
+              {nflLocked.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {nflLocked.map(q => (
+                    <Button key={q.label} className="btn-sm" disabled aria-label={`${q.label}, part of ALOTO Pro`}>
+                      <i className="ti ti-crown text-xs" style={{ color: 'var(--gold)' }} aria-hidden="true"/> {q.label}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+                <i className="ti ti-crown text-xs" style={{ color: 'var(--gold)' }} aria-hidden="true"/>{' '}
+                MVP, division winners and writing your own questions are part of ALOTO Pro. Upgrade in Settings.
+              </p>
+            </div>
+          ) : (
+            <CustomPickForm onCreate={addPick}/>
+          )}
 
           {picks.length === 0
             ? <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No questions yet.</p>
