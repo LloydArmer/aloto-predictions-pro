@@ -1,0 +1,101 @@
+ALOTO PREDICTION PRO — APP STORE COPY FOR 2.2
+Each block below is exactly what goes in that field, nothing else.
+The App Store Connect version number is 2.2 (2.1 is already approved and live).
+
+===============================================================================
+APP INFORMATION  (under App Information, not the version page)
+===============================================================================
+
+NAME
+  NO CHANGE: ALOTO Prediction Pro
+
+SUBTITLE
+  NO CHANGE: Football prediction leagues
+  (Kept without "NFL": Apple can reject other companies' trademarks in the
+  name, subtitle or keywords.)
+
+===============================================================================
+VERSION 2.2 PAGE
+===============================================================================
+
+PROMOTIONAL TEXT  (149/170. Can be changed later without a review.)
+NFL is here. Predict every game, call the margin, and pick your Super Bowl, AFC and NFC champions for free. Your football leagues carry on as before.
+
+
+DESCRIPTION  (2739/4000)
+ALOTO Prediction Pro runs the prediction league you have been keeping in a spreadsheet, for football and now the NFL. Set up a competition, share the join code with your group, and the app does the rest: it locks predictions at kick-off, scores every result and keeps the table up to date.
+
+HOW IT WORKS
+One person creates a competition and runs it. Everyone else joins with a six-character code. Fixtures and live scores come in automatically, and the points, tables and bonuses sort themselves out.
+
+FOOTBALL SCORING
+Points for the correct result, more for the exact score, and bonus points for a full house across a gameweek. Every value is yours to change.
+
+TRIPLE POINTS
+Two chips a season, one either side of New Year. Play one and everything you score that gameweek is tripled.
+
+NFL PICKS LEAGUES
+Predict the score of every game each week. You get points for picking the right winner, more the closer you get to the winning margin, and the most for the exact score. Each game locks at its own kick-off, from Thursday night to Monday.
+
+LEAGUES, CUPS AND TOURNAMENTS
+Run a season-long league, a knockout cup drawn on gameweek scores, or a group stage feeding into a bracket. Run all three at once if your group has the appetite.
+
+SEASON PREDICTIONS
+Call the final league table in August and back your picks for the season's winners. For the NFL, pick your Super Bowl winner and the AFC and NFC champions. Everything stays sealed until the deadline, then opens for the whole group to compare.
+
+LIVE SCORES ON YOUR LOCK SCREEN
+Your score, points and league position update as the game goes on, without opening the app.
+
+LEAGUE CHAT
+Every competition has its own chat, with replies and @mentions. Admins can moderate, and anyone can report or block.
+
+PRIVATE BY DESIGN
+Competitions are joined by code only. There is no public directory, no global leaderboard and no way for anyone outside your group to find your competition. Predictions stay hidden from everyone, including the admin, until each match kicks off.
+
+FREE TO PLAY
+Playing is always free, however many competitions you are in, and there are no adverts anywhere in the app. There are no stakes and no prizes: points are for bragging rights only.
+
+ALOTO PRO: £29.99 A YEAR
+For organisers who want more. Pro adds unlimited leagues and cups, individual season predictions including questions you write yourself, NFL MVP and division winner questions, and a full archive of past seasons. The free plan includes one league, one cup, the final league table prediction, and the NFL Super Bowl, AFC champion and NFC champion predictions.
+
+Terms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+Privacy Policy: https://aloto-prediction-pro.netlify.app/privacy
+
+
+KEYWORDS  (97/100. No spaces after the commas.)
+soccer,american football,gridiron,predictor,fixtures,gameweek,office,pool,tipping,results,friends
+
+
+WHAT'S NEW IN THIS VERSION  (511/4000)
+NFL is here. Run an NFL picks league alongside your football ones: predict the score of every game, with points for the right winner and more the closer you get to the margin.
+Super Bowl winner, AFC champion and NFC champion predictions are free in every NFL league.
+A new look: a black background with ALOTO purple throughout.
+NFL reminders now use NFL wording, and tapping one opens the right league.
+For admins: a simpler fixtures screen, with each gameweek's fixtures, predictions and settings in one place.
+
+
+SCREENSHOTS  (delete the old ones in each slot, upload these in order 01-07)
+  iPhone 6.9" Display   ->  app-store-screenshots/6.9in-iphone/01.png ... 07.png   (1320 x 2868)
+  iPhone 6.5" Display   ->  app-store-screenshots/6.5in-iphone/01.png ... 07.png   (1284 x 2778)
+  iPad 13" Display      ->  app-store-screenshots/ipad-13in/01.png ... 07.png      (2064 x 2752)
+
+
+===============================================================================
+APP REVIEW INFORMATION
+===============================================================================
+
+SIGN-IN: keep the two existing demo accounts
+  appreview.admin@alotopredictionpro.co.uk
+  appreview.player@alotopredictionpro.co.uk
+(Before submitting: add both to an NFL competition named "App Review Demo NFL".)
+
+NOTES  (1198/4000)
+ALOTO Prediction Pro is a private prediction game for football and, new in this version, the NFL. Competitions are not public: an admin shares a six-character join code and only people with the code can join.
+
+The demo accounts are members of two competitions: "App Review Demo" (football) and "App Review Demo NFL". Both have fixtures, results, standings and chat switched on. Use the sport chooser in the top bar to switch between Football and NFL.
+
+NFL competitions are scored on the margin of victory: players predict each game's score and get points for the right winner, more the closer they get to the margin. There is no gambling, wagering, odds or prize element. Points are for bragging rights only.
+
+ALOTO Pro is an annual subscription bought in Settings. It is for competition organisers. Playing is free and needs no purchase. In NFL competitions the Super Bowl winner, AFC champion and NFC champion predictions are free; the other NFL season questions need Pro.
+
+League chat is user-generated content inside private competitions. Players can report messages and block other users, admins can remove messages and ban people from chat, and reports go to support@alotopredictionpro.co.uk.

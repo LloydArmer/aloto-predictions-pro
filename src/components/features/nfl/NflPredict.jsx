@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
@@ -50,6 +51,11 @@ export default function NflPredict() {
   // season side is the same screen football uses: it only reads the questions
   // the admin set up, so nothing in it is football specific.
   const [tab, setTab] = useState('week')
+  // A season reminder opens this on the Season tab (?tab=season).
+  const location = useLocation()
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('tab') === 'season') setTab('season')
+  }, [location.search])
   useEffect(() => {
     if (!selectedGW?.id) { setLive({}); return }
     let cancelled = false, timer

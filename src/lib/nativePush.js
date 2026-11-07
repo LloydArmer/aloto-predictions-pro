@@ -143,8 +143,9 @@ export async function initNativePushHandlers(navigate) {
     const url = action.notification?.data?.url
     if (!url) { navigate('/predict'); return }
     // The job sends absolute URLs for the web. Strip the origin so this stays
-    // an in-app route rather than a browser launch.
-    try { navigate(new URL(url).pathname) } catch { navigate('/predict') }
+    // an in-app route rather than a browser launch. The query is kept: it
+    // says which competition (and so which sport) the reminder is about.
+    try { const u = new URL(url); navigate(u.pathname + u.search) } catch { navigate('/predict') }
   })
 
   // Android shows foreground notifications itself; iOS does not, and without a

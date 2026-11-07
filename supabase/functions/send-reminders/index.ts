@@ -397,6 +397,12 @@ async function gameweekReminders(supabase: any, now: number, results: any, APP_U
     .from('participants').select('user_id, competition_id').in('competition_id', compIds)
   if (!participants?.length) return []
 
+  // Which sport each competition is, for the wording and for where a tap
+  // lands. A competition with no sport (before migration 111) is football.
+  const { data: compRows } = await supabase
+    .from('competitions').select('id, sport').in('id', compIds)
+  const sportOfComp = new Map((compRows || []).map((c: any) => [c.id, c.sport || 'football']))
+
   // Scoped to this channel. WhatsApp, when it's added, keeps its own send
   // history — a participant who got the push shouldn't be silently skipped on
   // the other channel, or vice versa.
@@ -422,6 +428,14 @@ async function gameweekReminders(supabase: any, now: number, results: any, APP_U
       .filter((p: any) => gwCompIds.includes(p.competition_id)).map((p: any) => p.user_id))] as string[]
 
     for (const userId of gwUserIds) {
+      // The competition this reminder is about, for this person: the first of
+      // theirs linked to the gameweek. The tap opens Predict on it, switching
+      // the app to its sport, so an NFL reminder never lands on football.
+      const compId = gwCompIds.find((id: string) =>
+        (participants || []).some((p: any) => p.user_id === userId && p.competition_id === id))
+      const nfl = sportOfComp.get(compId) === 'nfl'
+      const link = compId ? `${APP_URL}/predict?competition=${compId}` : `${APP_URL}/predict`
+
       // Fixtures this participant still hasn't predicted. Ones that have
       // already kicked off are excluded — chasing a locked fixture is noise,
       // since there is nothing they can do about it.
@@ -432,15 +446,19 @@ async function gameweekReminders(supabase: any, now: number, results: any, APP_U
 
       const push = (kind: string, title: string, body: string) => {
         if (sentKey.has(`${userId}:${gw.id}:${kind}`)) return
-        jobs.push({ userId, gwId: gw.id, refId: null, kind, title, body, link: `${APP_URL}/predict` })
+        jobs.push({ userId, gwId: gw.id, refId: null, kind, title, body, link })
       }
 
       // 1. The gameweek is open. Goes to everyone — this one is an
       //    announcement, not a chase.
+      // NFL says games and puts the away team first ("KC @ BUF"); football
+      // is worded exactly as before.
       push(
         'gameweek_open',
         `${gw.number} is open`,
-        `${plural(fixtures.length, 'fixture')} to predict. Each locks at its own kickoff — the first is ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}.`,
+        nfl
+          ? `${plural(fixtures.length, 'game')} to pick. Each locks at its own kickoff — the first is ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}.`
+          : `${plural(fixtures.length, 'fixture')} to predict. Each locks at its own kickoff — the first is ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}.`,
       )
 
       // 2 and 3. Deadline chases — only when something is still outstanding.
@@ -449,7 +467,9 @@ async function gameweekReminders(supabase: any, now: number, results: any, APP_U
           push(
             'deadline_24h',
             `24 hours left — ${gw.number}`,
-            `${plural(outstanding.length, 'prediction')} outstanding. First fixture locks ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}; each later one locks at its own kickoff.`,
+            nfl
+              ? `${plural(outstanding.length, 'pick')} still to make. First game locks ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}; each later one locks at its own kickoff.`
+              : `${plural(outstanding.length, 'prediction')} outstanding. First fixture locks ${fmtDay(first.kickoff_time)} at ${fmtTime(first.kickoff_time)}; each later one locks at its own kickoff.`,
           )
         }
         if (minutesToDeadline <= 60 && minutesToDeadline > 0) {
@@ -461,7 +481,9 @@ async function gameweekReminders(supabase: any, now: number, results: any, APP_U
           push(
             'deadline_1h',
             `Final reminder — ${gw.number}`,
-            `${first.home_team} v ${first.away_team} kicks off at ${fmtTime(first.kickoff_time)} and locks then. ${plural(outstanding.length, 'prediction')} outstanding — later fixtures stay open until their own kickoff. This is the last reminder for this gameweek.`,
+            nfl
+              ? `${first.away_team} @ ${first.home_team} kicks off at ${fmtTime(first.kickoff_time)} and locks then. ${plural(outstanding.length, 'pick')} still to make — later games stay open until their own kickoff. This is the last reminder for this week.`
+              : `${first.home_team} v ${first.away_team} kicks off at ${fmtTime(first.kickoff_time)} and locks then. ${plural(outstanding.length, 'prediction')} outstanding — later fixtures stay open until their own kickoff. This is the last reminder for this gameweek.`,
           )
         }
       }
@@ -497,7 +519,7 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
   const compIds = [...new Set([...tables, ...picks].map((c: any) => c.competition_id))]
 
   const [{ data: comps }, { data: participants }, { data: alreadySent }] = await Promise.all([
-    supabase.from('competitions').select('id, name').in('id', compIds),
+    supabase.from('competitions').select('id, name, sport').in('id', compIds),
     supabase.from('participants').select('user_id, competition_id').in('competition_id', compIds),
     // ref_id is the SET for questions sharing its deadline, and the QUESTION
     // for one with a deadline of its own, so each is chased once on its own
@@ -512,6 +534,7 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
   if (!participants?.length) return []
 
   const compName = new Map((comps || []).map((c: any) => [c.id, c.name]))
+  const compSport = new Map((comps || []).map((c: any) => [c.id, c.sport || 'football']))
   const sentKey = new Set((alreadySent || []).map((r: any) => `${r.user_id}:${r.ref_id}:${r.kind}`))
   const membersOf = (compId: string) =>
     [...new Set((participants || []).filter((p: any) => p.competition_id === compId).map((p: any) => p.user_id))] as string[]
@@ -537,11 +560,15 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
   const answered = new Set((answers || []).map((a: any) => `${a.user_id}:${a.pick_id}`))
 
   const jobs: Job[] = []
-  const link = `${APP_URL}/predict`
+  // The tap opens Predict on the competition the reminder is about, in its
+  // sport. NFL keeps its season questions on their own tab, so it opens that.
+  const linkFor = (compId: string) => compSport.get(compId) === 'nfl'
+    ? `${APP_URL}/predict?competition=${compId}&tab=season`
+    : `${APP_URL}/predict?competition=${compId}`
 
-  const push = (userId: string, refId: string, kind: string, title: string, body: string) => {
+  const push = (compId: string, userId: string, refId: string, kind: string, title: string, body: string) => {
     if (sentKey.has(`${userId}:${refId}:${kind}`)) return
-    jobs.push({ userId, gwId: null, refId, kind, title, body, link })
+    jobs.push({ userId, gwId: null, refId, kind, title, body, link: linkFor(compId) })
   }
 
   const when = (iso: string) => `${fmtDate(iso)} at ${fmtTime(iso)}`
@@ -557,7 +584,7 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
     // Announcement: only to people who haven't started, so someone who jumped
     // in the moment it opened isn't told it has opened.
     if (!started) {
-      push(userId, config.id, `${prefix}_open`,
+      push(config.competition_id, userId, config.id, `${prefix}_open`,
         prefix === 'season_table' ? `Predict the final table — ${name}` : `Season picks are open — ${name}`,
         config.deadline
           ? `${outstanding}. Locks ${when(config.deadline)}.`
@@ -565,12 +592,12 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
     }
 
     if (minutesLeft <= 24 * 60 && minutesLeft > 60) {
-      push(userId, config.id, `${prefix}_24h`,
+      push(config.competition_id, userId, config.id, `${prefix}_24h`,
         `24 hours left — season predictions`,
         `${name}: ${outstanding.toLowerCase()}. Locks ${when(config.deadline)}.`)
     }
     if (minutesLeft <= 60 && minutesLeft > 0) {
-      push(userId, config.id, `${prefix}_1h`,
+      push(config.competition_id, userId, config.id, `${prefix}_1h`,
         `Final reminder — season predictions`,
         `${name}: ${outstanding.toLowerCase()}. Locks at ${fmtTime(config.deadline)} and can't be changed after that.`)
     }
@@ -621,7 +648,7 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
       // season picks have opened is enough, however their deadlines are
       // arranged. Only to someone who has not started.
       if (config.is_open && unanswered.length === qs.length) {
-        push(userId, config.id, 'season_picks_open',
+        push(config.competition_id, userId, config.id, 'season_picks_open',
           `Season picks are open — ${name}`,
           config.deadline
             ? `${plural(qs.length, 'question')} to answer. First locks ${when(config.deadline)}.`
@@ -644,12 +671,12 @@ async function seasonReminders(supabase: any, now: number, results: any, APP_URL
           : `${plural(mine.length, 'question')} still to answer`
 
         if (minutesLeft <= 24 * 60 && minutesLeft > 60) {
-          push(userId, g.refId, 'season_picks_24h',
+          push(config.competition_id, userId, g.refId, 'season_picks_24h',
             `24 hours left — season predictions`,
             `${name}: ${what}. Locks ${when(g.deadline)}.`)
         }
         if (minutesLeft <= 60 && minutesLeft > 0) {
-          push(userId, g.refId, 'season_picks_1h',
+          push(config.competition_id, userId, g.refId, 'season_picks_1h',
             `Final reminder — season predictions`,
             `${name}: ${what}. Locks at ${fmtTime(g.deadline)} and cannot be changed after that.`)
         }

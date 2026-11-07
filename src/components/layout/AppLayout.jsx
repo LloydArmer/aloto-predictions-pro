@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useCompetitions } from '../../hooks/useCompetitions'
@@ -21,7 +21,7 @@ export default function AppLayout({ children }) {
   const { user, profile, isAdmin, signOut } = useAuth()
   const { competitions, allCompetitions, activeSport } = useCompetitions()
   const [selectedComp, selectComp] = useSelectedCompetition(competitions)
-  const { sports } = useSport()
+  const { sports, choose } = useSport()
 
   // Unread across every league, not just the one on screen. A badge that
   // only counted the selected competition would sit at zero while another
@@ -33,6 +33,30 @@ export default function AppLayout({ children }) {
   const totalUnread = Object.values(unreadByComp).reduce((sum, n) => sum + n, 0)
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+
+  // A reminder's link names its competition (?competition=<id>). Switch to
+  // that competition and its sport, so an NFL reminder opens NFL even for
+  // someone last looking at football. Then drop the id from the address, so
+  // a reload or a later manual switch isn't overridden. Anything else in the
+  // query (?tab=season) is kept for the page.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const id = params.get('competition')
+    if (!id) return
+    const comp = allCompetitions.find(c => c.id === id)
+    if (!comp) {
+      // Not loaded yet: wait. Loaded and not theirs: just drop it.
+      if (allCompetitions.length) {
+        params.delete('competition')
+        navigate(location.pathname + (params.toString() ? `?${params}` : ''), { replace: true })
+      }
+      return
+    }
+    choose(sportOf(comp))
+    selectComp(comp.id)
+    params.delete('competition')
+    navigate(location.pathname + (params.toString() ? `?${params}` : ''), { replace: true })
+  }, [location.search, allCompetitions])
 
   // Admin shows for anyone who runs at least one competition. That comes from
   // their role in each competition (my_role, from useCompetitions), not the
