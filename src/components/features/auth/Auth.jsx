@@ -27,8 +27,13 @@ function AuthShell({ title, subtitle, children }) {
         overflow: 'hidden',
       }}>
       <div className="mb-5 flex flex-col items-center gap-2">
-        <img src="/logo.png" alt="ALOTO Prediction Pro"
-          style={{ width: 'min(190px, 60vw)', height: 'auto' }} />
+        {/* The app icon and name, the same as the App Store icon and the website. */}
+        <img src="/icon.png" alt="" width="84" height="84"
+          style={{ width: 84, height: 84, borderRadius: 20, boxShadow: '0 0 28px -4px var(--accent-glow)' }} />
+        <div className="text-center" style={{ lineHeight: 1 }}>
+          <p style={{ color: 'var(--txt-primary)', fontSize: 30, fontWeight: 800, letterSpacing: '0.08em' }}>ALOTO</p>
+          <p className="text-xs font-semibold uppercase mt-1.5" style={{ color: 'var(--accent-txt)', letterSpacing: '0.24em' }}>Prediction Pro</p>
+        </div>
         <p className="text-sm text-center" style={{ color: 'var(--txt-second)' }}>{subtitle}</p>
       </div>
       <div className="w-full max-w-sm rounded-xl p-5"
