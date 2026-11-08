@@ -6,7 +6,7 @@ import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { useFixtures, usePredictions } from '../../../hooks/useFixtures'
 import { supabase } from '../../../lib/supabase'
 import { sortGameweeks, latestGameweek } from '../../../lib/gameweeks'
-import { nflPointRules, marginScore, bandStyle, marginText } from '../../../lib/sports/nfl/scoring'
+import { nflPointRules, marginScore, bandStyle, marginText, MARGIN_BANDS } from '../../../lib/sports/nfl/scoring'
 import { Card, Button, Select, Spinner, EmptyState } from '../../ui'
 import NflTeamBadge, { nflTeam } from './NflTeamBadge'
 import { FORMAT_MARK } from '../../ui/CompetitionIcon'
@@ -144,26 +144,30 @@ function quarterLabel(code) {
   return { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th', HT: 'Half time', OT: 'Overtime', FT: 'Final', AOT: 'Final (OT)' }[code] || code
 }
 
-// The points, as one line above the games. The winner's base points come
-// first because everything else is added on top of them.
+// The points, above the games. Everything is added on top of the right
+// winner, and a wrong winner scores nothing.
 function PointsKey({ rules }) {
-  const items = [
-    ['Exact score', rules.exact_score_points, 'var(--green)'],
-    ['Exact margin', rules.margin_exact_points, 'var(--green)'],
-    ['Within 3', rules.margin_within_3_points, 'var(--amber)'],
-    ['Within 7', rules.margin_within_7_points, 'var(--amber)'],
-    ['Within 14', rules.margin_within_14_points, 'var(--txt-primary)'],
-  ]
+  const n = key => Number(rules[key]) || 0
+  const exact = n('winner_only_points') + 2 * n('team_score_points') + n('margin_exact_points')
+  const color = band => band === 'exact_margin' || band === 'within_2' ? 'var(--green)'
+    : band === 'within_4' || band === 'within_7' ? 'var(--amber)' : 'var(--txt-primary)'
   return (
-    <div className="mb-4 p-3 rounded-md text-xs" style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)', color: 'var(--txt-second)' }}>
-      Right winner <strong style={{ color: 'var(--txt-primary)' }}>{rules.winner_only_points}</strong>, plus your closest of: &nbsp;
-      {items.map(([label, pts, color], i) => (
-        <span key={label}>
-          {i > 0 && <> &nbsp;·&nbsp; </>}
-          {label} <strong style={{ color }}>{pts}</strong>
-        </span>
-      ))}
-      <span style={{ color: 'var(--txt-muted)' }}> &nbsp;— by how close your margin was. Final scores include overtime.</span>
+    <div className="mb-4 p-3 rounded-md text-xs" style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)', color: 'var(--txt-second)', lineHeight: 1.6 }}>
+      <div>
+        Right winner <strong style={{ color: 'var(--txt-primary)' }}>{n('winner_only_points')}</strong>
+        &nbsp;+&nbsp; each team's score exact <strong style={{ color: 'var(--green)' }}>{n('team_score_points')}</strong>
+        &nbsp;+&nbsp; your margin:
+      </div>
+      <div>
+        {MARGIN_BANDS.map(b => (
+          <span key={b.band} className="inline-block whitespace-nowrap mr-3">
+            {b.band === 'exact_margin' ? 'Exact' : `Within ${b.max}`} <strong style={{ color: color(b.band) }}>{n(b.key)}</strong>
+          </span>
+        ))}
+      </div>
+      <div style={{ color: 'var(--txt-muted)' }}>
+        Exact score = {exact}. Wrong winner = 0. Final scores include overtime.
+      </div>
     </div>
   )
 }
@@ -342,7 +346,7 @@ function TeamPanel({ side, team, value, onChange, locked, hasResult, final, pick
   )
 }
 
-// What a pick paid, e.g. "Winner + margin within 3 · 11pts".
+// What a pick paid, e.g. "Winner + 1 score + within 4 · 15pts".
 function BandChip({ scored }) {
   const s = bandStyle(scored.band)
   const label = scored.label || 'No points'

@@ -32,33 +32,39 @@ Margin scoring asks the question the sport is actually about — how close was
 it — and is what every NFL pool reaches for. It also needs no odds feed, which
 keeps the build self-contained.
 
-### The agreed points
+### The agreed points (updated 8 Nov 2026, migration 117)
 
-| Outcome | Points |
+Points ADD together, and only when the winner is right. A wrong winner scores 0.
+
+| Part | Points |
 |---|---|
-| **Exact score** | 20 |
-| **Exact margin** | 12 |
-| Margin within 3 — *a field goal* | 9 |
-| Margin within 7 — *a touchdown* | 6 |
-| Margin within 14 — *two scores* | 3 |
-| Right winner, nothing else | 1 |
-| Nothing | 0 |
+| Right winner | 2 |
+| Each team's score exact | +5 per team |
+| Margin exact | +12 |
+| Margin out by 1 to 2 | +10 |
+| Margin out by 3 to 4 | +8 |
+| Margin out by 5 to 7 | +6 |
+| Margin out by 8 to 10 | +4 |
+| Margin out by 11 to 14 | +2 |
+| Margin out by 15 or more | 0 |
 
-The bands sit on 3, 7 and 14 because those are the numbers the sport is built
-on — "within a field goal" means something to anyone watching, where "within 4"
-would not.
+An exact score is 2 + 5 + 5 + 12 = 24. Columns: `winner_only_points`,
+`team_score_points`, `margin_exact_points`, `margin_within_2/4/7/10/14_points`.
+`exact_score_points` and `margin_within_3_points` are no longer read for NFL.
+The SQL twin of the app's `marginScore` is `public.nfl_margin_points()`.
+
+(Earlier versions: 111 had one band per game, exact score 20, within 3/7/14 =
+9/6/3, winner only 1; 113 made the winner a base of 2 on top.)
 
 **Margin is signed.** Predict the home team by 3, watch the away team win by 3,
 and you are out by six — a touchdown — not level. Using the absolute margin
 would score a backed winner and a backed loser identically whenever the game
 was close, which is exactly backwards.
 
-**Why these numbers.** A decent predictor is out by about 10 points on average,
-so most picks land in the 3-to-6 band, around a fifth land within a field goal,
-and a quarter score nothing. That is roughly 4.5 points a game, so a 14-game
-week runs 60–100 — enough spread that a good week is visibly good, without one
-lucky exact score deciding the season. Exact score at 20 is the lottery on top;
-it should happen to someone two or three times a year.
+**Why these numbers.** Lloyd wanted more steps between an exact margin and
+nothing, and a reward for getting one team's score right. The ladder drops 2
+points per step, and only a wrong winner or a margin out by 15+ leaves just
+the 2 for the winner.
 
 All of these are defaults in `point_rules`, editable per competition.
 

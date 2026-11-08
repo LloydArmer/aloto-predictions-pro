@@ -202,7 +202,7 @@ const NFL = [
     key: 'nfl-picks',
     icon: 'ti-ball-american-football',
     title: 'NFL picks',
-    summary: 'Predict the score of every game each week. Points for the right winner, more the closer your winning margin is, and the most for the exact score.',
+    summary: 'Predict the score of every game each week. Points for the right winner, more for each team score you get exactly, more the closer your winning margin is, and the most for the exact score.',
     steps: [
       ['Switch to NFL', 'Tap the sport chooser in the top bar.'],
       ['Open the week', 'Predict → This week. Pick the week from the selector if you want a different one.'],
@@ -210,7 +210,8 @@ const NFL = [
       ['Save', 'Each game locks at its own kick-off, from Thursday night to Monday.'],
     ],
     notes: [
-      ['Scoring', 'The points for your league are shown above the games: the winner, plus your closest of exact score, exact margin, within 3, within 7 or within 14.'],
+      ['Scoring', 'Points add up. Right winner 2, plus 5 for each team whose score you get exactly, plus your margin: exact 12, within 2 is 10, within 4 is 8, within 7 is 6, within 10 is 4, within 14 is 2. An exact score is 24. Your league\'s own numbers are shown above the games.'],
+      ['Wrong winner', 'Backing the wrong team scores 0, however close the score.'],
       ['Ties', 'Calling a tie that ends tied counts as the right winner.'],
       ['Overtime', 'Final scores include overtime.'],
       ['No chips', 'Triple Points and full house bonuses are football only.'],

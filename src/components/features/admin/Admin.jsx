@@ -470,7 +470,8 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
       <AdminLabel className="mb-3">Points & bonus rules</AdminLabel>
       {rules.scoring_mode === 'margin' && (
         <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>
-          Scored on the margin. Each game pays the one line it reaches, never more than one.
+          Points add up: right winner, plus each team's score exact, plus the one margin line the pick reaches.
+          A wrong winner scores 0. An exact score is the winner, both scores and the exact margin.
           The margin counts direction, so backing the wrong side by 3 when the other side wins by 3 is out by 6.
         </p>
       )}

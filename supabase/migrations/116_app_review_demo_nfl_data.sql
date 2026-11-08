@@ -11,17 +11,17 @@
 --   Season   Super Bowl Winner, AFC Champion and NFC Champion (the free NFL
 --            questions), open for 10 days. Both accounts have answered.
 --
--- Points are worked out here with the same NFL rules as the app
--- (src/lib/sports/nfl/scoring.js, margin mode): base points for the right
--- winner, plus one band (exact score, exact margin, within 3 / 7 / 14). The
--- values come from this competition's own point_rules row.
+-- Points are worked out with public.nfl_margin_points() (migration 117), the
+-- SQL twin of the app's marginScore: right winner, plus each team's score
+-- exact, plus one margin line. The values come from this competition's own
+-- point_rules row.
 --
 -- Dates are relative to when you run it. If review is delayed past Week 10's
 -- kick-offs, run this file again: it clears this competition's weeks and
 -- season questions and rebuilds them with fresh dates. It touches nothing
 -- outside "App Review Demo NFL".
 --
--- Run 114 and 115 first.
+-- Run 114, 115 and 117 first.
 --
 -- RUN ON PRODUCTION. (Dev too if you want to rehearse it.)
 
@@ -148,23 +148,8 @@ begin
      set points_earned = s.points
     from (
       select p2.id,
-             (case when sign(p2.predicted_home - p2.predicted_away) = sign(f.home_score - f.away_score)
-                   then v_r.winner_only_points else 0 end)
-           + (case
-                when p2.predicted_home = f.home_score and p2.predicted_away = f.away_score
-                  then v_r.exact_score_points
-                when abs((p2.predicted_home - p2.predicted_away) - (f.home_score - f.away_score)) = 0
-                  then v_r.margin_exact_points
-                when sign(p2.predicted_home - p2.predicted_away) <> sign(f.home_score - f.away_score)
-                  then 0
-                when abs((p2.predicted_home - p2.predicted_away) - (f.home_score - f.away_score)) <= 3
-                  then v_r.margin_within_3_points
-                when abs((p2.predicted_home - p2.predicted_away) - (f.home_score - f.away_score)) <= 7
-                  then v_r.margin_within_7_points
-                when abs((p2.predicted_home - p2.predicted_away) - (f.home_score - f.away_score)) <= 14
-                  then v_r.margin_within_14_points
-                else 0
-              end) as points
+             public.nfl_margin_points(p2.predicted_home, p2.predicted_away,
+                                      f.home_score, f.away_score, v_r) as points
         from predictions p2
         join fixtures  f  on f.id = p2.fixture_id and f.status = 'completed'
         join gameweeks gw on gw.id = f.gameweek_id and gw.competition_id = v_comp

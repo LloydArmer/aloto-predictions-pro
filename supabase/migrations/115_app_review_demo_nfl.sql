@@ -57,7 +57,7 @@ begin
       (v_comp, v_admin,  'Welcome to the NFL league. Picks lock at each kick-off', now() - interval '9 days'),
       (v_comp, v_player, 'Chiefs by 3 every week until they let me down', now() - interval '9 days' + interval '20 minutes'),
       (v_comp, v_admin,  'Bold. I have got the Eagles going all the way', now() - interval '9 days' + interval '41 minutes'),
-      (v_comp, v_player, 'Nailed the exact score in the Chiefs game. 22 points', now() - interval '2 days'),
+      (v_comp, v_player, 'Nailed the exact score in the Chiefs game. 24 points', now() - interval '2 days'),
       (v_comp, v_admin,  'Fair play. Next week''s picks are open, get them in', now() - interval '2 days' + interval '15 minutes');
   end if;
 
