@@ -169,6 +169,9 @@ export default function Dashboard() {
         const { data: preds } = await supabase.from('predictions').select('*').eq('gameweek_id', latestGW.id).eq('user_id', user.id)
         const pm = {}; (preds||[]).forEach(p => { pm[p.fixture_id] = p })
         setResults((fx||[]).map(f => ({ ...f, myPrediction: pm[f.id]||null, outcome: outcomeLabel(pm[f.id], f) })))
+      } else {
+        // No gameweek yet: clear the last competition's fixtures.
+        setResults([])
       }
 
       // One banner per active GW that still has unpredicted, not-yet-kicked-off fixtures.
@@ -185,6 +188,7 @@ export default function Dashboard() {
 
       const { data: scores } = await supabase.from('gameweek_scores').select('*').eq('user_id', user.id).eq('competition_id', comp)
       if (scores?.length) setStats({ total: scores.reduce((a,b)=>a+(b.points||0),0), exact: scores.reduce((a,b)=>a+(b.exact_scores||0),0), correct: scores.reduce((a,b)=>a+(b.correct_results||0),0) })
+      else setStats(null) // no scores yet: show 0, not the last competition's totals
       const r = await resolvePointRules(supabase, comp)
       setRules(r)
 
@@ -201,6 +205,9 @@ export default function Dashboard() {
         } else {
           setMyTpPlays([])
         }
+      } else {
+        // Cups have no Triple Points: clear any from a league viewed before.
+        setMyTpPlays([])
       }
     } finally { setLoading(false) }
   }
