@@ -28,10 +28,9 @@ const CONFETTI_COLOURS = [
  * once it has started. This is that screen.
  *
  * The sequence: the ball breathes, bursts into confetti and scarves, and the
- * full wordmark is revealed behind it — goal frame, net, ALOTO with the ball
- * as its first O, PREDICTION PRO beneath.
+ * app icon is revealed behind it, with ALOTO and PREDICTION PRO beneath.
  *
- * Everything is CSS and one PNG. No canvas, no animation library, nothing to
+ * Everything is CSS and two PNGs. No canvas, no animation library, nothing to
  * fetch — a splash that waits for a dependency defeats its own purpose.
  */
 export default function SplashScreen({ onDone }) {
@@ -157,90 +156,39 @@ export default function SplashScreen({ onDone }) {
         />
       )}
 
-      {/* ---- The wordmark, revealed by the burst ---- */}
+      {/* ---- The app icon and name, revealed by the burst ----
+          The same mark as the App Store icon, the sign-in screen and the
+          website. (The old goal frame, net and pitch wordmark is retired.) */}
       <div style={{
         textAlign: 'center',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
         opacity: burst ? 1 : 0,
         transform: burst ? 'scale(1)' : 'scale(0.88)',
         transition: 'opacity 520ms ease-out 150ms, transform 700ms cubic-bezier(0.18, 1.15, 0.35, 1) 150ms',
       }}>
-        <div style={{
-          position: 'relative',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 'clamp(6px, 2.4vw, 18px)',
-          padding: 'clamp(22px, 7vw, 40px) clamp(16px, 5vw, 34px)',
-          // Three sides only — a goal has no bottom bar.
-          borderTop: '4px solid #fff',
-          borderLeft: '4px solid #fff',
-          borderRight: '4px solid #fff',
-          borderRadius: '3px 3px 0 0',
-        }}>
-          {/* The net: two crossing gradients rather than an image, so it
-              scales to any screen and needs nothing to load. */}
-          <div style={{
-            position: 'absolute', inset: 0, pointerEvents: 'none',
-            background:
-              'repeating-linear-gradient(45deg, transparent 0 15px, rgba(255,255,255,0.20) 15px 16px),'
-              + 'repeating-linear-gradient(-45deg, transparent 0 15px, rgba(255,255,255,0.20) 15px 16px)',
-          }}/>
-
-          <span style={LETTER}>A</span>
-          <span style={LETTER}>L</span>
-
-          {/* The ball stands in for the first O. Sized to the cap height of
-              the letters rather than to itself — a circle set to the same
-              nominal size as a letter reads as larger, so it takes the letter
-              size and no more. */}
-          <img src="/splash-ball.png" alt="" style={{
-            width: O_SIZE, height: O_SIZE, display: 'block',
-          }}/>
-
-          <span style={LETTER}>T</span>
-
-          {/* And a pitch for the second, as on the logo. Same size as the ball
-              so the two O's match each other as well as the letters. */}
-          <svg viewBox="0 0 100 100" style={{
-            width: O_SIZE, height: O_SIZE, display: 'block',
-          }}>
-            <defs>
-              {/* Everything inside the pitch is clipped to it. The penalty
-                  boxes sit at x=2 and x=84 with a 2.6-wide stroke, so half
-                  that stroke fell outside the circle and stuck out past the
-                  edge of the O. Clipping cuts them at the boundary, which is
-                  also how a real pitch marking meets the touchline. */}
-              <clipPath id="aloto-pitch-clip">
-                <circle cx="50" cy="50" r="48"/>
-              </clipPath>
-            </defs>
-
-            <circle cx="50" cy="50" r="48" fill="#1f7a34"/>
-
-            <g fill="none" stroke="#fff" strokeWidth="2.6" opacity="0.95"
-              clipPath="url(#aloto-pitch-clip)">
-              <line x1="50" y1="2" x2="50" y2="98"/>
-              <circle cx="50" cy="50" r="15"/>
-              <rect x="2" y="30" width="14" height="40"/>
-              <rect x="84" y="30" width="14" height="40"/>
-            </g>
-
-            {/* The touchline is drawn OUTSIDE the clip, so its own stroke is
-                not halved by it — a clipped outline looks thinner than the
-                markings inside and reads as a mistake. */}
-            <circle cx="50" cy="50" r="48" fill="none" stroke="#fff"
-              strokeWidth="2.6" opacity="0.95"/>
-
-            <circle cx="50" cy="50" r="3" fill="#fff"/>
-          </svg>
-        </div>
+        <img src="/icon.png" alt="" style={{
+          width: ICON_SIZE, height: ICON_SIZE, display: 'block',
+          borderRadius: '22.5%',
+          boxShadow: '0 18px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.12)',
+        }}/>
 
         <p style={{
-          margin: 'clamp(12px, 4vw, 20px) 0 0',
-          fontSize: 'clamp(17px, 6.2vw, 34px)',
+          margin: 'clamp(16px, 5vw, 26px) 0 0',
+          fontSize: LETTER_SIZE,
           fontWeight: 800,
-          letterSpacing: '0.06em',
+          letterSpacing: '0.08em',
+          lineHeight: 1,
           color: '#fff',
+        }}>
+          ALOTO
+        </p>
+
+        <p style={{
+          margin: 'clamp(8px, 2.6vw, 14px) 0 0',
+          fontSize: 'clamp(13px, 4.4vw, 22px)',
+          fontWeight: 700,
+          letterSpacing: '0.24em',
+          color: 'rgba(255,255,255,0.85)',
         }}>
           PREDICTION PRO
         </p>
@@ -277,17 +225,6 @@ export default function SplashScreen({ onDone }) {
   )
 }
 
-const LETTER_SIZE = 'clamp(42px, 16.5vw, 92px)'
+const LETTER_SIZE = 'clamp(40px, 14vw, 76px)'
 
-/* The two O's are drawn, not typed, so they need an explicit size.
-   0.78 of the letter size matches the cap height of the font — a capital A is
-   not as tall as its nominal point size, and matching the nominal size makes
-   the round shapes sit visibly proud of the letters beside them. */
-const O_SIZE = 'clamp(33px, 12.9vw, 72px)'
-
-const LETTER = {
-  fontSize: LETTER_SIZE,
-  fontWeight: 800,
-  color: '#fff',
-  lineHeight: 1,
-}
+const ICON_SIZE = 'clamp(110px, 36vw, 190px)'
