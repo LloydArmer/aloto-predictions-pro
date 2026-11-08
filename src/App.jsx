@@ -8,6 +8,7 @@ import Dashboard      from './components/features/dashboard/Dashboard'
 import Predict        from './components/features/predict/Predict'
 import NflPredict     from './components/features/nfl/NflPredict'
 import NflStandings   from './components/features/nfl/NflStandings'
+import NflDashboard   from './components/features/nfl/NflDashboard'
 import SportRoute     from './components/layout/SportRoute'
 import Standings      from './components/features/standings/Standings'
 import Admin          from './components/features/admin/Admin'
@@ -31,6 +32,7 @@ function Protected({ children }) {
 
 // Pages that each sport draws its own way.
 function PredictForSport() { return <SportRoute football={Predict} nfl={NflPredict} /> }
+function DashboardForSport() { return <SportRoute football={Dashboard} nfl={NflDashboard} /> }
 function StandingsForSport() { return <SportRoute football={Standings} nfl={NflStandings} /> }
 
 function wrap(Page) {
@@ -78,7 +80,7 @@ function AppRoutes() {
           exchanged. */}
       <Route path="/login"  element={(user && !resetting) ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
-      <Route path="/"             element={wrap(Dashboard)} />
+      <Route path="/"             element={wrap(DashboardForSport)} />
       <Route path="/predict"      element={wrap(PredictForSport)} />
       <Route path="/standings"    element={wrap(StandingsForSport)} />
       <Route path="/chat"         element={wrap(Chat)} />
