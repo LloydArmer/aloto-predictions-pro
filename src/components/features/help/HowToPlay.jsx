@@ -269,9 +269,23 @@ const F1 = [
       ['Who sets the points', 'Your league admin, in Admin → Scoring. Every place can be changed.'],
       ['Grid means qualifying', 'The grid pick is scored on the qualifying result, before any grid penalties.'],
       ['Live', 'While a session runs, the Dashboard and Predict show the order now, your exactly-right picks ticked, and your points if it finished that way. The lap count shows during the race.'],
-      ['The table', 'Standings → Table: Grid (both qualifying picks), Race, Sprint and Season points, then the total. Race results shows each weekend; tap a name to see their picks. Championship shows the real standings.'],
     ],
     tip: 'Short on time? Start from championship order, then just move the drivers you disagree with.',
+  },
+  {
+    key: 'f1-standings',
+    icon: 'ti-list-numbers',
+    title: 'F1 table and results',
+    summary: 'Standings in an F1 league has three views: your league table, each race weekend\'s scores, and the real championship.',
+    steps: [
+      ['Table', 'Standings → Table. Grid (qualifying and sprint qualifying picks), Race, Sprint and Season points, then the total. You are highlighted.'],
+      ['Race results', 'Standings → Race results. Choose a weekend to see everyone\'s points for it. Tap a name to see their grid and race picks.'],
+      ['Championship', 'Standings → Championship. The real drivers\' and constructors\' standings, which the season predictions are settled on.'],
+    ],
+    notes: [
+      ['Dashboard', 'Shows the next race and its session times, your picks for each session, the live order while one runs, your rank and points, and the top of the table.'],
+      ['When points count', 'A session\'s points go into the table once it is confirmed. Until then the Dashboard shows them as points so far.'],
+    ],
   },
   {
     key: 'f1-season',
