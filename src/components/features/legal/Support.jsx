@@ -98,7 +98,7 @@ export default function Support() {
       </P>
       <P>
         Pro is for people who run competitions. Free accounts can run one league, one cup and
-        one final league table prediction (and one NFL league); Pro removes those limits. Only the admin pays, and everyone in their
+        one final league table prediction (and one NFL league and one F1 league); Pro removes those limits. Only the admin pays, and everyone in their
         competitions gets the benefit.
       </P>
 

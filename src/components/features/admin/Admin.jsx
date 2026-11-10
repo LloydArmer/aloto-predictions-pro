@@ -16,6 +16,7 @@ import GameweekFixtureLink from './GameweekFixtureLink'
 import FixtureBrowser from './FixtureBrowser'
 import { fitName } from '../../../lib/names'
 import SeasonTab from './SeasonTab'
+import { F1RacesTab, F1ScoringTab, F1SeasonTab } from '../f1/F1Admin'
 import ChatModerationTab, { useOpenReportCount } from './ChatModerationTab'
 import toast from 'react-hot-toast'
 
@@ -44,9 +45,15 @@ export default function Admin() {
 
   // NFL has no cup competitions (Lloyd, 6 Nov 2026), so its Admin has no Cup
   // tab. Football keeps every tab exactly as before.
+  // F1 is league only too, and its Fixtures tab is the race calendar.
   const isNflSport = activeSport === 'nfl'
-  const tabs = useMemo(() => isNflSport ? TABS.filter(t => t.key !== 'config') : TABS, [isNflSport])
-  useEffect(() => { if (isNflSport && tab === 'config') setTab('competitions') }, [isNflSport, tab])
+  const isF1Sport = activeSport === 'f1'
+  const leagueOnlySport = isNflSport || isF1Sport
+  const tabs = useMemo(() => {
+    const list = leagueOnlySport ? TABS.filter(t => t.key !== 'config') : TABS
+    return isF1Sport ? list.map(t => t.key === 'gameweeks' ? { ...t, label: 'Races', icon: 'ti-flag' } : t) : list
+  }, [leagueOnlySport, isF1Sport])
+  useEffect(() => { if (leagueOnlySport && tab === 'config') setTab('competitions') }, [leagueOnlySport, tab])
   // The shared selection is passed the FULL list, exactly as before. Admin must
   // not hand it a filtered list: that would move the selection for every other
   // page whenever Admin opened. Filtering happens below, for display only.
@@ -155,7 +162,7 @@ export default function Admin() {
       {tab === 'competitions' && (
         <CompetitionsTab user={user} competitions={managed} loading={compsLoading}
           createCompetition={createCompetition} refetchComps={refetchComps}
-          selectedComp={selectedComp} setSelectedComp={setSelectedComp} leagueOnly={isNflSport} />
+          selectedComp={selectedComp} setSelectedComp={setSelectedComp} leagueOnly={leagueOnlySport} sport={activeSport} />
       )}
 
       {/* The other tabs only open for a competition this person runs. They
@@ -164,9 +171,15 @@ export default function Admin() {
         <EmptyState icon="ti-lock" title="You play in this competition" description="Choose a competition you run from the list above to manage it." />
       )}
       {(onCupTab ? pickedOk : managesSelected) && <>
-        {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
-        {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
-        {tab === 'season' && <SeasonTab competitionId={selectedComp} competitions={competitions} sport={isNflSport ? 'nfl' : 'football'} />}
+        {isF1Sport ? <>
+          {tab === 'rules' && <F1ScoringTab competitionId={selectedComp} />}
+          {tab === 'gameweeks' && <F1RacesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
+          {tab === 'season' && <F1SeasonTab competitionId={selectedComp} />}
+        </> : <>
+          {tab === 'rules' && <RulesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
+          {tab === 'gameweeks' && <GameweeksTab competitionId={selectedComp} competitions={competitions} />}
+          {tab === 'season' && <SeasonTab competitionId={selectedComp} competitions={competitions} sport={isNflSport ? 'nfl' : 'football'} />}
+        </>}
         {tab === 'config' && <ConfigTab competitionId={cupId} competitions={competitions} />}
         {tab === 'participants' && <ParticipantsTab competitionId={selectedComp} competitions={competitions} inviterName={profile?.display_name} />}
         {tab === 'chat' && <ChatModerationTab competitionId={selectedComp} />}
@@ -177,7 +190,7 @@ export default function Admin() {
 
 
 // ───────────────────────── Competitions ─────────────────────────
-function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp, leagueOnly = false }) {
+function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp, leagueOnly = false, sport = 'football' }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
   const [isPro, setIsPro] = useState(null)   // null while unknown
@@ -250,7 +263,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name</p>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder={leagueOnly ? "NFL Pick Em 2026" : "Premier League Preds 2025/26"} />
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder={sport === 'f1' ? "F1 Predictions 2027" : leagueOnly ? "NFL Pick Em 2026" : "Premier League Preds 2025/26"} />
           </div>
           <div>
             {/* The icon follows the format — there is nothing to choose, so

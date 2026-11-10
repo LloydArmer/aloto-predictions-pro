@@ -28,6 +28,7 @@ export default function HowToPlay({ isAdmin = false }) {
   const groups = [
     { title: 'Playing', guides: PLAYING },
     { title: 'NFL', guides: NFL },
+    { title: 'F1', guides: F1 },
     { title: 'Free and Pro', guides: PLANS },
     ...(isAdmin ? [{ title: 'Running a competition', guides: ADMIN }] : []),
   ]
@@ -90,7 +91,7 @@ const PLAYING = [
     steps: [
       ['Join', 'Dashboard → Join a competition. Enter the code (for example ABC123) and tap Join.'],
       ['Pick a competition', 'If you are in more than one, choose it from the selector at the top of Predict or Standings.'],
-      ['Switch sport', 'If you play football and NFL, tap the sport chooser in the top bar. Each sport keeps its own competitions.'],
+      ['Switch sport', 'If you play more than one sport (football, NFL, F1), tap the sport chooser in the top bar. Each sport keeps its own competitions.'],
       ['Turn on reminders', 'Settings → Push notifications, on each phone you use.'],
     ],
     tip: 'Got a second code? Settings → Join a competition works too. There is no limit to how many competitions you can play in.',
@@ -146,8 +147,8 @@ const PLAYING = [
     title: 'Season predictions',
     summary: 'Calls you make once, before the season, scored at the end. Everything stays sealed until the deadline, then everyone can compare.',
     steps: [
-      ['Open them', 'Football: Predict → Season. NFL: Predict → Season tab.'],
-      ['Final league table (football)', 'Drag every team into the order you think they will finish. Points for each one in exactly the right place.'],
+      ['Open them', 'Football: Predict → Season. NFL and F1: Predict → Season tab.'],
+      ['Final league table (football)', 'Choose a team for each place, from 1st to last, in the order you think they will finish. Points for each one in exactly the right place.'],
       ['Individual questions', 'Pick an answer for each one, such as league winner or Super Bowl winner. Each carries its own points.'],
       ['Beat the deadline', 'The countdown is on your Dashboard. After it, picks lock and open for everyone to see.'],
     ],
@@ -247,6 +248,48 @@ const NFL = [
   },
 ]
 
+const F1 = [
+  {
+    key: 'f1-picks',
+    icon: 'ti-steering-wheel',
+    title: 'F1 picks',
+    summary: 'Every race weekend you put the whole field in order twice: the grid before qualifying, and the finishing order before the race. Sprint weekends add the same two picks for the sprint.',
+    steps: [
+      ['Switch to F1', 'Tap the sport chooser in the top bar.'],
+      ['Open the weekend', 'Predict. The next race is chosen for you; pick another from the selector.'],
+      ['Grid tab', 'Put all 22 drivers in the order you think they\'ll qualify. Tap a driver, then tap another to swap them, or use the arrows.'],
+      ['Race tab', 'Put all 22 in the order you think they\'ll finish. Start from qualifying copies the real grid once it\'s in.'],
+      ['Save', 'Tap Save for each tab. You can change a pick as often as you like until it locks.'],
+    ],
+    notes: [
+      ['When picks lock', 'The grid when qualifying starts. The race at lights out. On sprint weekends, the sprint grid when sprint qualifying starts and the sprint at its start.'],
+      ['Grid points', '5 points for each driver in exactly the right place, for all 22. The same for the sprint grid.'],
+      ['Race points', 'A driver in exactly the right place scores what that place pays in F1: 25, 18, 15, 12, 10, 8, 6, 4, 2 and 1 for 1st to 10th, then 1 point for 11th to 22nd.'],
+      ['Sprint points', 'The sprint points: 8, 7, 6, 5, 4, 3, 2 and 1 for 1st to 8th.'],
+      ['Who sets the points', 'Your league admin, in Admin → Scoring. Every place can be changed.'],
+      ['Grid means qualifying', 'The grid pick is scored on the qualifying result, before any grid penalties.'],
+      ['Live', 'While a session runs, the Dashboard and Predict show the order now, your exactly-right picks ticked, and your points if it finished that way. The lap count shows during the race.'],
+      ['The table', 'Standings → Table: Grid (both qualifying picks), Race, Sprint and Season points, then the total. Race results shows each weekend; tap a name to see their picks. Championship shows the real standings.'],
+    ],
+    tip: 'Short on time? Start from championship order, then just move the drivers you disagree with.',
+  },
+  {
+    key: 'f1-season',
+    icon: 'ti-trophy',
+    title: 'F1 season predictions',
+    summary: 'Call the season before it starts. The Drivers\' Champion is free in every F1 league. With Pro, your admin can add the full drivers\' table and the full constructors\' table.',
+    steps: [
+      ['Open them', 'Predict → Season tab, in your F1 league.'],
+      ['Choose your champion', 'Pick a driver and tap Save.'],
+      ['Order the tables', 'If your league has them, put the drivers and the teams in order and save each one.'],
+    ],
+    notes: [
+      ['Points', '20 for the right champion, and 20 for each place in a table you get exactly right, unless your admin changes them.'],
+      ['Deadline', 'Everything locks at the deadline your admin sets. After that you can see how each line stands against the real championship.'],
+    ],
+  },
+]
+
 const PLANS = [
   {
     key: 'pro',
@@ -254,8 +297,8 @@ const PLANS = [
     title: 'Free and Pro',
     summary: 'Playing is always free, in as many competitions as you like, with no adverts. Pro is for admins who want to run more.',
     notes: [
-      ['Free', 'Football: one league, one cup and one final league table prediction. NFL: one league, with the Super Bowl, AFC and NFC champion questions.'],
-      ['Pro', 'Unlimited leagues and cups, individual season predictions including questions you write yourself, NFL MVP and division winner questions, and a full archive of past seasons.'],
+      ['Free', 'Football: one league, one cup and one final league table prediction. NFL: one league, with the Super Bowl, AFC and NFC champion questions. F1: one league, with the Drivers\' Champion question.'],
+      ['Pro', 'Unlimited leagues and cups, individual season predictions including questions you write yourself, NFL MVP and division winner questions, the full F1 drivers\' and constructors\' tables, and a full archive of past seasons.'],
       ['Who pays', 'Only the admin. Everyone in a Pro admin\'s competitions gets what it unlocks, without paying.'],
       ['Price', '£29.99 a year, through the App Store. Settings → ALOTO Pro.'],
     ],
@@ -270,7 +313,7 @@ const ADMIN = [
     title: 'Setting up a competition',
     summary: 'Admin is in the top bar on a tablet or computer, and in the top-right menu on a phone.',
     steps: [
-      ['Choose the sport', 'Switch to football or NFL in the top bar first. A competition belongs to one sport.'],
+      ['Choose the sport', 'Switch to football, NFL or F1 in the top bar first. A competition belongs to one sport. NFL and F1 are leagues only.'],
       ['Create it', 'Admin → Competitions. League for a points table, Knockout or Group + Knockout for a cup.'],
       ['Set the points', 'Admin → Scoring. In NFL that is the correct winner, team score, each margin line and the two full house bonuses. Set any to 0 to switch it off.'],
       ['Invite people', 'Admin → Players. Share the six-character join code.'],
@@ -298,6 +341,21 @@ const ADMIN = [
     tip: 'Void a postponed fixture rather than deleting it. It then counts for nothing and doesn\'t spoil anyone\'s full house.',
   },
   {
+    key: 'admin-f1',
+    icon: 'ti-flag',
+    title: 'Running an F1 league',
+    summary: 'In F1, Admin → Fixtures is called Races. Add the Grands Prix from the F1 calendar; times, drivers, live order and results come from the F1 feed.',
+    steps: [
+      ['Add races', 'Admin → Races → Add races from the calendar. Tick the races and tap Add. Each weekend becomes one round.'],
+      ['Drivers', 'Loaded with the first races. Refresh drivers if the line-up changes mid-season.'],
+      ['Confirm results', 'Open a race. Each session shows its order from the feed as Provisional. Tap Confirm and score. Or switch on Confirm and score results automatically.'],
+      ['Correct a result', 'Set by hand puts the order right (a late penalty, say) and scores it again. Reopen takes a confirmed session\'s points off until you confirm it again.'],
+      ['Points', 'Admin → Scoring: grid points per place, and the points for every race and sprint finishing place.'],
+      ['Season', 'Admin → Season: open it, set the deadline, the points, and switch on the full tables (Pro). Update from current standings shows where everyone would be now; Settle the season after the last race.'],
+    ],
+    tip: 'Races already added by another F1 league are shared, so players in both leagues make their picks once.',
+  },
+  {
     key: 'admin-season',
     icon: 'ti-calendar-star',
     title: 'Season predictions setup',
@@ -309,6 +367,7 @@ const ADMIN = [
     ],
     notes: [
       ['NFL on the free plan', 'You can add Super Bowl Winner, AFC Champion and NFC Champion. Questions with a lock need Pro.'],
+      ['F1 on the free plan', 'The Drivers\' Champion. The full drivers\' and constructors\' tables need Pro.'],
       ['If Pro lapses', 'Questions you\'ve already added stay. You just can\'t add more Pro ones.'],
     ],
   },

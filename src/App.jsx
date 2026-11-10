@@ -9,6 +9,9 @@ import Predict        from './components/features/predict/Predict'
 import NflPredict     from './components/features/nfl/NflPredict'
 import NflStandings   from './components/features/nfl/NflStandings'
 import NflDashboard   from './components/features/nfl/NflDashboard'
+import F1Predict      from './components/features/f1/F1Predict'
+import F1Standings    from './components/features/f1/F1Standings'
+import F1Dashboard    from './components/features/f1/F1Dashboard'
 import SportRoute     from './components/layout/SportRoute'
 import Standings      from './components/features/standings/Standings'
 import Admin          from './components/features/admin/Admin'
@@ -31,9 +34,9 @@ function Protected({ children }) {
 }
 
 // Pages that each sport draws its own way.
-function PredictForSport() { return <SportRoute football={Predict} nfl={NflPredict} /> }
-function DashboardForSport() { return <SportRoute football={Dashboard} nfl={NflDashboard} /> }
-function StandingsForSport() { return <SportRoute football={Standings} nfl={NflStandings} /> }
+function PredictForSport() { return <SportRoute football={Predict} nfl={NflPredict} f1={F1Predict} /> }
+function DashboardForSport() { return <SportRoute football={Dashboard} nfl={NflDashboard} f1={F1Dashboard} /> }
+function StandingsForSport() { return <SportRoute football={Standings} nfl={NflStandings} f1={F1Standings} /> }
 
 function wrap(Page) {
   return (

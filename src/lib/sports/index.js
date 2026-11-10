@@ -23,7 +23,11 @@ export async function recalculateGameweekForEachSport(supabase, gameweekId) {
   ;(comps || []).forEach(c => { sportById[c.id] = c.sport || 'football' })
 
   for (const competitionId of competitionIds) {
-    if (sportById[competitionId] === 'nfl') {
+    if (sportById[competitionId] === 'f1') {
+      // F1 scores in the database, per race, for every F1 league at once.
+      const { data: race } = await supabase.from('f1_races').select('id').eq('gameweek_id', gameweekId).maybeSingle()
+      if (race) await supabase.rpc('f1_score_race', { p_race_id: race.id })
+    } else if (sportById[competitionId] === 'nfl') {
       const rules = await nflPointRules(supabase, competitionId)
       await recalculateNflGameweek(supabase, competitionId, gameweekId, rules)
     } else {

@@ -219,10 +219,12 @@ function ProBenefits() {
       <p>· Unlimited leagues and cups</p>
       <p>· Individual season predictions, including questions you write yourself</p>
       <p>· NFL: MVP and division winner questions, and your own</p>
+      <p>· F1: the full drivers' and constructors' table predictions</p>
       <p>· A full archive of past seasons</p>
       <p style={{ color: 'var(--txt-muted)', marginTop: 6 }}>
         The free plan includes one league, one cup and the final league table prediction,
-        and one NFL league with Super Bowl winner, AFC champion and NFC champion predictions.
+        one NFL league with Super Bowl winner, AFC champion and NFC champion predictions,
+        and one F1 league with the Drivers' Champion prediction.
         Playing is always free, however many competitions you are in.
       </p>
     </div>
