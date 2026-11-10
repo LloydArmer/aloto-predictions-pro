@@ -193,6 +193,13 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
     c => c.created_by === user?.id && (c.format === 'knockout' || c.format === 'group_knockout')
   ).length
   const cupLimitReached = isPro === false && cupCount >= 1
+  // One league per sport on the free plan (118). `competitions` here is
+  // already only the sport on screen, so this counts this sport's leagues.
+  const leagueCount = competitions.filter(
+    c => c.created_by === user?.id && c.format === 'league'
+  ).length
+  const leagueLimitReached = isPro === false && leagueCount >= 1
+  const limitHit = format === 'league' ? leagueLimitReached : cupLimitReached
   // No longer editable: the icon is derived from `format`. The column is still
   // written (blank) so nothing downstream has to change.
   const emoji = ''
@@ -215,7 +222,9 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
       // The database raises a named exception when a free-tier limit is hit.
       // Translated here so the person is told what the rule is and how to lift
       // it, rather than being shown a raw Postgres error.
-      if (String(err.message || '').includes('FREE_TIER_CUP_LIMIT')) {
+      if (String(err.message || '').includes('FREE_TIER_LEAGUE_LIMIT')) {
+        toast.error('Free accounts can run one league. Upgrade to Pro for unlimited leagues and cups.')
+      } else if (String(err.message || '').includes('FREE_TIER_CUP_LIMIT')) {
         toast.error('Free accounts can run one cup competition. Upgrade to Pro for unlimited cups and season predictions.')
       } else {
         toast.error(err.message || 'Could not create competition')
@@ -252,16 +261,23 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
               <CompetitionIcon format={format} size="md" />
               {/* NFL is league only: no cups, so nothing to choose. */}
               {leagueOnly ? (
-                <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>League</span>
+                <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>League{leagueLimitReached ? ' — Pro' : ''}</span>
               ) : (
               <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
-                <option value="league">League</option>
+                <option value="league">League{leagueLimitReached ? ' — Pro' : ''}</option>
                 <option value="knockout">Knockout{cupLimitReached ? ' — Pro' : ''}</option>
                 <option value="group_knockout">Group + Knockout{cupLimitReached ? ' — Pro' : ''}</option>
               </Select>
               )}
             </div>
           </div>
+          {limitHit && (
+            <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+              {format === 'league'
+                ? 'The free plan includes one league. Upgrade to Pro in Settings → ALOTO Pro to run more.'
+                : 'The free plan includes one cup. Upgrade to Pro in Settings → ALOTO Pro to run more.'}
+            </p>
+          )}
           <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Creating…' : 'Create competition'}</Button>
         </form>
       </Card>

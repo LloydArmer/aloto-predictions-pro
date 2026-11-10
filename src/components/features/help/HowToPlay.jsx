@@ -251,8 +251,8 @@ const PLANS = [
     title: 'Free and Pro',
     summary: 'Playing is always free, in as many competitions as you like, with no adverts. Pro is for admins who want to run more.',
     notes: [
-      ['Free', 'Unlimited leagues, one cup, one final league table prediction, and the NFL Super Bowl, AFC and NFC champion questions.'],
-      ['Pro', 'Unlimited cups, individual season predictions including questions you write yourself, NFL MVP and division winner questions, and a full archive of past seasons.'],
+      ['Free', 'Football: one league, one cup and one final league table prediction. NFL: one league, with the Super Bowl, AFC and NFC champion questions.'],
+      ['Pro', 'Unlimited leagues and cups, individual season predictions including questions you write yourself, NFL MVP and division winner questions, and a full archive of past seasons.'],
       ['Who pays', 'Only the admin. Everyone in a Pro admin\'s competitions gets what it unlocks, without paying.'],
       ['Price', '£29.99 a year, through the App Store. Settings → ALOTO Pro.'],
     ],

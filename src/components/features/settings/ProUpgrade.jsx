@@ -222,7 +222,7 @@ function ProBenefits() {
       <p>· A full archive of past seasons</p>
       <p style={{ color: 'var(--txt-muted)', marginTop: 6 }}>
         The free plan includes one league, one cup and the final league table prediction,
-        and NFL Super Bowl winner, AFC champion and NFC champion predictions.
+        and one NFL league with Super Bowl winner, AFC champion and NFC champion predictions.
         Playing is always free, however many competitions you are in.
       </p>
     </div>
