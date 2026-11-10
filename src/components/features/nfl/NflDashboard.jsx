@@ -136,7 +136,7 @@ export default function NflDashboard() {
           <StatCard label="Your rank" value={me ? `#${me.rank}` : '—'} sub={`of ${ranked.length} player${ranked.length === 1 ? '' : 's'}`} />
           <StatCard label="Total points" value={me?.points ?? 0} sub="this season" />
           <StatCard label="Exact scores" value={me?.exact ?? 0} sub="games called exactly" />
-          <StatCard label="Right winners" value={me?.winners ?? 0} sub="games" />
+          <StatCard label="Correct winners" value={me?.winners ?? 0} sub="games" />
         </div>
 
         {/* Picks still to make, and notifications if they're off. */}

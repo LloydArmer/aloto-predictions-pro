@@ -154,7 +154,7 @@ function PointsKey({ rules }) {
   return (
     <div className="mb-4 p-3 rounded-md text-xs" style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)', color: 'var(--txt-second)', lineHeight: 1.6 }}>
       <div>
-        Right winner <strong style={{ color: 'var(--txt-primary)' }}>{n('winner_only_points')}</strong>
+        Correct winner <strong style={{ color: 'var(--txt-primary)' }}>{n('winner_only_points')}</strong>
         &nbsp;+&nbsp; each team's score exact <strong style={{ color: 'var(--green)' }}>{n('team_score_points')}</strong>
         &nbsp;+&nbsp; your margin:
       </div>
@@ -168,6 +168,15 @@ function PointsKey({ rules }) {
       <div style={{ color: 'var(--txt-muted)' }}>
         Exact score = {exact}. Wrong winner = 0. Final scores include overtime.
       </div>
+      {(n('full_house_results_bonus') > 0 || n('full_house_scores_bonus') > 0) && (
+        <div>
+          Full house bonus, once a week:
+          {n('full_house_results_bonus') > 0 && <> every winner correct <strong style={{ color: 'var(--gold)' }}>+{n('full_house_results_bonus')}</strong></>}
+          {n('full_house_results_bonus') > 0 && n('full_house_scores_bonus') > 0 && ' ·'}
+          {n('full_house_scores_bonus') > 0 && <> every score exact <strong style={{ color: 'var(--gold)' }}>+{n('full_house_scores_bonus')}</strong></>}
+        </div>
+      )}
+      <div style={{ color: 'var(--txt-muted)' }}>Your league admin sets these points.</div>
     </div>
   )
 }

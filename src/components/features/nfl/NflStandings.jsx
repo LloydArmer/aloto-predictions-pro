@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
-import { loadNflTable } from '../../../lib/sports/nfl/table'
+import { loadNflTable, withRanks } from '../../../lib/sports/nfl/table'
 import SeasonResults from '../season/SeasonResults'
 import { useAuth } from '../../../hooks/useAuth'
 import { useCompetitions } from '../../../hooks/useCompetitions'
 import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
 import { sortGameweeks, latestGameweek } from '../../../lib/gameweeks'
-import { nflPointRules, marginScore, bandStyle } from '../../../lib/sports/nfl/scoring'
+import { nflPointRules, marginScore, bandStyle, MARGIN_BANDS } from '../../../lib/sports/nfl/scoring'
 import { nflTeam } from '../../../lib/sports/nfl/teams'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import { Card, Select, Spinner, EmptyState } from '../../ui'
@@ -15,8 +15,11 @@ import { Card, Select, Spinner, EmptyState } from '../../ui'
  * NFL Standings. Separate from football's: two views, the season table and a
  * week's results.
  *
- * Phones get no sideways scrolling, the same rule football's table follows:
- * each row is rank, name and points, and a tap opens the detail.
+ * The page never scrolls sideways. The season table is wider than a phone, so
+ * it scrolls inside its own card with the rank and name pinned.
+ *
+ * No monthly tables and no Triple Points in NFL (Lloyd, 10 Nov 2026): the
+ * season table, and who scored the most each week.
  */
 export default function NflStandings() {
   const { user } = useAuth()
@@ -60,11 +63,56 @@ export default function NflStandings() {
 }
 
 // ── The season table ────────────────────────────────────────────────────────
-// Built from gameweek_scores, which NFL scoring writes when a week is marked
-// completed. Ties on points split on exact scores, then on right winners.
+// A column for each way of scoring, so anyone can see where a total came from
+// (Lloyd, 10 Nov 2026), with a key above it saying what each is worth in THIS
+// league. The counts come from the finished weeks; Pts is the official total.
+//
+// Wider than a phone, so the table scrolls sideways INSIDE its card with the
+// rank and name pinned on the left. The page itself never scrolls sideways.
+const COLS = [
+  { key: 'winners',    head: 'CW', name: 'Correct winner',          pts: r => r.winner_only_points },
+  { key: 'teamScores', head: 'TS', name: 'Team score, each', pts: r => r.team_score_points },
+  ...MARGIN_BANDS.map(b => ({
+    band: b.band,
+    head: b.band === 'exact_margin' ? 'EM' : `≤${b.max}`,
+    name: b.band === 'exact_margin' ? 'Exact margin' : `Margin within ${b.max}`,
+    pts: r => r[b.key],
+  })),
+  { key: 'fullHouses', head: 'FH', name: 'Full house', pts: r => [r.full_house_results_bonus, r.full_house_scores_bonus] },
+  { key: 'weeksWon',   head: 'WW', name: 'Weeks won', pts: null },
+]
+
+function TableKey({ rules, hasSeason }) {
+  const n = v => Number(v) || 0
+  return (
+    <div className="mb-3 p-3 rounded-md text-xs grid gap-x-4 gap-y-1"
+      style={{ background: 'var(--bg-surface)', border: '0.5px solid var(--border)', color: 'var(--txt-second)', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))' }}>
+      {COLS.map(c => {
+        const p = c.pts ? c.pts(rules) : null
+        const val = p == null ? null : Array.isArray(p) ? `+${n(p[0])} / +${n(p[1])}` : n(p)
+        return (
+          <span key={c.head} className="flex items-baseline gap-1.5 whitespace-nowrap">
+            <strong style={{ color: 'var(--txt-primary)', minWidth: 30 }}>{c.head}</strong>
+            <span className="truncate">{c.name}</span>
+            {val != null && <strong className="ml-auto" style={{ color: 'var(--accent-txt, var(--accent))' }}>{val}</strong>}
+          </span>
+        )
+      })}
+      {hasSeason && (
+        <span className="flex items-baseline gap-1.5 whitespace-nowrap">
+          <strong style={{ color: 'var(--txt-primary)', minWidth: 30 }}>S</strong><span className="truncate">Season questions</span>
+        </span>
+      )}
+      <span style={{ gridColumn: '1 / -1', color: 'var(--txt-muted)' }} className="mt-1">
+        Full house is a bonus once a week: +{n(rules.full_house_results_bonus)} for every winner correct, +{n(rules.full_house_scores_bonus)} for every score exact.
+        A wrong winner scores 0. Your league admin sets all these points.
+      </span>
+    </div>
+  )
+}
+
 function SeasonTable({ competitionId, userId }) {
   const [rows, setRows] = useState(null)
-  const [open, setOpen] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -82,48 +130,53 @@ function SeasonTable({ competitionId, userId }) {
       description="The table fills in once the first week is marked completed" />
   )
 
-  let rank = 0, prev = null
+  const ranked = withRanks(rows.list)
+  const cell = { padding: '9px 6px', textAlign: 'center', whiteSpace: 'nowrap' }
+  const pinned = (bg, left, width) => ({ position: 'sticky', left, zIndex: 1, minWidth: width, maxWidth: width, backgroundColor: 'var(--bg-surface)', backgroundImage: bg ? `linear-gradient(${bg}, ${bg})` : 'none' })
+
   return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center px-3 py-2 text-xs" style={{ color: 'var(--txt-muted)', borderBottom: '0.5px solid var(--border)' }}>
-        <span style={{ width: 28 }}>#</span>
-        <span className="flex-1">Player</span>
-        {rows.latestLabel && <span style={{ width: 56, textAlign: 'right' }}>{rows.latestLabel}</span>}
-        {rows.hasSeason && <span style={{ width: 52, textAlign: 'right' }}>Season</span>}
-        <span style={{ width: 52, textAlign: 'right' }}>Pts</span>
-      </div>
-      {rows.list.map((r, i) => {
-        if (prev === null || r.points !== prev) rank = i + 1
-        prev = r.points
-        const isMe = r.user_id === userId
-        const isOpen = open === r.user_id
-        return (
-          <div key={r.user_id} style={{ borderBottom: i < rows.list.length - 1 ? '0.5px solid var(--border)' : '' }}>
-            <button onClick={() => setOpen(isOpen ? null : r.user_id)}
-              className="flex items-center px-3 py-2.5 w-full text-left"
-              style={{ background: isMe ? 'var(--accent-dim)' : 'transparent' }}>
-              <span className="text-sm font-semibold" style={{ width: 28, color: rank <= 3 ? 'var(--gold, var(--amber))' : 'var(--txt-muted)' }}>{rank}</span>
-              <span className="flex-1 text-sm truncate" style={{ color: isMe ? 'var(--accent)' : 'var(--txt-primary)', fontWeight: isMe ? 700 : 500 }}>
-                {r.name}{isMe && ' (you)'}
-              </span>
-              {rows.latestLabel && <span className="text-xs" style={{ width: 56, textAlign: 'right', color: 'var(--txt-second)' }}>{r.lastWeek ?? '—'}</span>}
-              {rows.hasSeason && <span className="text-xs" style={{ width: 52, textAlign: 'right', color: r.season > 0 ? 'var(--gold)' : 'var(--txt-muted)' }}>{r.season > 0 ? `+${r.season}` : '–'}</span>}
-              <span className="text-sm font-bold" style={{ width: 52, textAlign: 'right', color: 'var(--txt-primary)' }}>{r.points}</span>
-            </button>
-            {isOpen && (
-              <div className="grid grid-cols-4 gap-2 px-3 pb-3 text-center">
-                {[['Weeks', r.weeks], ['Best week', r.best], ['Exact scores', r.exact], ['Right winners', r.winners]].map(([l, v]) => (
-                  <div key={l} className="rounded-md py-1.5" style={{ background: 'var(--bg-elevated)' }}>
-                    <p className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>{v}</p>
-                    <p className="text-[10px]" style={{ color: 'var(--txt-muted)' }}>{l}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </Card>
+    <div>
+      <TableKey rules={rows.rules} hasSeason={rows.hasSeason} />
+      <Card className="overflow-hidden" style={{ padding: 0 }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table className="text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', fontVariantNumeric: 'tabular-nums' }}>
+            <thead>
+              <tr style={{ color: 'var(--txt-muted)' }}>
+                <th style={{ ...cell, ...pinned(null, 0, 30), textAlign: 'left', paddingLeft: 12, borderBottom: '0.5px solid var(--border)' }}>#</th>
+                <th style={{ ...cell, ...pinned(null, 30, 112), textAlign: 'left', borderBottom: '0.5px solid var(--border)' }}>Player</th>
+                {COLS.map(c => <th key={c.head} title={c.name} style={{ ...cell, fontWeight: 600, borderBottom: '0.5px solid var(--border)' }}>{c.head}</th>)}
+                {rows.hasSeason && <th title="Season question points" style={{ ...cell, fontWeight: 600, borderBottom: '0.5px solid var(--border)' }}>S</th>}
+                <th style={{ ...cell, paddingRight: 12, fontWeight: 700, color: 'var(--txt-primary)', borderBottom: '0.5px solid var(--border)' }}>Pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ranked.map((r, i) => {
+                const isMe = r.user_id === userId
+                const bg = isMe ? 'var(--accent-dim)' : null
+                const line = i < ranked.length - 1 ? '0.5px solid var(--border)' : 'none'
+                const val = c => c.band ? r.bands[c.band] : r[c.key]
+                return (
+                  <tr key={r.user_id} style={{ backgroundColor: bg || 'transparent' }}>
+                    <td style={{ ...cell, ...pinned(bg, 0, 30), textAlign: 'left', paddingLeft: 12, fontWeight: 600, color: r.rank <= 3 ? 'var(--gold, var(--amber))' : 'var(--txt-muted)', borderBottom: line }}>{r.rank}</td>
+                    <td style={{ ...cell, ...pinned(bg, 30, 112), textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', color: isMe ? 'var(--accent-txt, var(--accent))' : 'var(--txt-primary)', fontWeight: isMe ? 700 : 500, fontSize: 13, borderBottom: line }}>
+                      {r.name}
+                    </td>
+                    {COLS.map(c => (
+                      <td key={c.head} style={{ ...cell, color: val(c) ? 'var(--txt-second)' : 'var(--txt-muted)', borderBottom: line }}>{val(c) || '–'}</td>
+                    ))}
+                    {rows.hasSeason && <td style={{ ...cell, color: r.season > 0 ? 'var(--gold)' : 'var(--txt-muted)', borderBottom: line }}>{r.season > 0 ? r.season : '–'}</td>}
+                    <td style={{ ...cell, paddingRight: 12, fontWeight: 700, fontSize: 14, color: 'var(--txt-primary)', borderBottom: line }}>{r.points}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+        Counts are from finished weeks.<span className="sm:hidden"> Swipe the table sideways to see every column.</span>
+      </p>
+    </div>
   )
 }
 
@@ -155,11 +208,12 @@ function WeekResults({ competitionId, userId }) {
     let cancelled = false
     setData(null)
     ;(async () => {
-      const [rules, { data: fixtures }, { data: preds }, { data: parts }] = await Promise.all([
+      const [rules, { data: fixtures }, { data: preds }, { data: parts }, { data: official }] = await Promise.all([
         nflPointRules(supabase, competitionId),
         supabase.from('fixtures').select('*').eq('gameweek_id', weekId).order('kickoff_time'),
         supabase.from('predictions').select('*').eq('gameweek_id', weekId),
         supabase.from('participants').select('user_id').eq('competition_id', competitionId),
+        supabase.from('gameweek_scores').select('*').eq('competition_id', competitionId).eq('gameweek_id', weekId),
       ])
       const memberIds = (parts || []).map(p => p.user_id)
       const { data: profs } = memberIds.length
@@ -181,8 +235,18 @@ function WeekResults({ competitionId, userId }) {
         players[p.user_id].picks[fx.id] = { pred: p, scored }
         if (scored) players[p.user_id].points += scored.points
       }
+      // Once the week is marked completed its stored score is the official one:
+      // it includes any full house bonus.
+      for (const s of (official || [])) {
+        if (!players[s.user_id]) continue
+        players[s.user_id].points = s.points || 0
+        players[s.user_id].fullHouse = !!(s.full_house_results || s.full_house_scores)
+      }
       const list = Object.values(players).sort((a, b) => b.points - a.points || a.name.localeCompare(b.name))
-      if (!cancelled) setData({ list, fixtures: (fixtures || []).filter(f => f.status !== 'void'), finalCount: final.length })
+      const week = weeks.find(g => g.id === weekId)
+      const done = week?.status === 'completed'
+      const top = list[0]?.points || 0
+      if (!cancelled) setData({ list, fixtures: (fixtures || []).filter(f => f.status !== 'void'), finalCount: final.length, done, top })
     })()
     return () => { cancelled = true }
   }, [weekId, competitionId])
@@ -199,6 +263,7 @@ function WeekResults({ competitionId, userId }) {
         <>
           <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>
             {data.finalCount} of {data.fixtures.length} games final. Points count final scores only, overtime included.
+            {data.done && data.top > 0 && <> Week winner: <strong style={{ color: 'var(--gold)' }}>{data.list.filter(p => p.points === data.top).map(p => p.name).join(', ')}</strong> with {data.top}.</>}
           </p>
           <Card className="overflow-hidden">
             {data.list.map((p, i) => {
@@ -209,8 +274,10 @@ function WeekResults({ competitionId, userId }) {
                   <button onClick={() => setOpen(isOpen ? null : p.user_id)}
                     className="flex items-center px-3 py-2.5 w-full text-left gap-2"
                     style={{ background: isMe ? 'var(--accent-dim)' : 'transparent' }}>
-                    <span className="flex-1 text-sm truncate" style={{ color: isMe ? 'var(--accent)' : 'var(--txt-primary)', fontWeight: isMe ? 700 : 500 }}>
-                      {p.name}{isMe && ' (you)'}
+                    <span className="flex-1 min-w-0 flex items-center text-sm" style={{ color: isMe ? 'var(--accent)' : 'var(--txt-primary)', fontWeight: isMe ? 700 : 500 }}>
+                      {data.top > 0 && p.points === data.top && <i className="ti ti-trophy text-xs mr-1 shrink-0" style={{ color: 'var(--gold)' }} aria-label={data.done ? 'Week winner' : 'Leading'} />}
+                      <span className="truncate">{p.name}{isMe && ' (you)'}</span>
+                      {p.fullHouse && <span className="text-[10px] ml-1.5 px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap" style={{ background: 'var(--gold-dim)', color: 'var(--gold)', fontWeight: 600 }}>FH</span>}
                     </span>
                     <BandDots fixtures={data.fixtures} picks={p.picks} />
                     <span className="text-sm font-bold" style={{ width: 40, textAlign: 'right', color: 'var(--txt-primary)' }}>{p.points}</span>

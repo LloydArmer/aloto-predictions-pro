@@ -486,7 +486,8 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
       <AdminLabel className="mb-3">Points & bonus rules</AdminLabel>
       {rules.scoring_mode === 'margin' && (
         <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>
-          Points add up: right winner, plus each team's score exact, plus the one margin line the pick reaches.
+          Points add up: correct winner, plus each team's score exact, plus the one margin line the pick reaches.
+          The full house bonuses are added once a week, on top. Set any of them to 0 to switch it off.
           A wrong winner scores 0. An exact score is the winner, both scores and the exact margin.
           The margin counts direction, so backing the wrong side by 3 when the other side wins by 3 is out by 6.
         </p>
@@ -792,7 +793,8 @@ function GameweeksTab({ competitionId, competitions }) {
 
         {gwTab === 'settings' && (
           <div className="flex flex-col gap-3">
-            <Card className="px-3.5">
+            {/* NFL has no monthly tables and no Triple Points (Lloyd, 10 Nov 2026). */}
+            {!isNfl && <Card className="px-3.5">
               <SettingRow label="Month" hint="Which month's table this gameweek counts towards">
                 <input type="month" value={gw.month_key || ''} aria-label="Month"
                   style={{ width: 150, background: 'var(--bg-raised)', border: '0.5px solid var(--border-med)', borderRadius: 8, padding: '6px 8px', color: 'var(--txt-primary)', fontSize: 13, fontFamily: 'inherit' }}
@@ -802,7 +804,7 @@ function GameweeksTab({ competitionId, competitions }) {
                 <Toggle checked={!!gw.triple_points_blocked} label="Block Triple Points"
                   onChange={v => updateGw(gw.id, { triple_points_blocked: v })} />
               </SettingRow>
-            </Card>
+            </Card>}
 
             {/* Blank means the competition's normal bonus, which is what almost
                 every gameweek uses, so these stay folded away until needed. */}
@@ -810,7 +812,7 @@ function GameweeksTab({ competitionId, competitions }) {
               summary={gw.full_house_results_bonus == null && gw.full_house_scores_bonus == null ? 'Competition default' : 'Custom for this gameweek'}>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { key: 'full_house_results_bonus', label: 'All results right' },
+                  { key: 'full_house_results_bonus', label: isNfl ? 'Every winner correct' : 'All results right' },
                   { key: 'full_house_scores_bonus',  label: 'All scores exact' },
                 ].map(f => (
                   <label key={f.key} className="flex flex-col gap-1.5 text-xs" style={{ color: 'var(--txt-second)' }}>
@@ -952,7 +954,7 @@ function GameweeksTab({ competitionId, competitions }) {
         )
       }
 
-      {months.length > 0 && (
+      {!isNfl && months.length > 0 && (
         <div className="mt-4">
           <Collapsible title="Monthly closure"
             summary={`${months.filter(m => !closedMonths.includes(m)).length} open · ${months.filter(m => closedMonths.includes(m)).length} closed`}>

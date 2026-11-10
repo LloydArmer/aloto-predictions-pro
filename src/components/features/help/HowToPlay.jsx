@@ -202,7 +202,7 @@ const NFL = [
     key: 'nfl-picks',
     icon: 'ti-ball-american-football',
     title: 'NFL picks',
-    summary: 'Predict the score of every game each week. Points for the right winner, more for each team score you get exactly, more the closer your winning margin is, and the most for the exact score.',
+    summary: 'Predict the score of every game each week. Points for the correct winner, more for each team score you get exactly, more the closer your winning margin is, and the most for the exact score. Your league admin sets the points.',
     steps: [
       ['Switch to NFL', 'Tap the sport chooser in the top bar.'],
       ['Open the week', 'Predict → This week. Pick the week from the selector if you want a different one.'],
@@ -210,11 +210,14 @@ const NFL = [
       ['Save', 'Each game locks at its own kick-off, from Thursday night to Monday.'],
     ],
     notes: [
-      ['Scoring', 'Points add up. Right winner 2, plus 5 for each team whose score you get exactly, plus your margin: exact 12, within 2 is 10, within 4 is 8, within 7 is 6, within 10 is 4, within 14 is 2. An exact score is 24. Your league\'s own numbers are shown above the games.'],
+      ['Scoring', 'Points add up: correct winner, plus points for each team whose score you get exactly, plus your margin line (exact margin, within 2, 4, 7, 10 or 14). The standard points are correct winner 2, team score 5 each, margin exact 12, within 2 is 10, within 4 is 8, within 7 is 6, within 10 is 4, within 14 is 2, so an exact score is 24.'],
+      ['Who sets the points', 'Your league admin, in Admin → Scoring. Your league\'s own numbers are shown above the games and in the key on the table.'],
+      ['Full house', 'A bonus once a week, on top: one for getting every winner correct, a bigger one for every score exact. You need a pick for every game. Your admin sets the bonus, and 0 means it\'s switched off.'],
       ['Wrong winner', 'Backing the wrong team scores 0, however close the score.'],
-      ['Ties', 'Calling a tie that ends tied counts as the right winner.'],
+      ['Ties', 'Calling a tie that ends tied counts as the correct winner.'],
       ['Overtime', 'Final scores include overtime.'],
-      ['No chips', 'Triple Points and full house bonuses are football only.'],
+      ['No Triple Points', 'Triple Points and monthly tables are football only.'],
+      ['The table', 'Standings → Table has a column for each way of scoring (CW correct winners, TS team scores, EM exact margins, then each margin line, FH full houses, WW weeks won) with the total at the end. Standings → Week shows who scored the most that week.'],
     ],
   },
   {
@@ -269,7 +272,7 @@ const ADMIN = [
     steps: [
       ['Choose the sport', 'Switch to football or NFL in the top bar first. A competition belongs to one sport.'],
       ['Create it', 'Admin → Competitions. League for a points table, Knockout or Group + Knockout for a cup.'],
-      ['Set the points', 'Admin → Scoring.'],
+      ['Set the points', 'Admin → Scoring. In NFL that is the correct winner, team score, each margin line and the two full house bonuses. Set any to 0 to switch it off.'],
       ['Invite people', 'Admin → Players. Share the six-character join code.'],
       ['Cups', 'Admin → Cup. A cup borrows its scoring from a league you nominate, so set the league up first.'],
     ],
@@ -284,7 +287,7 @@ const ADMIN = [
       ['Add a gameweek', 'Tap + Gameweek and give it a label, such as 1, R16 or QF1.'],
       ['Fixtures tab', 'Tap Add fixtures to bring in matches. Results come in automatically; you can still enter or correct one.'],
       ['Predictions tab', 'See who has predicted and who hasn\'t.'],
-      ['Settings tab', 'The month it counts towards, Block Triple Points, full house bonuses for this gameweek, and Also used in to share it with other competitions.'],
+      ['Settings tab', 'The month it counts towards, Block Triple Points, full house bonuses for this gameweek, and Also used in to share it with other competitions. In NFL there are no months or Triple Points, so it\'s just the full house bonuses for that week.'],
       ['Make it current', '⋯ → Set as current. This opens it and sends the "gameweek open" reminder.'],
     ],
     notes: [

@@ -34,11 +34,11 @@ keeps the build self-contained.
 
 ### The agreed points (updated 8 Nov 2026, migration 117)
 
-Points ADD together, and only when the winner is right. A wrong winner scores 0.
+Points ADD together, and only when the winner is correct. A wrong winner scores 0.
 
 | Part | Points |
 |---|---|
-| Right winner | 2 |
+| Correct winner | 2 |
 | Each team's score exact | +5 per team |
 | Margin exact | +12 |
 | Margin out by 1 to 2 | +10 |
@@ -52,6 +52,19 @@ An exact score is 2 + 5 + 5 + 12 = 24. Columns: `winner_only_points`,
 `team_score_points`, `margin_exact_points`, `margin_within_2/4/7/10/14_points`.
 `exact_score_points` and `margin_within_3_points` are no longer read for NFL.
 The SQL twin of the app's `marginScore` is `public.nfl_margin_points()`.
+
+### Full house, no Triple Points, no months (Lloyd, 10 Nov 2026)
+
+- Full house bonuses stay, as in football: `full_house_results_bonus` (every
+  winner correct in a week) and `full_house_scores_bonus` (every score exact),
+  set in Admin → Scoring, with a per-week override on the week's Settings tab.
+  You need a pick for every live game; void games don't count. 0 = off.
+- No Triple Points and no months in NFL: the week Settings card (Month, Block
+  Triple Points) is hidden for NFL. Standings shows who won each week instead.
+- The NFL table has a column per scoring line (CW, TS, EM, ≤2 … ≤14, FH, WW,
+  S) with Pts at the end and a key of this league's values above it.
+  `src/lib/sports/nfl/table.js` works the counts out from finished weeks.
+- Wording: "Correct winner(s)", not "Right winner".
 
 (Earlier versions: 111 had one band per game, exact score 20, within 3/7/14 =
 9/6/3, winner only 1; 113 made the winner a base of 2 on top.)

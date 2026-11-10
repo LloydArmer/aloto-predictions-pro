@@ -44,7 +44,7 @@ export const MARGIN_BANDS = [
 // NFL scoring (Lloyd, 8 Nov 2026). Three parts that ADD together, and only
 // when the winner is right (a tie called as a tie counts):
 //
-//   1. Right winner                        winner_only_points       2
+//   1. Correct winner                      winner_only_points       2
 //   2. Each team's score exactly right     team_score_points        +5 per team
 //   3. The margin, one line only:
 //        exact                             margin_exact_points      +12
@@ -62,7 +62,7 @@ export const MARGIN_BANDS = [
 // the columns stay because football and old rows carry them.
 //
 // isExact and isCorrectResult mean what they mean in football (exact score;
-// right winner), so gameweek_scores counts keep working. band names the margin
+// correct winner), so gameweek_scores counts keep working. band names the margin
 // line that paid ('exact_score' when both scores were exact).
 export function marginScore(prediction, fixture, rules) {
   const error = marginError(prediction, fixture)
@@ -82,7 +82,7 @@ export function marginScore(prediction, fixture, rules) {
   const teamsExact = (ph === ah ? 1 : 0) + (pa === aa ? 1 : 0)
   const line = MARGIN_BANDS.find(b => error <= b.max)
 
-  const breakdown = [{ label: 'Right winner', pts: r('winner_only_points') }]
+  const breakdown = [{ label: 'Correct winner', pts: r('winner_only_points') }]
   if (teamsExact) breakdown.push({ label: teamsExact === 2 ? 'Both team scores' : 'One team score', pts: teamsExact * r('team_score_points') })
   if (line) breakdown.push({ label: line.label, pts: r(line.key) })
   const points = breakdown.reduce((sum, b) => sum + b.pts, 0)
@@ -90,11 +90,11 @@ export function marginScore(prediction, fixture, rules) {
   const band = isExact ? 'exact_score' : line ? line.band : 'winner_only'
 
   // One short line for the screens, e.g. "Exact score", "Winner + 1 score +
-  // within 4", "Winner + within 7", "Right winner".
+  // within 4", "Winner + within 7", "Correct winner".
   const parts = ['Winner']
   if (teamsExact === 1) parts.push('1 score')
   if (line) parts.push(line.band === 'exact_margin' ? 'exact margin' : `within ${line.max}`)
-  const label = isExact ? 'Exact score' : parts.length > 1 ? parts.join(' + ') : 'Right winner'
+  const label = isExact ? 'Exact score' : parts.length > 1 ? parts.join(' + ') : 'Correct winner'
 
   return { points, breakdown, label, isExact, isCorrectResult, band, marginError: error, teamsExact }
 }
@@ -102,9 +102,13 @@ export function marginScore(prediction, fixture, rules) {
 // The NFL points an admin can edit, in the order the Scoring tab shows them.
 // Kept here, beside the scorer that reads them, so the two cannot drift.
 export const NFL_RULE_FIELDS = [
-  { key: 'winner_only_points',      label: 'Right winner (needed for any points)' },
+  { key: 'winner_only_points',      label: 'Correct winner (needed for any points)' },
   { key: 'team_score_points',       label: "Each team's score exact (per team)" },
   ...MARGIN_BANDS.map(b => ({ key: b.key, label: b.band === 'exact_margin' ? 'Exact margin' : `Margin out by ${({ within_2: '1 to 2', within_4: '3 to 4', within_7: '5 to 7', within_10: '8 to 10', within_14: '11 to 14' })[b.band]}` })),
+  // Once per week, on top: every game's winner right, and every score exact.
+  // A week can override either in Admin > Fixtures > the week > Settings.
+  { key: 'full_house_results_bonus', label: 'Full house: every winner correct in a week' },
+  { key: 'full_house_scores_bonus',  label: 'Full house: every score exact in a week' },
 ]
 
 // The rules an NFL competition scores by. Follows rules_source_competition_id
@@ -122,37 +126,64 @@ export async function nflPointRules(supabase, competitionId) {
 /**
  * Score one NFL gameweek for one competition.
  *
- * The NFL counterpart of football's recalculateGameweek, and deliberately
- * simpler: each game pays its one margin band and the week's score is the sum.
- * Triple Points and the full house bonuses are NOT applied — whether NFL has
- * them is still to be decided, and they are added here if it does.
+ * The NFL counterpart of football's recalculateGameweek. Each game pays what
+ * marginScore says, and the week's score is the sum, plus the full house
+ * bonuses (Lloyd, 10 Nov 2026). There is NO Triple Points in NFL.
+ *
+ * Full house, the same rules as football: the bonus is the week's own value if
+ * the admin set one (gameweeks.full_house_*_bonus), otherwise the
+ * competition's. It needs EVERY live game in the week completed and a pick for
+ * every one of them; voided games are left out and nobody is penalised for
+ * them. "Results" means every winner correct; "scores" means every score exact.
  *
  * Same ground rules as football: nothing is scored until the whole gameweek is
  * marked completed, and voided games score nobody anything.
  *
- * exact_scores and correct_results are still filled in (exact score; right
+ * exact_scores and correct_results are still filled in (exact score; correct
  * winner), so standings that sort on them keep working.
  */
 export async function recalculateNflGameweek(supabase, competitionId, gameweekId, rules) {
   const { data: gw } = await supabase.from('gameweeks').select('status').eq('id', gameweekId).single()
   if (gw?.status !== 'completed') return { skipped: true, reason: 'Gameweek not marked completed yet' }
 
+  const { data: gwRow } = await supabase.from('gameweeks')
+    .select('full_house_results_bonus, full_house_scores_bonus').eq('id', gameweekId).maybeSingle()
+  const resultsBonus = Number(gwRow?.full_house_results_bonus ?? rules?.full_house_results_bonus ?? 0) || 0
+  const scoresBonus  = Number(gwRow?.full_house_scores_bonus  ?? rules?.full_house_scores_bonus  ?? 0) || 0
+
   const { data: fixtures } = await supabase.from('fixtures').select('*').eq('gameweek_id', gameweekId)
+  const liveFixtures = (fixtures || []).filter(f => f.status !== 'void')
+  const completed = liveFixtures.filter(f => f.status === 'completed')
   const fxMap = {}
-  ;(fixtures || []).filter(f => f.status === 'completed').forEach(f => { fxMap[f.id] = f })
+  completed.forEach(f => { fxMap[f.id] = f })
 
   const { data: predictions } = await supabase.from('predictions').select('*').eq('gameweek_id', gameweekId)
 
   const scores = {}
+  const blank = uid => ({ user_id: uid, points: 0, exact_scores: 0, correct_results: 0, full_house_results: false, full_house_scores: false })
+  const byUser = {}
   for (const pred of (predictions || [])) {
+    ;(byUser[pred.user_id] ||= {})[pred.fixture_id] = pred
     const fx = fxMap[pred.fixture_id]; if (!fx) continue
     const { points, isExact, isCorrectResult } = marginScore(pred, fx, rules)
     const uid = pred.user_id
-    if (!scores[uid]) scores[uid] = { user_id: uid, points: 0, exact_scores: 0, correct_results: 0, full_house_results: false, full_house_scores: false }
+    if (!scores[uid]) scores[uid] = blank(uid)
     scores[uid].points += points
     if (isExact)         scores[uid].exact_scores++
     if (isCorrectResult) scores[uid].correct_results++
     await supabase.from('predictions').update({ points_earned: points }).eq('id', pred.id)
+  }
+
+  // Full house bonuses, once per week.
+  const everyGameDone = liveFixtures.length > 0 && completed.length === liveFixtures.length
+  if (everyGameDone) {
+    for (const [uid, picks] of Object.entries(byUser)) {
+      if (!liveFixtures.every(f => picks[f.id])) continue
+      const results = liveFixtures.map(f => marginScore(picks[f.id], f, rules))
+      if (!scores[uid]) scores[uid] = blank(uid)
+      if (results.every(r => r.isCorrectResult)) { scores[uid].full_house_results = true; scores[uid].points += resultsBonus }
+      if (results.every(r => r.isExact))         { scores[uid].full_house_scores  = true; scores[uid].points += scoresBonus }
+    }
   }
 
   for (const s of Object.values(scores)) {

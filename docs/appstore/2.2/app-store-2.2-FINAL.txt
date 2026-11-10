@@ -35,7 +35,7 @@ TRIPLE POINTS
 Two chips a season, one either side of New Year. Play one and everything you score that gameweek is tripled.
 
 NFL PICKS LEAGUES
-Predict the score of every game each week. You get points for picking the right winner, more for each team's score you get exactly, more again the closer you get to the winning margin, and the most for the exact score. Each game locks at its own kick-off, from Thursday night to Monday. NFL competitions have their own dashboard, picks, table and season questions, kept apart from your football.
+Predict the score of every game each week. You get points for picking the correct winner, more for each team's score you get exactly, more again the closer you get to the winning margin, and the most for the exact score. A full house bonus rewards a perfect week. The admin sets every value, and the table shows how each player's total was made. Each game locks at its own kick-off, from Thursday night to Monday. NFL competitions have their own dashboard, picks, table and season questions, kept apart from your football.
 
 LEAGUES, CUPS AND TOURNAMENTS
 Run a season-long league, a knockout cup drawn on gameweek scores, or a group stage feeding into a bracket. Run all three at once if your group has the appetite.
@@ -67,7 +67,7 @@ soccer,american football,gridiron,predictor,fixtures,gameweek,office,picks,tippi
 
 
 WHAT'S NEW IN THIS VERSION  (646/4000)
-NFL is here. Run an NFL picks league alongside your football ones: predict the score of every game, with points for the right winner, for each team's score you get exactly, and more the closer you get to the margin.
+NFL is here. Run an NFL picks league alongside your football ones: predict the score of every game, with points for the correct winner, for each team's score you get exactly, and more the closer you get to the margin.
 Super Bowl winner, AFC champion and NFC champion predictions are free in every NFL league.
 A new look: a black background with ALOTO purple throughout.
 NFL has its own dashboard, picks, standings and season questions, kept separate from football.
@@ -95,7 +95,7 @@ ALOTO Prediction Pro is a private prediction game for football and, new in this 
 
 The demo accounts are members of two competitions: "App Review Demo" (football) and "App Review Demo NFL". Both have fixtures, results, standings and chat switched on. Use the sport chooser in the top bar to switch between Football and NFL.
 
-NFL competitions are scored on the margin of victory: players predict each game's score and get points for the right winner, plus points for each team's score they get exactly and more the closer they get to the margin. NFL competitions have their own dashboard, predictions and standings, separate from football. There is no gambling, wagering, odds or prize element. Points are for bragging rights only.
+NFL competitions are scored on the margin of victory: players predict each game's score and get points for the correct winner, plus points for each team's score they get exactly and more the closer they get to the margin. NFL competitions have their own dashboard, predictions and standings, separate from football. There is no gambling, wagering, odds or prize element. Points are for bragging rights only.
 
 ALOTO Pro is an annual subscription bought in Settings. It is for competition organisers. Playing is free and needs no purchase. In NFL competitions the Super Bowl winner, AFC champion and NFC champion predictions are free; the other NFL season questions need Pro.
 
