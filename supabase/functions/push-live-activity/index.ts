@@ -15,6 +15,19 @@
 //           score and end the activity, so it doesn't sit on the lock screen
 //           for hours after full time.
 //
+// THREE SPORTS (12 Nov 2026). The lock screen card is the same for every sport:
+// your points, your place and a status line. What feeds it differs:
+//   football  fixtures + API-Football statuses, exact score / result points.
+//             Exactly as before.
+//   nfl       fixtures + API-SPORTS American Football statuses (Q1..Q4, OT),
+//             scored on the NFL margin rules (src/lib/sports/nfl/scoring.js).
+//             Before this, NFL games used the football codes, so an NFL card
+//             could start at halftime showing 0 points.
+//   f1        f1_races / f1_results / f1_picks. Starts when the RACE goes
+//             live, shows the lap, and your weekend's points "if it finished
+//             now" (src/lib/sports/f1/scoring.js). Qualifying and sprints show
+//             live in the app only, so a weekend has one card, not four.
+//
 // APNs for Live Activities differs from ordinary notifications in three ways,
 // each of which silently fails if wrong:
 //   - the topic gains a ".push-type.liveactivity" suffix
@@ -50,6 +63,14 @@ const APNS_HOST = (Deno.env.get('APNS_ENVIRONMENT') ?? 'production') === 'sandbo
 // API-Football statuses.
 const IN_PLAY  = ['1H', 'HT', '2H', 'ET', 'BT', 'P', 'LIVE']
 const FINISHED = ['FT', 'AET', 'PEN']
+
+// API-SPORTS American Football statuses (sync-nfl). Final includes overtime.
+const NFL_IN_PLAY  = ['Q1', 'Q2', 'Q3', 'Q4', 'OT', 'HT', 'BT']
+const NFL_FINISHED = ['FT', 'AOT']
+
+type Sport = 'football' | 'nfl' | 'f1'
+const inPlayCodes  = (sport: Sport) => sport === 'nfl' ? NFL_IN_PLAY : IN_PLAY
+const finishedCodes = (sport: Sport) => sport === 'nfl' ? NFL_FINISHED : FINISHED
 
 /* ------------------------------------------------------------------ */
 
@@ -157,25 +178,70 @@ function pointsFor(fixtures: any[], predictions: any[], rules: any) {
   return points
 }
 
+/**
+ * NFL points, the same rules as src/lib/sports/nfl/scoring.js marginScore:
+ * correct winner, + per exact team score, + ONE margin line. Wrong winner 0.
+ * Keep the two in step.
+ */
+const NFL_DEFAULTS: Record<string, number> = {
+  winner_only_points: 2, team_score_points: 5,
+  margin_exact_points: 12, margin_within_2_points: 10, margin_within_4_points: 8,
+  margin_within_7_points: 6, margin_within_10_points: 4, margin_within_14_points: 2,
+}
+const NFL_BANDS: [number, string][] = [
+  [0, 'margin_exact_points'], [2, 'margin_within_2_points'], [4, 'margin_within_4_points'],
+  [7, 'margin_within_7_points'], [10, 'margin_within_10_points'], [14, 'margin_within_14_points'],
+]
+function nflPointsFor(fixtures: any[], predictions: any[], rules: any) {
+  const r = (k: string) => Number(rules?.[k] ?? NFL_DEFAULTS[k]) || 0
+  let points = 0
+  for (const fx of fixtures) {
+    if (fx.status === 'void') continue
+    const home = fx.home_score ?? fx.live_home_score
+    const away = fx.away_score ?? fx.live_away_score
+    if (home == null || away == null) continue
+    const p = predictions.find(x => x.fixture_id === fx.id)
+    if (!p) continue
+    if (Math.sign(p.predicted_home - p.predicted_away) !== Math.sign(home - away)) continue
+    points += r('winner_only_points')
+    points += ((p.predicted_home === home ? 1 : 0) + (p.predicted_away === away ? 1 : 0)) * r('team_score_points')
+    const error = Math.abs((p.predicted_home - p.predicted_away) - (home - away))
+    const line = NFL_BANDS.find(([max]) => error <= max)
+    if (line) points += r(line[1])
+  }
+  return points
+}
+
+const pointsForSport = (sport: Sport, fixtures: any[], predictions: any[], rules: any) =>
+  sport === 'nfl' ? nflPointsFor(fixtures, predictions, rules) : pointsFor(fixtures, predictions, rules)
+
 /** Matches being played right now. Counted across the whole gameweek, not
  *  just the ones this person predicted. */
-function inPlayCount(fixtures: any[]) {
+function inPlayCount(fixtures: any[], sport: Sport = 'football') {
+  const codes = inPlayCodes(sport)
   return fixtures.filter(fx =>
-    fx.status !== 'void' && fx.home_score == null && IN_PLAY.includes(fx.live_status)
+    fx.status !== 'void' && fx.home_score == null && codes.includes(fx.live_status)
   ).length
 }
 
 /** True once every match has a confirmed or full-time score. */
-function allFinished(fixtures: any[]) {
+function allFinished(fixtures: any[], sport: Sport = 'football') {
+  const codes = finishedCodes(sport)
   const counted = fixtures.filter(fx => fx.status !== 'void')
   return counted.length > 0 && counted.every(fx =>
-    fx.home_score != null || FINISHED.includes(fx.live_status)
+    fx.home_score != null || codes.includes(fx.live_status)
   )
 }
 
 /** "3 matches in play" / "Full time" — composed here so the wording can change
  *  without shipping a new app build. */
-function statusLine(inPlay: number, finished: boolean) {
+function statusLine(inPlay: number, finished: boolean, sport: Sport = 'football') {
+  if (sport === 'nfl') {
+    if (finished) return 'Final'
+    if (inPlay === 0) return 'Waiting for the next kickoff'
+    if (inPlay === 1) return '1 game in play'
+    return `${inPlay} games in play`
+  }
   if (finished) return 'Full time'
   if (inPlay === 0) return 'Waiting for the next kick-off'
   if (inPlay === 1) return '1 match in play'
@@ -188,6 +254,8 @@ function statusLine(inPlay: number, finished: boolean) {
 const fixtureCache = new Map<string, any[]>()
 const gameweekCache = new Map<string, any>()
 const rulesCache = new Map<string, any>()
+const sportCache = new Map<string, Sport>()
+const f1RaceCache = new Map<string, any>()
 
 async function fixturesFor(gameweekId: string) {
   if (!fixtureCache.has(gameweekId)) {
@@ -202,7 +270,7 @@ async function fixturesFor(gameweekId: string) {
 async function gameweekFor(gameweekId: string) {
   if (!gameweekCache.has(gameweekId)) {
     const { data } = await supabase.from('gameweeks')
-      .select('id, number, competition_id, competitions(name)')
+      .select('id, number, competition_id, competitions(name, sport)')
       .eq('id', gameweekId).single()
     gameweekCache.set(gameweekId, data)
   }
@@ -211,12 +279,28 @@ async function gameweekFor(gameweekId: string) {
 
 async function rulesFor(competitionId: string) {
   if (!rulesCache.has(competitionId)) {
+    // Every column: football reads two, NFL the margin lines, F1 its arrays.
     const { data } = await supabase.from('point_rules')
-      .select('correct_result_points, exact_score_points')
+      .select('*')
       .eq('competition_id', competitionId).maybeSingle()
     rulesCache.set(competitionId, data ?? {})
   }
   return rulesCache.get(competitionId)
+}
+
+/** Which sport a gameweek belongs to. Defaults to football, as before. */
+async function sportFor(gameweekId: string): Promise<Sport> {
+  if (sportCache.has(gameweekId)) return sportCache.get(gameweekId)!
+  const gw = await gameweekFor(gameweekId)
+  let sport = gw?.competitions?.sport as string | undefined
+  if (!sport) {
+    const { data: links } = await supabase.from('competition_gameweeks')
+      .select('competitions(sport)').eq('gameweek_id', gameweekId).limit(1)
+    sport = (links?.[0] as any)?.competitions?.sport
+  }
+  const s: Sport = sport === 'nfl' || sport === 'f1' ? sport : 'football'
+  sportCache.set(gameweekId, s)
+  return s
 }
 
 const standingsCache = new Map<string, Map<string, number>>()
@@ -238,9 +322,10 @@ async function standingsFor(gameweekId: string, competitionId: string) {
   const key = `${gameweekId}:${competitionId}`
   if (standingsCache.has(key)) return standingsCache.get(key)!
 
-  const [fixtures, rules] = await Promise.all([
+  const [fixtures, rules, sport] = await Promise.all([
     fixturesFor(gameweekId),
     rulesFor(competitionId),
+    sportFor(gameweekId),
   ])
 
   const { data: parts } = await supabase.from('participants')
@@ -263,7 +348,7 @@ async function standingsFor(gameweekId: string, competitionId: string) {
 
   const totals = members.map(id => ({
     id,
-    points: pointsFor(fixtures, byUser.get(id) ?? [], rules),
+    points: pointsForSport(sport, fixtures, byUser.get(id) ?? [], rules),
   }))
 
   for (const t of totals) {
@@ -276,6 +361,9 @@ async function standingsFor(gameweekId: string, competitionId: string) {
 
 /** Everything the activity shows for one person, as of now. */
 async function stateFor(userId: string, gameweekId: string) {
+  const sport = await sportFor(gameweekId)
+  if (sport === 'f1') return f1StateFor(userId, gameweekId)
+
   const [fixtures, gw] = await Promise.all([fixturesFor(gameweekId), gameweekFor(gameweekId)])
   const rules = await rulesFor(gw?.competition_id)
 
@@ -295,11 +383,11 @@ async function stateFor(userId: string, gameweekId: string) {
     const { data: oppPreds } = await supabase.from('predictions')
       .select('fixture_id, predicted_home, predicted_away')
       .eq('gameweek_id', gameweekId).eq('user_id', opponent.opponent_id)
-    opponentPoints = pointsFor(fixtures, oppPreds ?? [], rules)
+    opponentPoints = pointsForSport(sport, fixtures, oppPreds ?? [], rules)
   }
 
-  const inPlay = inPlayCount(fixtures)
-  const finished = allFinished(fixtures)
+  const inPlay = inPlayCount(fixtures, sport)
+  const finished = allFinished(fixtures, sport)
 
   // Where they stand, alongside the tie rather than instead of it. How you are
   // doing against your opponent and how you are doing in the table are
@@ -311,7 +399,7 @@ async function stateFor(userId: string, gameweekId: string) {
   return {
     gw, opponent, finished, position, playerCount,
     contentState: {
-      myPoints: pointsFor(fixtures, preds ?? [], rules),
+      myPoints: pointsForSport(sport, fixtures, preds ?? [], rules),
       opponentPoints,
       position,
       playerCount,
@@ -319,10 +407,109 @@ async function stateFor(userId: string, gameweekId: string) {
       // this person stood at the last push.
       positionDelta: null as number | null,
       matchesInPlay: inPlay,
-      statusLine: statusLine(inPlay, finished),
+      statusLine: statusLine(inPlay, finished, sport),
     },
   }
 }
+
+/* ---- F1 ------------------------------------------------------------- */
+// Mirrors src/lib/sports/f1/scoring.js (f1Rules, pointsForPlace). Keep in step.
+
+const F1_RACE_DEFAULT = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+const F1_SPRINT_DEFAULT = [8, 7, 6, 5, 4, 3, 2, 1]
+
+function f1PointsForPlace(session: string, position: number, row: any) {
+  const arr = (a: any, d: number[]) => (Array.isArray(a) && a.length ? a : d).map((n: any) => Number(n) || 0)
+  if (session === 'grid' || session === 'sprint_grid') {
+    return position <= Number(row?.f1_grid_positions ?? 22) ? Number(row?.f1_grid_points ?? 5) : 0
+  }
+  if (position > Number(row?.f1_race_positions ?? 22)) return 0
+  const table = session === 'sprint' ? arr(row?.f1_sprint_points, F1_SPRINT_DEFAULT) : arr(row?.f1_race_points, F1_RACE_DEFAULT)
+  return table[position - 1] || 0
+}
+
+/** The race behind an F1 gameweek, with its results and every pick, once per run. */
+async function f1RaceFor(gameweekId: string) {
+  if (!f1RaceCache.has(gameweekId)) {
+    const { data: race } = await supabase.from('f1_races').select('*').eq('gameweek_id', gameweekId).maybeSingle()
+    let results: any[] = [], picks: any[] = []
+    if (race) {
+      const [{ data: res }, { data: pk }] = await Promise.all([
+        supabase.from('f1_results').select('session, position, driver_id').eq('race_id', race.id),
+        supabase.from('f1_picks').select('session, position, driver_id, user_id').eq('race_id', race.id),
+      ])
+      results = res ?? []; picks = pk ?? []
+    }
+    f1RaceCache.set(gameweekId, { race, results, picks })
+  }
+  return f1RaceCache.get(gameweekId)!
+}
+
+/** One player's points for the whole weekend so far, live results included. */
+function f1PointsFor(userId: string, results: any[], picks: any[], rules: any) {
+  const at = new Map(results.filter(r => r.position).map(r => [`${r.session}:${r.position}`, r.driver_id]))
+  let points = 0
+  for (const p of picks) {
+    if (p.user_id !== userId) continue
+    if (at.get(`${p.session}:${p.position}`) === p.driver_id) points += f1PointsForPlace(p.session, p.position, rules)
+  }
+  return points
+}
+
+function f1Finished(race: any, results: any[]) {
+  if (!race) return true
+  if (race.status === 'cancelled') return true
+  if (race.live_session === 'race') return false
+  const hasRace = results.some(r => r.session === 'race' && r.position)
+  return Date.now() > +new Date(race.race_at) + 30 * 60 * 1000 && (race.race_confirmed || hasRace)
+}
+
+function f1StatusLine(race: any, finished: boolean) {
+  if (finished) return 'Chequered flag'
+  if (race?.live_session === 'race' && race.live_lap) {
+    return race.total_laps ? `Lap ${race.live_lap} of ${race.total_laps}` : `Lap ${race.live_lap}`
+  }
+  return race?.live_session === 'race' ? 'Race under way' : 'Waiting for the start'
+}
+
+async function f1StateFor(userId: string, gameweekId: string) {
+  const gw = await gameweekFor(gameweekId)
+  const rules = await rulesFor(gw?.competition_id)
+  const { race, results, picks } = await f1RaceFor(gameweekId)
+
+  // Places by weekend points among everyone in the league, ties shared: the
+  // same rule as football.
+  const key = `${gameweekId}:${gw?.competition_id}`
+  if (!standingsCache.has(key)) {
+    const { data: parts } = await supabase.from('participants')
+      .select('user_id').eq('competition_id', gw?.competition_id)
+    const members = [...new Set((parts ?? []).map(p => p.user_id))]
+    const totals = members.map(id => ({ id, points: f1PointsFor(id, results, picks, rules) }))
+    const positions = new Map<string, number>()
+    for (const t of totals) positions.set(t.id, totals.filter(o => o.points > t.points).length + 1)
+    standingsCache.set(key, positions)
+  }
+  const positions = standingsCache.get(key)!
+  const position = positions.get(userId) ?? null
+  const playerCount = positions.size || null
+  const finished = f1Finished(race, results)
+
+  return {
+    gw, opponent: null as any, finished, position, playerCount,
+    contentState: {
+      myPoints: f1PointsFor(userId, results, picks, rules),
+      opponentPoints: null as number | null,
+      position,
+      playerCount,
+      positionDelta: null as number | null,
+      matchesInPlay: race?.live_session === 'race' ? 1 : 0,
+      statusLine: f1StatusLine(race, finished),
+    },
+  }
+}
+
+/** "Las Vegas Grand Prix" -> "Las Vegas", so it fits on one line in the card. */
+const shortRaceName = (name: string) => name.replace(/\s*Grand Prix$/i, '').trim()
 
 /* ---- START ---------------------------------------------------------- */
 
@@ -331,15 +518,24 @@ async function startNew(result: any) {
   const since = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
   const { data: liveFx } = await supabase.from('fixtures')
     .select('gameweek_id')
-    .in('live_status', IN_PLAY)
+    .in('live_status', [...IN_PLAY, ...NFL_IN_PLAY])
     .is('home_score', null)
     .gte('kickoff_time', since)
 
   const gameweekIds = [...new Set((liveFx ?? []).map(f => f.gameweek_id).filter(Boolean))]
 
+  // F1: the race itself is live (qualifying and sprints show in the app only).
+  const { data: liveRaces } = await supabase.from('f1_races')
+    .select('gameweek_id').eq('live_session', 'race').gte('race_at', since)
+  for (const r of (liveRaces ?? [])) if (r.gameweek_id && !gameweekIds.includes(r.gameweek_id)) gameweekIds.push(r.gameweek_id)
+
   for (const gameweekId of gameweekIds) {
     const gw = await gameweekFor(gameweekId)
     if (!gw) continue
+    const sport = await sportFor(gameweekId)
+    // Each sport only on its own codes: an NFL game at halftime must not start
+    // a football card, and vice versa.
+    if (sport !== 'f1' && inPlayCount(await fixturesFor(gameweekId), sport) === 0) continue
 
     // Everyone in any competition that uses this gameweek.
     const { data: links } = await supabase.from('competition_gameweeks')
@@ -353,9 +549,16 @@ async function startNew(result: any) {
 
     // Only people actually playing this gameweek — someone who hasn't
     // predicted has nothing to watch.
-    const { data: predicted } = await supabase.from('predictions')
-      .select('user_id').eq('gameweek_id', gameweekId).in('user_id', members)
-    const players = [...new Set((predicted ?? []).map(p => p.user_id))]
+    let players: string[]
+    if (sport === 'f1') {
+      const { picks } = await f1RaceFor(gameweekId)
+      const memberSet = new Set(members)
+      players = [...new Set(picks.map((p: any) => p.user_id).filter((u: string) => memberSet.has(u)))]
+    } else {
+      const { data: predicted } = await supabase.from('predictions')
+        .select('user_id').eq('gameweek_id', gameweekId).in('user_id', members)
+      players = [...new Set((predicted ?? []).map(p => p.user_id))]
+    }
     if (!players.length) continue
 
     // Skip anyone who already has one for this gameweek — started by the
@@ -375,7 +578,13 @@ async function startNew(result: any) {
       .select('id, display_name, badge_kit').in('id', toStart)
     const profileById = new Map((profiles ?? []).map(p => [p.id, p]))
 
-    const label = String(gw.number ?? '')
+    const f1Race = sport === 'f1' ? (await f1RaceFor(gameweekId)).race : null
+    const label = f1Race?.name ? shortRaceName(f1Race.name) : String(gw.number ?? '')
+    const alert = sport === 'f1'
+      ? { title: `${label} is under way`, body: 'Your points and place will update here, lap by lap.' }
+      : sport === 'nfl'
+        ? { title: `${label} is under way`, body: 'Your points will update here as the scores come in.' }
+        : { title: `${label} is under way`, body: 'Your score will update here as the goals go in.' }
 
     for (const st of startTokens) {
       const { opponent, contentState, position } = await stateFor(st.user_id, gameweekId)
@@ -408,10 +617,7 @@ async function startNew(result: any) {
             roundLabel: opponent?.round_label ?? null,
             ref,
           },
-          alert: {
-            title: `${label} is under way`,
-            body: 'Your score will update here as the goals go in.',
-          },
+          alert,
         },
       }
 
@@ -435,8 +641,23 @@ async function startNew(result: any) {
 /* ---- UPDATE and END ------------------------------------------------- */
 
 async function updateRunning(result: any) {
-  const { data: activities, error } = await supabase.rpc('activities_needing_push')
+  const { data: rpcActivities, error } = await supabase.rpc('activities_needing_push')
   if (error) { result.errors.push(`activities: ${error.message}`); return }
+
+  // NFL and F1 cards are read straight from the table as well, in case
+  // activities_needing_push only looks at football fixtures. Football is
+  // left to the function exactly as before.
+  const activities: any[] = [...(rpcActivities ?? [])]
+  const seen = new Set(activities.map((a: any) => a.activity_id))
+  const { data: open } = await supabase.from('live_activity_tokens')
+    .select('activity_id, user_id, gameweek_id, token')
+    .is('ended_at', null).not('activity_id', 'is', null).not('token', 'is', null)
+    .gte('started_at', new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString())
+  for (const a of (open ?? [])) {
+    if (seen.has(a.activity_id)) continue
+    if ((await sportFor(a.gameweek_id)) === 'football') continue
+    activities.push(a); seen.add(a.activity_id)
+  }
 
   // Where everyone stood at the last push, in one query. This is what makes
   // the arrow on the lock screen possible: the phone has no memory of the
@@ -517,6 +738,7 @@ async function updateRunning(result: any) {
 
 async function run() {
   fixtureCache.clear(); gameweekCache.clear(); rulesCache.clear(); standingsCache.clear()
+  sportCache.clear(); f1RaceCache.clear()
   const result = { started: 0, pushed: 0, ended: 0, failed: 0, skipped: 0, errors: [] as string[] }
 
   // Tidy up anything abandoned before spending requests on it.
