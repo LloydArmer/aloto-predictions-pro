@@ -18,6 +18,8 @@ import { fitName } from '../../../lib/names'
 import SeasonTab from './SeasonTab'
 import { F1RacesTab, F1ScoringTab, F1SeasonTab } from '../f1/F1Admin'
 import ChatModerationTab, { useOpenReportCount } from './ChatModerationTab'
+import LmsAdmin, { startLmsGame } from '../lms/LmsAdmin'
+import { isLms, LMS_FORMAT } from '../../../lib/lms'
 import toast from 'react-hot-toast'
 
 // Short labels on purpose. "Gameweeks & fixtures" and "Season predictions" made
@@ -31,6 +33,8 @@ import toast from 'react-hot-toast'
 const TABS = [
   { key: 'competitions', label: 'Competitions', icon: 'ti-trophy' },
   { key: 'gameweeks',    label: 'Fixtures',     icon: 'ti-calendar' },
+  // Last Man Standing only, in place of Fixtures, Scoring, Cup and Season.
+  { key: 'lms',          label: 'Game',         icon: 'ti-crown' },
   { key: 'rules',        label: 'Scoring',      icon: 'ti-star' },
   { key: 'config',       label: 'Cup',          icon: 'ti-tournament' },
   { key: 'season',       label: 'Season',       icon: 'ti-calendar-star' },
@@ -49,15 +53,25 @@ export default function Admin() {
   const isNflSport = activeSport === 'nfl'
   const isF1Sport = activeSport === 'f1'
   const leagueOnlySport = isNflSport || isF1Sport
-  const tabs = useMemo(() => {
-    const list = leagueOnlySport ? TABS.filter(t => t.key !== 'config') : TABS
-    return isF1Sport ? list.map(t => t.key === 'gameweeks' ? { ...t, label: 'Races', icon: 'ti-flag' } : t) : list
-  }, [leagueOnlySport, isF1Sport])
-  useEffect(() => { if (leagueOnlySport && tab === 'config') setTab('competitions') }, [leagueOnlySport, tab])
   // The shared selection is passed the FULL list, exactly as before. Admin must
   // not hand it a filtered list: that would move the selection for every other
   // page whenever Admin opened. Filtering happens below, for display only.
   const [selectedComp, setSelectedComp] = useSelectedCompetition(competitions)
+
+  // A Last Man Standing has no fixtures, scoring, cup or season of its own: its
+  // Game tab replaces them all.
+  const lmsSelected = isLms(competitions.find(c => c.id === selectedComp))
+  const LMS_TABS = ['competitions', 'lms', 'participants', 'chat']
+  const tabs = useMemo(() => {
+    if (lmsSelected) return TABS.filter(t => LMS_TABS.includes(t.key))
+    const list = (leagueOnlySport ? TABS.filter(t => t.key !== 'config') : TABS).filter(t => t.key !== 'lms')
+    return isF1Sport ? list.map(t => t.key === 'gameweeks' ? { ...t, label: 'Races', icon: 'ti-flag' } : t) : list
+  }, [leagueOnlySport, isF1Sport, lmsSelected])
+  useEffect(() => {
+    if (leagueOnlySport && tab === 'config') setTab('competitions')
+    if (lmsSelected && !LMS_TABS.includes(tab)) setTab('lms')
+    if (!lmsSelected && tab === 'lms') setTab('competitions')
+  }, [leagueOnlySport, lmsSelected, tab])
 
   // The competitions this person runs. Admin rights are per competition now,
   // from participants.role, not the single profiles.role flag that only ever
@@ -82,7 +96,7 @@ export default function Admin() {
   // Writing to the shared selection would mean that glancing at the cup
   // bracket silently changed what Predict and the Dashboard showed after you
   // left Admin.
-  const cups = useMemo(() => managed.filter(c => c.format !== 'league'), [managed])
+  const cups = useMemo(() => managed.filter(c => c.format === 'knockout' || c.format === 'group_knockout'), [managed])
   const [cupId, setCupId] = useState(null)
   useEffect(() => {
     if (!cups.length) { setCupId(null); return }
@@ -171,7 +185,9 @@ export default function Admin() {
         <EmptyState icon="ti-lock" title="You play in this competition" description="Choose a competition you run from the list above to manage it." />
       )}
       {(onCupTab ? pickedOk : managesSelected) && <>
-        {isF1Sport ? <>
+        {lmsSelected ? <>
+          {tab === 'lms' && <LmsAdmin competitionId={selectedComp} />}
+        </> : isF1Sport ? <>
           {tab === 'rules' && <F1ScoringTab competitionId={selectedComp} />}
           {tab === 'gameweeks' && <F1RacesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
           {tab === 'season' && <F1SeasonTab competitionId={selectedComp} />}
@@ -193,6 +209,7 @@ export default function Admin() {
 function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp, leagueOnly = false, sport = 'football' }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
+  const [lmsPoints, setLmsPoints] = useState(10)
   const [isPro, setIsPro] = useState(null)   // null while unknown
 
   // Told before they fill the form in, not after they submit it. Being stopped
@@ -212,7 +229,10 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
     c => c.created_by === user?.id && c.format === 'league'
   ).length
   const leagueLimitReached = isPro === false && leagueCount >= 1
-  const limitHit = format === 'league' ? leagueLimitReached : cupLimitReached
+  // One Last Man Standing on the free plan (123).
+  const lmsCount = competitions.filter(c => c.created_by === user?.id && c.format === LMS_FORMAT).length
+  const lmsLimitReached = isPro === false && lmsCount >= 1
+  const limitHit = format === 'league' ? leagueLimitReached : format === LMS_FORMAT ? lmsLimitReached : cupLimitReached
   // No longer editable: the icon is derived from `format`. The column is still
   // written (blank) so nothing downstream has to change.
   const emoji = ''
@@ -230,13 +250,27 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
       const comp = await createCompetition({ name: name.trim(), format, emoji, created_by: user.id })
       setSelectedComp(comp.id)
       setName(''); setFormat('league')
-      toast.success('Competition created!')
+      if (format === LMS_FORMAT) {
+        // Start its first game straight away, on the next gameweek, so the
+        // admin only has to share the code.
+        try {
+          const g = await startLmsGame(comp.id, Math.max(1, Math.min(1000, Number(lmsPoints) || 10)))
+          toast.success(`Last Man Standing created. It starts in GW${g.start_round}. Share the code from Players.`)
+        } catch (err) {
+          toast.success('Last Man Standing created.')
+          toast.error(`${err.message} You can start the game in Admin → Game.`)
+        }
+      } else {
+        toast.success('Competition created!')
+      }
     } catch (err) {
       // The database raises a named exception when a free-tier limit is hit.
       // Translated here so the person is told what the rule is and how to lift
       // it, rather than being shown a raw Postgres error.
       if (String(err.message || '').includes('FREE_TIER_LEAGUE_LIMIT')) {
         toast.error('Free accounts can run one league. Upgrade to Pro for unlimited leagues and cups.')
+      } else if (String(err.message || '').includes('FREE_TIER_LMS_LIMIT')) {
+        toast.error('Free accounts can run one Last Man Standing. Upgrade to Pro for unlimited.')
       } else if (String(err.message || '').includes('FREE_TIER_CUP_LIMIT')) {
         toast.error('Free accounts can run one cup competition. Upgrade to Pro for unlimited cups and season predictions.')
       } else {
@@ -263,7 +297,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name</p>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder={sport === 'f1' ? "F1 Predictions 2027" : leagueOnly ? "NFL Pick Em 2026" : "Premier League Preds 2025/26"} />
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder={sport === 'f1' ? "F1 Predictions 2027" : leagueOnly ? "NFL Pick Em 2026" : format === LMS_FORMAT ? "Last Man Standing 2026/27" : "Premier League Preds 2025/26"} />
           </div>
           <div>
             {/* The icon follows the format — there is nothing to choose, so
@@ -280,14 +314,26 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
                 <option value="league">League{leagueLimitReached ? ' — Pro' : ''}</option>
                 <option value="knockout">Knockout{cupLimitReached ? ' — Pro' : ''}</option>
                 <option value="group_knockout">Group + Knockout{cupLimitReached ? ' — Pro' : ''}</option>
+                <option value={LMS_FORMAT}>Last Man Standing{lmsLimitReached ? ' — Pro' : ''}</option>
               </Select>
               )}
             </div>
           </div>
+          {format === LMS_FORMAT && (
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Points each player brings</p>
+              <Input type="number" min={1} max={1000} value={lmsPoints} onChange={e => setLmsPoints(e.target.value)} />
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--txt-muted)' }}>
+                Every Premier League gameweek, each player picks one team to win. Draw or lose and they're out, and no team can be picked twice. The last one standing takes everyone's points. Results are automatic. The first game starts on the next gameweek.
+              </p>
+            </div>
+          )}
           {limitHit && (
             <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
               {format === 'league'
                 ? 'The free plan includes one league. Upgrade to Pro in Settings → ALOTO Pro to run more.'
+                : format === LMS_FORMAT
+                ? 'The free plan includes one Last Man Standing. Upgrade to Pro in Settings → ALOTO Pro to run more.'
                 : 'The free plan includes one cup. Upgrade to Pro in Settings → ALOTO Pro to run more.'}
             </p>
           )}

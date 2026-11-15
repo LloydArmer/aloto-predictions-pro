@@ -23,6 +23,7 @@ const FORMAT_STYLE = {
   league:         { color: 'var(--accent)', dim: 'var(--accent-dim)', ring: 'rgba(79,156,249,0.35)', label: 'League' },
   knockout:       { color: 'var(--gold)',   dim: 'var(--gold-dim)',   ring: 'rgba(245,200,66,0.35)', label: 'Knockout' },
   group_knockout: { color: '#c88bfa',       dim: 'rgba(200,139,250,0.14)', ring: 'rgba(200,139,250,0.35)', label: 'Group + Knockout' },
+  last_man_standing: { color: 'var(--green)', dim: 'var(--green-dim)', ring: 'rgba(52,199,89,0.35)', label: 'Last Man Standing' },
 }
 
 function LeagueGlyph() {
@@ -72,14 +73,28 @@ function GroupKnockoutGlyph() {
   )
 }
 
+function LastManStandingGlyph() {
+  return (
+    <g fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      {/* One figure standing in the middle, the others knocked out either
+          side: faded and crossed through. */}
+      <circle cx="12" cy="6.5" r="2.3" fill="currentColor" stroke="none" />
+      <path d="M12 10v6.5M9 20l3-3.5 3 3.5M9.2 12.5h5.6" />
+      <path d="M3 9.5l3 3M6 9.5l-3 3" opacity="0.5" />
+      <path d="M18 9.5l3 3M21 9.5l-3 3" opacity="0.5" />
+    </g>
+  )
+}
+
 const GLYPHS = {
   league: LeagueGlyph,
   knockout: KnockoutGlyph,
   group_knockout: GroupKnockoutGlyph,
+  last_man_standing: LastManStandingGlyph,
 }
 
 /**
- * @param format  'league' | 'knockout' | 'group_knockout'
+ * @param format  'league' | 'knockout' | 'group_knockout' | 'last_man_standing'
  * @param emoji   a competition's stored emoji, from before the icon became
  *                format-derived. Rendered only if it holds something an admin
  *                actually chose; the old auto-assigned defaults are ignored so
@@ -120,4 +135,4 @@ export default function CompetitionIcon({ format = 'league', emoji, size = 'sm',
 }
 
 /** Plain-text marker for <option> elements, which cannot contain markup. */
-export const FORMAT_MARK = { league: '▤', knockout: '◈', group_knockout: '⬗' }
+export const FORMAT_MARK = { league: '▤', knockout: '◈', group_knockout: '⬗', last_man_standing: '◉' }

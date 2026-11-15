@@ -1,0 +1,44 @@
+-- 124_last_man_standing_schedule.sql
+--
+-- Runs the Last Man Standing job (sync-lms) every 10 minutes. Each run:
+--   1. refreshes the Premier League fixtures and results when it needs to,
+--   2. moves players through or knocks them out once a gameweek has finished
+--      (lms_settle, from 123),
+--   3. sends the "you're through / you're out / you've won" notifications and
+--      the pick reminders (24 hours and 2 hours before the deadline).
+--
+-- It copies the football live-scores job (aloto-live-scores), which already
+-- holds this project's address and key, and points the copy at sync-lms. So
+-- the same file works on Dev and Prod with nothing to fill in.
+--
+-- COST: sync-lms only calls API-Football when a Last Man Standing game is
+-- running, and then at most once every 20 minutes while a game it is waiting
+-- on should have finished, plus once every 6 hours to catch rearranged
+-- fixtures. The rest of the time a run only checks the database.
+--
+-- Deploy sync-lms BEFORE running this. Run on Dev first, then Prod.
+-- Needs 123. Safe to run more than once: the old copy is replaced.
+
+-- ---------------------------------------------------------------------------
+-- STEP 1 — Remove an earlier copy, if any.
+-- ---------------------------------------------------------------------------
+select cron.unschedule(jobid) from cron.job where jobname = 'aloto-lms';
+
+-- ---------------------------------------------------------------------------
+-- STEP 2 — Schedule sync-lms every 10 minutes, copied from the football job.
+-- ---------------------------------------------------------------------------
+select cron.schedule('aloto-lms', '*/10 * * * *', replace(command, 'sync-football', 'sync-lms'))
+from cron.job
+where jobname = 'aloto-live-scores';
+
+-- ---------------------------------------------------------------------------
+-- STEP 3 — Check. aloto-lms should be listed, every 10 minutes, on, and its
+-- command should mention sync-lms. If it is missing, the football job has a
+-- different name: tell Claude what the list below shows.
+-- ---------------------------------------------------------------------------
+select jobname,
+       schedule,
+       case when active then 'on' else 'OFF' end as state,
+       position('sync-lms' in command) > 0 as calls_sync_lms
+from cron.job
+order by jobname;

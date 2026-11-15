@@ -13,6 +13,10 @@ import F1Predict      from './components/features/f1/F1Predict'
 import F1Standings    from './components/features/f1/F1Standings'
 import F1Dashboard    from './components/features/f1/F1Dashboard'
 import SportRoute     from './components/layout/SportRoute'
+import LastManStanding from './components/features/lms/LastManStanding'
+import { useCompetitions } from './hooks/useCompetitions'
+import { useSelectedCompetition } from './hooks/useSelectedCompetition'
+import { isLms }      from './lib/lms'
 import Standings      from './components/features/standings/Standings'
 import Admin          from './components/features/admin/Admin'
 import Settings       from './components/features/settings/Settings'
@@ -33,10 +37,28 @@ function Protected({ children }) {
   return user ? children : <Navigate to="/login" replace />
 }
 
+/**
+ * A football page, unless the competition on screen is a Last Man Standing,
+ * which has its own screen in place of Dashboard, Predict and Standings (it has
+ * no gameweeks, predictions or table of its own). Each page opens it on the tab
+ * that matches: Dashboard and Predict on the pick, Standings on the players.
+ */
+function orLastManStanding(Football, tab) {
+  return function FootballPage() {
+    const { competitions, loading } = useCompetitions()
+    const [selected] = useSelectedCompetition(competitions)
+    if (loading) return null
+    return isLms(competitions.find(c => c.id === selected)) ? <LastManStanding initialTab={tab} /> : <Football />
+  }
+}
+const FootballDashboard = orLastManStanding(Dashboard, 'pick')
+const FootballPredict   = orLastManStanding(Predict, 'pick')
+const FootballStandings = orLastManStanding(Standings, 'players')
+
 // Pages that each sport draws its own way.
-function PredictForSport() { return <SportRoute football={Predict} nfl={NflPredict} f1={F1Predict} /> }
-function DashboardForSport() { return <SportRoute football={Dashboard} nfl={NflDashboard} f1={F1Dashboard} /> }
-function StandingsForSport() { return <SportRoute football={Standings} nfl={NflStandings} f1={F1Standings} /> }
+function PredictForSport() { return <SportRoute football={FootballPredict} nfl={NflPredict} f1={F1Predict} /> }
+function DashboardForSport() { return <SportRoute football={FootballDashboard} nfl={NflDashboard} f1={F1Dashboard} /> }
+function StandingsForSport() { return <SportRoute football={FootballStandings} nfl={NflStandings} f1={F1Standings} /> }
 
 function wrap(Page) {
   return (
