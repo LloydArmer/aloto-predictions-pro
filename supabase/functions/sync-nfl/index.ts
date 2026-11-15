@@ -196,7 +196,11 @@ async function syncLive() {
   const nowFinal: string[] = []
 
   for (const date of dates) {
-    const body = await apiGet('/games', { league: NFL_LEAGUE_ID, date, timezone: 'UTC' })
+    // The API needs the season alongside league (15 Nov 2026: without it the
+    // live poll got nothing back, so no live scores). The season is named for
+    // the year it starts, so a January game belongs to the previous year.
+    const season = String(seasonFor(new Date(date + 'T12:00:00Z')))
+    const body = await apiGet('/games', { league: NFL_LEAGUE_ID, season, date, timezone: 'UTC' })
     const games = (body.response ?? []).filter((g: any) => wanted.has(Number(g.game.id)))
 
     for (const g of games) {
