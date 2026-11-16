@@ -559,6 +559,24 @@ function RulesTab({ competitionId, competitions, refetchComps }) {
         </div>
       ))}
       <Button variant="primary" className="mt-3" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save rules'}</Button>
+      {/* Leagues had no way to switch this on: the toggle was only on the cup
+          screen (found 16 Nov 2026). F1 has its own, in F1 Admin. */}
+      {comp?.sport !== 'f1' && (
+        <div className="mt-4 pt-4" style={{ borderTop: '0.5px solid var(--border)' }}>
+          <AdminLabel className="mb-2">Confirming results</AdminLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
+            {comp?.sport === 'nfl'
+              ? "Turn this on and each game's score is confirmed automatically once the NFL feed says it is final (after overtime, if there is any)."
+              : "Turn this on and each fixture's score is confirmed automatically once the football feed says the match has finished."}
+            {' '}You can still correct a score afterwards, and the gameweek is only completed, and points worked out,
+            when you mark it completed.
+          </p>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={autoFinalise} onChange={e => saveAutoFinalise(e.target.checked)} />
+            <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>{comp?.sport === 'nfl' ? 'Confirm results automatically when a game is final' : 'Confirm results automatically at full time'}</span>
+          </label>
+        </div>
+      )}
     </Card>
   )
 }

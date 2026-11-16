@@ -10,6 +10,8 @@
 //           so the admin can pick which to play. One request.
 //   import  add the picked games (game_ids) to a gameweek as fixtures, already
 //           linked to the feed. One request.
+//   catchup the same as live, looking back 8 days. Run by hand to fill in
+//           games the live poll missed.
 //   live    poll games in progress and write their scores to the live_*
 //           columns. Run on a schedule every 30 seconds. Costs nothing when no
 //           game is on: it only calls the API while a linked game is inside
@@ -172,12 +174,12 @@ async function importWeek(gameweekId: string, week: number, gameIds: number[], s
  * kickoff and six hours after it, and not yet final. One request per distinct
  * game date — usually one, two on a Sunday whose night game crosses midnight UTC.
  */
-async function syncLive() {
+async function syncLive(lookBackHours = 6) {
   const now = Date.now()
   const { data: fixtures } = await supabase.from('fixtures')
     .select('id, gameweek_id, kickoff_time, api_nfl_game_id, live_status, home_score, status')
     .not('api_nfl_game_id', 'is', null)
-    .gte('kickoff_time', new Date(now - 6 * 60 * 60 * 1000).toISOString())
+    .gte('kickoff_time', new Date(now - lookBackHours * 60 * 60 * 1000).toISOString())
     .lte('kickoff_time', new Date(now + 15 * 60 * 1000).toISOString())
 
   const watching = (fixtures ?? []).filter(f =>
@@ -275,6 +277,10 @@ Deno.serve(async (req) => {
     const yr = season ? Number(season) : undefined
     const result = mode === 'week' ? await listWeek(gameweek_id, Number(week), yr)
       : mode === 'import' ? await importWeek(gameweek_id, Number(week), game_ids, yr)
+      // catchup: the same as live but looking back 8 days, for games the live
+      // poll missed (15 Nov 2026: the live job was calling the wrong function).
+      // Run by hand from Edge Functions > sync-nfl > Test with {"mode":"catchup"}.
+      : mode === 'catchup' ? await syncLive(8 * 24)
       : await syncLive()
     return new Response(JSON.stringify({ ok: !('error' in result), ...result }), {
       headers: { ...CORS, 'Content-Type': 'application/json' },

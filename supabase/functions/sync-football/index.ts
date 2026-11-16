@@ -29,6 +29,12 @@ const DAILY_LIMIT = Number(Deno.env.get('API_FOOTBALL_DAILY_LIMIT') ?? '100')
 // by the scheduled job having spent the lot.
 const RESERVE = 10
 
+// API-Football's "match over" statuses: full time, after extra time, after
+// penalties. autoFinalise used this name without it ever being defined, so the
+// first time a competition had "Confirm results automatically" on, every live
+// run stopped with a ReferenceError and nothing was confirmed (16 Nov 2026).
+const FINISHED = ['FT', 'AET', 'PEN']
+
 // Called from the browser via supabase.functions.invoke, which sends a
 // preflight OPTIONS request first. Without these headers and the OPTIONS
 // handler below, the browser blocks the call before it ever reaches this
@@ -440,11 +446,17 @@ async function autoFinalise(fixtureIds: string[]) {
   const gwIds = [...new Set(candidates.map(f => f.gameweek_id).filter(Boolean))]
   if (!gwIds.length) return 0
 
-  const { data: gws } = await supabase.from('gameweeks')
-    .select('id, competition_id').in('id', gwIds)
-  const compByGw = new Map((gws ?? []).map(g => [g.id, g.competition_id]))
+  // The competition that owns each gameweek, plus any that share it.
+  const [{ data: gws }, { data: links }] = await Promise.all([
+    supabase.from('gameweeks').select('id, competition_id').in('id', gwIds),
+    supabase.from('competition_gameweeks').select('gameweek_id, competition_id').in('gameweek_id', gwIds),
+  ])
+  const compsByGw = new Map<string, Set<string>>()
+  const add = (gw: string, c: string) => { if (!c) return; if (!compsByGw.has(gw)) compsByGw.set(gw, new Set()); compsByGw.get(gw)!.add(c) }
+  for (const g of (gws ?? [])) add(g.id, g.competition_id)
+  for (const l of (links ?? [])) add(l.gameweek_id, l.competition_id)
 
-  const compIds = [...new Set((gws ?? []).map(g => g.competition_id).filter(Boolean))]
+  const compIds = [...new Set([...compsByGw.values()].flatMap(s => [...s]))]
   if (!compIds.length) return 0
 
   const { data: comps } = await supabase.from('competitions')
@@ -454,7 +466,7 @@ async function autoFinalise(fixtureIds: string[]) {
 
   let finalised = 0
   for (const fx of candidates) {
-    if (!willing.has(compByGw.get(fx.gameweek_id))) continue
+    if (![...(compsByGw.get(fx.gameweek_id) ?? [])].some(c => willing.has(c))) continue
     // A finished match with no score is a feed fault, not a 0-0.
     if (fx.live_home_score == null || fx.live_away_score == null) continue
 
