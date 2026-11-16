@@ -108,6 +108,9 @@ export default function LmsAdmin({ competitionId, sport: compSport = 'football' 
   const [startRound, setStartRound] = useState('')
   const [league, setLeague] = useState(sport === 'nfl' ? NFL_LEAGUE : { id: 39, name: 'Premier League' })
   const [loadingRounds, setLoadingRounds] = useState(false)
+  const [isPro, setIsPro] = useState(null)
+
+  useEffect(() => { supabase.rpc('has_pro').then(({ data }) => setIsPro(data === true)) }, [])
 
   useEffect(() => { load() }, [competitionId])
 
@@ -260,6 +263,11 @@ export default function LmsAdmin({ competitionId, sport: compSport = 'football' 
               </p>
             )}
             <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Everyone in this competition gets one entry. Points are bragging points only, never money.</p>
+            {isPro === false && data.games.some(g => g.status !== 'cancelled' || g.started_at) && (
+              <p className="text-xs" style={{ color: 'var(--amber)' }}>
+                The free plan includes one Last Man Standing game. Another game, including one after a roll-over, needs Pro: Settings → ALOTO Pro.
+              </p>
+            )}
             <Button variant="primary" disabled={busy || loadingRounds || !startRound}
               onClick={() => act(() => startLmsGame(competitionId, {
                 sport, leagueId: league.id, leagueName: league.name, points: pts, startRound: Number(startRound),

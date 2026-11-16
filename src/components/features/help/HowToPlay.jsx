@@ -335,7 +335,7 @@ const PLANS = [
     title: 'Free and Pro',
     summary: 'Playing is always free, in as many competitions as you like, with no adverts. Pro is for admins who want to run more.',
     notes: [
-      ['Free', 'One Last Man Standing (football or NFL). Football: one league, one cup and one final league table prediction. NFL: one league, with the Super Bowl, AFC and NFC champion questions. F1: one league, with the Drivers\' Champion question.'],
+      ['Free', 'One Last Man Standing game (football or NFL); another game, including after a roll-over, needs Pro. Football: one league, one cup and one final league table prediction. NFL: one league, with the Super Bowl, AFC and NFC champion questions. F1: one league, with the Drivers\' Champion question.'],
       ['Pro', 'Unlimited leagues, cups and Last Man Standings, individual season predictions including questions you write yourself, NFL MVP and division winner questions, the full F1 drivers\' and constructors\' tables, and a full archive of past seasons.'],
       ['Who pays', 'Only the admin. Everyone in a Pro admin\'s competitions gets what it unlocks, without paying.'],
       ['Price', '£29.99 a year, through the App Store. Settings → ALOTO Pro.'],
@@ -373,6 +373,7 @@ const ADMIN = [
     notes: [
       ['Missed picks', 'Handled for you: at the first kick-off any entry without a pick gets the lowest-placed team it hasn\'t used.'],
       ['Roll-overs', 'If nobody wins, the pot rolls into the next game and entries cost 10 more (20, then 30…). Players from the rolled game are re-entered for the extra 10 only.'],
+      ['Free plan', 'One game is free. Starting another, including the next game after a roll-over, needs Pro.'],
       ['Fewer than 2 players', 'The game waits and starts on the following gameweek instead.'],
       ['Stop game', 'Ends a game with no winner. Any rolled-over points go back for the next game.'],
     ],

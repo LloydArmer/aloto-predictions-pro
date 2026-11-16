@@ -104,6 +104,7 @@ export const LMS_ERRORS = {
   entries_closed: 'Entries closed at the first kick-off.',
   too_many: `You can have up to ${MAX_ENTRIES} entries.`,
   bad_sport: 'Choose Football or NFL for the game.',
+  pro_needed: 'The free plan includes one Last Man Standing game. Upgrade to Pro in Settings → ALOTO Pro to start another, including after a roll-over.',
 }
 
 /** Entry label: "Entry 2" when a player has more than one, else blank. */

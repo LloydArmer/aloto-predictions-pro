@@ -216,13 +216,13 @@ export default function ProUpgrade() {
 function ProBenefits() {
   return (
     <div className="text-xs" style={{ color: 'var(--txt-second)', lineHeight: 1.7 }}>
-      <p>· Unlimited leagues, cups and Last Man Standings</p>
+      <p>· Unlimited leagues, cups and Last Man Standing games, roll-overs included</p>
       <p>· Individual season predictions, including questions you write yourself</p>
       <p>· NFL: MVP and division winner questions, and your own</p>
       <p>· F1: the full drivers' and constructors' table predictions</p>
       <p>· A full archive of past seasons</p>
       <p style={{ color: 'var(--txt-muted)', marginTop: 6 }}>
-        The free plan includes one league, one cup, one Last Man Standing and the final league table prediction,
+        The free plan includes one league, one cup, one Last Man Standing game and the final league table prediction,
         one NFL league with Super Bowl winner, AFC champion and NFC champion predictions,
         and one F1 league with the Drivers' Champion prediction.
         Playing is always free, however many competitions you are in.

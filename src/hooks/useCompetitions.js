@@ -22,7 +22,7 @@ export function orderForDisplay(list) {
 
 export function useCompetitions() {
   // Every competition this person is in, across all sports.
-  const [allCompetitions, setCompetitions] = useState([])
+  const [everyCompetition, setCompetitions] = useState([])
   const [loading, setLoading] = useState(true)
 
   // Sports are separate: the app only ever shows ONE sport's competitions, and
@@ -32,7 +32,12 @@ export function useCompetitions() {
   // sport of the competition already selected; failing that, of the first in
   // display order. A football player who never touches the chooser therefore
   // sees exactly what they always have, and an NFL-only player opens on NFL.
-  const { chosen } = useSport()
+  const { chosen, hidden = [] } = useSport()
+  // Sports hidden on this device (Last Man Standing on the website) are left
+  // out everywhere, as if this person were not in them.
+  const allCompetitions = useMemo(
+    () => everyCompetition.filter(c => !hidden.includes(sportOf(c))),
+    [everyCompetition, hidden.join(',')])
   const [selectedId] = useSelectedCompetitionId()
   const activeSport = chosen
     || sportOf(allCompetitions.find(c => c.id === selectedId) || allCompetitions[0])

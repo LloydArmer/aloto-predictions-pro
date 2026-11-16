@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { supabase } from '../lib/supabase'
+import { useAuth } from './useAuth'
 
 /**
  * Which sport the app is showing: Football, NFL, and whatever is added later.
@@ -33,6 +35,12 @@ export function SportProvider({ children }) {
   const [chosen, setChosen] = useState(() => readStoredSport())
   const [sports, setSports] = useState(FALLBACK_SPORTS)
   const userId = useRef(null)
+  const { isSiteAdmin } = useAuth()
+
+  // Last Man Standing is in the iPhone and Android app for everyone, but on
+  // the website only for the site admin (Brittany, 16 Nov 2026).
+  const hidden = (!Capacitor.isNativePlatform() && !isSiteAdmin) ? ['lms'] : []
+  const visibleSports = sports.filter(s => !hidden.includes(s.id))
 
   useEffect(() => {
     let cancelled = false
@@ -66,7 +74,7 @@ export function SportProvider({ children }) {
   }
 
   return (
-    <SportContext.Provider value={{ chosen, choose, sports }}>
+    <SportContext.Provider value={{ chosen: hidden.includes(chosen) ? null : chosen, choose, sports: visibleSports, hidden }}>
       {children}
     </SportContext.Provider>
   )
