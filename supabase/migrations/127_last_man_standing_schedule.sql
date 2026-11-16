@@ -8,10 +8,12 @@
 --   3. sends the "you're through / you're out / you've won" notifications and
 --      the pick reminders (24 hours and 2 hours before the deadline).
 --
--- It copies the football live-scores job (aloto-live-scores), which already
--- holds this project's address and key, and points the copy at sync-lms. So
--- the same file works on Dev and Prod with nothing to fill in.
---
+-- It copies an existing job that calls one of this project's edge functions
+-- (aloto-live-scores, sync-nfl-live or aloto-live-activity-push, whichever
+-- this project has), so it already holds the project's address and key, and
+-- points the copy at sync-lms. The same file works on Dev and Prod with
+-- nothing to fill in, and the key is never written in this file.
+
 -- COST: sync-lms only calls API-Sports when a Last Man Standing game is
 -- running, and then at most once every 20 minutes while a game it is waiting
 -- on should have finished, plus once every 6 hours to catch rearranged
@@ -26,16 +28,27 @@
 select cron.unschedule(jobid) from cron.job where jobname = 'aloto-lms';
 
 -- ---------------------------------------------------------------------------
--- STEP 2 — Schedule sync-lms every 10 minutes, copied from the football job.
+-- STEP 2 — Schedule sync-lms every 10 minutes, copied from an existing job.
 -- ---------------------------------------------------------------------------
-select cron.schedule('aloto-lms', '*/10 * * * *', replace(command, 'sync-football', 'sync-lms'))
-from cron.job
-where jobname = 'aloto-live-scores';
+select cron.schedule(
+  'aloto-lms',
+  '*/10 * * * *',
+  regexp_replace(
+    regexp_replace(command, '/functions/v1/[A-Za-z0-9_-]+', '/functions/v1/sync-lms'),
+    'timeout_milliseconds\s*:=\s*\d+', 'timeout_milliseconds:=10000'))
+from (
+  select command
+  from cron.job
+  where jobname in ('aloto-live-scores', 'sync-nfl-live', 'aloto-live-activity-push')
+    and command like '%/functions/v1/%'
+  order by array_position(array['aloto-live-scores', 'sync-nfl-live', 'aloto-live-activity-push'], jobname)
+  limit 1
+) j;
 
 -- ---------------------------------------------------------------------------
 -- STEP 3 — Check. aloto-lms should be listed, every 10 minutes, on, and its
--- command should mention sync-lms. If it is missing, the football job has a
--- different name: tell Claude what the list below shows.
+-- command should mention sync-lms. If it is missing, tell Claude what the
+-- list below shows.
 -- ---------------------------------------------------------------------------
 select jobname,
        schedule,
