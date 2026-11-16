@@ -9,6 +9,8 @@
  * own picks.
  */
 
+import { nflTeam } from './sports/nfl/teams'
+
 export const LMS_FORMAT = 'last_man_standing'
 /** Its own entry in the sport menu (migration 128). */
 export const LMS_SPORT = 'lms'
@@ -128,24 +130,30 @@ export async function loadLms(supabase, competitionId) {
     || all.find(g => g.status !== 'cancelled') || null
   if (!game) return { games: all, game: null }
 
-  const [{ data: entries }, { data: picks }, { data: status }, { data: fixtures }, { count: tableSize }] = await Promise.all([
+  const [{ data: entries }, { data: picks }, { data: status }, { data: season }, { data: table }, plansRes] = await Promise.all([
     supabase.from('lms_entries').select('*, profile:user_id(display_name)').eq('game_id', game.id).order('entry_no'),
     supabase.from('lms_picks').select('*').eq('game_id', game.id).order('round'),
     supabase.rpc('lms_pick_status', { p_game_id: game.id }),
+    // The whole season: form, the planner and the remaining teams all need it.
     supabase.from('lms_fixtures').select('*')
       .eq('sport', game.sport).eq('league_id', game.league_id).eq('season', game.season)
-      .gte('round', game.start_round).lte('round', game.current_round),
-    supabase.from('lms_standings').select('team_id', { count: 'exact', head: true })
+      .order('kickoff').limit(2000),
+    supabase.from('lms_standings').select('team_id, team_name, position')
       .eq('sport', game.sport).eq('league_id', game.league_id).eq('season', game.season),
+    // Your own planner (migration 132). Missing table = no plans yet.
+    supabase.from('lms_plans').select('*').eq('game_id', game.id),
   ])
 
   const list = entries || []
-  const fixturesById = new Map((fixtures || []).map(f => [f.api_fixture_id, f]))
-  const thisRound = (fixtures || []).filter(f => f.round === game.current_round)
+  const seasonFixtures = season || []
+  const fixtures = seasonFixtures.filter(f => f.round >= game.start_round && f.round <= game.current_round)
+  const fixturesById = new Map(seasonFixtures.map(f => [f.api_fixture_id, f]))
+  const thisRound = fixtures.filter(f => f.round === game.current_round)
   const current = roundFixtures(thisRound)
   const lock = roundLock(thisRound)
   const hasPick = new Map((status || []).map(s => [s.entry_id, s.has_pick]))
-  const teamCount = tableSize || (game.sport === 'nfl' ? 32 : 20)
+  const standings = new Map((table || []).map(t => [t.team_id, t]))
+  const teamCount = standings.size || leagueTeams(seasonFixtures).length || (game.sport === 'nfl' ? 32 : 20)
 
   return {
     games: all,
@@ -153,6 +161,10 @@ export async function loadLms(supabase, competitionId) {
     entries: list,
     picks: picks || [],
     fixturesById,
+    seasonFixtures,
+    standings,
+    plans: plansRes?.error ? [] : (plansRes?.data || []),
+    plannerReady: !plansRes?.error,
     current,
     lock,
     locked: lock ? lock <= new Date() : false,
@@ -162,6 +174,136 @@ export async function loadLms(supabase, competitionId) {
     pot: game.pot ?? (game.carried_points + list.reduce((s, e) => s + (e.stake || 0), 0)),
   }
 }
+
+// ───────────────────────── Stats helpers ─────────────────────────
+
+/** Every team in the league, from the table if loaded, else from the fixtures. Best placed first. */
+export function leagueTeams(seasonFixtures, standings) {
+  const teams = new Map()
+  seasonFixtures.forEach(f => {
+    teams.set(f.home_team_id, f.home_team)
+    teams.set(f.away_team_id, f.away_team)
+  })
+  standings?.forEach((t, id) => teams.set(id, t.team_name))
+  return [...teams.entries()]
+    .map(([id, name]) => ({ id, name, position: standings?.get(id)?.position ?? null }))
+    .sort((a, b) => (a.position ?? 999) - (b.position ?? 999) || a.name.localeCompare(b.name))
+}
+
+const FOOTBALL_CODES = {
+  'arsenal': 'ARS', 'aston villa': 'AVL', 'bournemouth': 'BOU', 'brentford': 'BRE', 'brighton': 'BHA',
+  'burnley': 'BUR', 'chelsea': 'CHE', 'crystal palace': 'CRY', 'everton': 'EVE', 'fulham': 'FUL',
+  'ipswich': 'IPS', 'leeds': 'LEE', 'leicester': 'LEI', 'liverpool': 'LIV', 'luton': 'LUT',
+  'manchester city': 'MCI', 'manchester united': 'MUN', 'newcastle': 'NEW', 'nottingham forest': 'NFO',
+  'sheffield utd': 'SHU', 'sheffield united': 'SHU', 'sheffield wednesday': 'SHW', 'southampton': 'SOU',
+  'sunderland': 'SUN', 'tottenham': 'TOT', 'west ham': 'WHU', 'wolves': 'WOL', 'hull city': 'HUL',
+  'coventry': 'COV', 'middlesbrough': 'MID', 'west brom': 'WBA', 'norwich': 'NOR', 'watford': 'WAT',
+  'stoke city': 'STK', 'swansea': 'SWA', 'cardiff': 'CAR', 'millwall': 'MIL', 'preston': 'PNE',
+  'queens park rangers': 'QPR', 'blackburn': 'BLB', 'bristol city': 'BRC', 'derby': 'DER',
+  'portsmouth': 'POR', 'oxford united': 'OXF', 'plymouth': 'PLY', 'celtic': 'CEL', 'rangers': 'RAN',
+  'real madrid': 'RMA', 'barcelona': 'BAR', 'atletico madrid': 'ATM', 'bayern munich': 'BAY',
+  'borussia dortmund': 'BVB', 'paris saint germain': 'PSG', 'inter': 'INT', 'ac milan': 'MIL', 'juventus': 'JUV',
+}
+
+/** A three-letter code for a team: "MUN", "KC". */
+export function teamCode(sport, name) {
+  if (sport === 'nfl') return nflTeam(name).abbr
+  const n = (name || '').toLowerCase().trim()
+  if (FOOTBALL_CODES[n]) return FOOTBALL_CODES[n]
+  const words = n.replace(/\b(fc|afc|cf|sc|ac)\b/g, '').trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return '?'
+  return (words.length > 1 && words[0].length <= 3 ? words[0][0] + words[1].slice(0, 2) : words[0].slice(0, 3)).toUpperCase()
+}
+
+/** A team's finished games, oldest first. Each has res W/D/L, opponent, home, score, round. */
+export function teamResults(seasonFixtures, teamId) {
+  return seasonFixtures
+    .filter(f => FINISHED.includes(f.status) && f.home_goals != null && (f.home_team_id === teamId || f.away_team_id === teamId))
+    .sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff))
+    .map(f => {
+      const home = f.home_team_id === teamId
+      const mine = home ? f.home_goals : f.away_goals
+      const theirs = home ? f.away_goals : f.home_goals
+      return {
+        res: mine > theirs ? 'W' : mine === theirs ? 'D' : 'L',
+        opp: home ? f.away_team : f.home_team,
+        oppId: home ? f.away_team_id : f.home_team_id,
+        home, round: f.round, score: `${mine}-${theirs}`,
+      }
+    })
+}
+
+/** The last five results, oldest first. */
+export const teamForm = (seasonFixtures, teamId, n = 5) => teamResults(seasonFixtures, teamId).slice(-n)
+
+/** A team's games still to come from a gameweek on, one per gameweek. */
+export function teamUpcoming(seasonFixtures, teamId, fromRound, n = 3) {
+  const seen = new Set()
+  return seasonFixtures
+    .filter(f => f.round >= fromRound && !VOID.includes(f.status) && !FINISHED.includes(f.status)
+      && (f.home_team_id === teamId || f.away_team_id === teamId))
+    .sort((a, b) => a.round - b.round || new Date(a.kickoff) - new Date(b.kickoff))
+    .filter(f => !seen.has(f.round) && seen.add(f.round))
+    .slice(0, n)
+    .map(f => {
+      const home = f.home_team_id === teamId
+      return { round: f.round, home, opp: home ? f.away_team : f.home_team, oppId: home ? f.away_team_id : f.home_team_id, kickoff: f.kickoff }
+    })
+}
+
+/**
+ * How hard a game looks, from the league table: 'easier' when the opponent is
+ * well below, 'harder' when well above, else 'even'. A guide, not odds.
+ */
+export function difficulty(standings, teamId, oppId, teamCount = 20) {
+  const a = standings.get(teamId)?.position
+  const b = standings.get(oppId)?.position
+  if (!a || !b) return 'even'
+  const gap = Math.max(3, Math.round(teamCount * 0.25))
+  return b - a >= gap ? 'easier' : a - b >= gap ? 'harder' : 'even'
+}
+
+export const DIFFICULTY_STYLE = {
+  easier: { label: 'Easier', bg: 'var(--green-dim)', color: 'var(--green)', line: 'var(--green-line)' },
+  even:   { label: 'Even',   bg: 'var(--bg-raised)', color: 'var(--txt-second)', line: 'var(--border-med)' },
+  harder: { label: 'Harder', bg: 'var(--red-dim)',   color: 'var(--red)',   line: 'var(--red-line)' },
+}
+
+export const FORM_STYLE = {
+  W: { bg: 'var(--green-dim)', color: 'var(--green)' },
+  D: { bg: 'var(--amber-dim)', color: 'var(--amber)' },
+  L: { bg: 'var(--red-dim)',   color: 'var(--red)' },
+}
+
+/** "1st", "2nd", "13th". */
+export function ordinal(n) {
+  if (!n) return ''
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+/** Time left until a moment: "2d 4h", "3h 12m", "12m". */
+export function countdown(to, now = new Date()) {
+  const ms = +new Date(to) - +now
+  if (ms <= 0) return null
+  const m = Math.floor(ms / 60000), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m % 60}m`
+  return `${Math.max(1, m)}m`
+}
+
+/** The live label for a fixture: "HT", "FT", "Live", or null before kick-off. */
+export function fixtureStatus(f) {
+  if (!f) return null
+  if (VOID.includes(f.status)) return 'Off'
+  if (FINISHED.includes(f.status)) return 'FT'
+  if (['HT', 'BT', 'INT'].includes(f.status)) return 'HT'
+  if (LIVE.includes(f.status)) return f.status === 'LIVE' ? 'Live' : f.status
+  return null
+}
+
+/** The last gameweek with fixtures in the season. */
+export const lastRound = seasonFixtures => seasonFixtures.reduce((m, f) => Math.max(m, f.round), 0)
 
 /** Gameweeks of a league that have not kicked off yet, for choosing where a game starts. */
 export async function upcomingRounds(supabase, sport, leagueId, season) {

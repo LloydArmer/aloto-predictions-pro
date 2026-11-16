@@ -6,9 +6,12 @@ import { useSelectedCompetition } from '../../../hooks/useSelectedCompetition'
 import { supabase } from '../../../lib/supabase'
 import { formatUK } from '../../../lib/time'
 import {
-  loadLms, usedTeams, pickState, STATE_STYLE, scoreLine, OUT_REASON, LMS_ERRORS, VOID,
-  roundName, entryTag, MAX_ENTRIES,
+  loadLms, usedTeams, pickState, STATE_STYLE, scoreLine, OUT_REASON, LMS_ERRORS,
+  roundName, entryTag, MAX_ENTRIES, countdown,
 } from '../../../lib/lms'
+import { PickGrid, LiveGames, RemainingTeams } from './LmsStats'
+import { TeamPicker } from './LmsPicker'
+import LmsPlanner from './LmsPlanner'
 import { Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import JoinCompetition from '../competitions/JoinCompetition'
@@ -16,7 +19,10 @@ import toast from 'react-hot-toast'
 
 const TABS = [
   { key: 'pick',    label: 'My picks', icon: 'ti-target-arrow' },
+  { key: 'games',   label: 'Games',    icon: 'ti-ball-football' },
   { key: 'players', label: 'Players',  icon: 'ti-users' },
+  { key: 'grid',    label: 'Grid',     icon: 'ti-table' },
+  { key: 'planner', label: 'Planner',  icon: 'ti-route' },
   { key: 'history', label: 'History',  icon: 'ti-history' },
 ]
 
@@ -25,9 +31,13 @@ const TABS = [
  * Dashboard, Predict and Standings whenever the competition selected is a Last
  * Man Standing (see App.jsx), so it carries its own competition switcher.
  *
- *   My picks  your entries; for each, the gameweek's fixtures to pick from.
- *             Extra entries can be added until the first kick-off.
+ *   My picks  your entries; for each, the gameweek's teams to pick from with
+ *             form and table position, and the teams it has left. Extra
+ *             entries can be added until the first kick-off.
+ *   Games     this gameweek's fixtures, live, with who is on each side.
  *   Players   every entry: still in, out and why, who has picked.
+ *   Grid      every entry's pick in every gameweek; tap a gameweek for the breakdown.
+ *   Planner   plan which team each entry uses in the gameweeks ahead.
  *   History   every gameweek's picks once locked, and past games.
  */
 export default function LastManStanding({ initialTab = 'pick' }) {
@@ -144,12 +154,15 @@ export default function LastManStanding({ initialTab = 'pick' }) {
           ))}
         </div>
 
-        {tab === 'pick' && <>
+        {(tab === 'pick' || tab === 'planner') && (
           <EntryBar data={data} mine={myEntries} entry={entry} onSelect={setEntryId}
             onAdd={addEntry} onRemove={removeEntry} saving={saving} />
-          <PickTab data={data} me={entry} myPicks={entryPicks} myPick={entryPick} onPick={pick} saving={saving} />
-        </>}
+        )}
+        {tab === 'pick' && <PickTab data={data} me={entry} myPicks={entryPicks} myPick={entryPick} onPick={pick} saving={saving} />}
+        {tab === 'games' && <LiveGames data={data} userId={user?.id} />}
         {tab === 'players' && <PlayersTab data={data} userId={user?.id} />}
+        {tab === 'grid' && <PickGrid data={data} userId={user?.id} />}
+        {tab === 'planner' && <LmsPlanner data={data} entry={entry} entryPicks={entryPicks} onSaved={() => load(true)} />}
         {tab === 'history' && <HistoryTab data={data} userId={user?.id} />}
       </>}
     </div>
@@ -158,9 +171,18 @@ export default function LastManStanding({ initialTab = 'pick' }) {
 
 // ───────────────────────── Header ─────────────────────────
 function GameHeader({ data, mine }) {
-  const { game, entries, pot, lock, locked, players } = data
+  const { game, entries, pot, lock, locked, players, hasPick } = data
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(t)
+  }, [])
   const rn = r => roundName(game, r)
-  const alive = entries.filter(e => e.status === 'alive').length
+  const aliveEntries = entries.filter(e => e.status === 'alive')
+  const alive = aliveEntries.length
+  const playersLeft = new Set(aliveEntries.map(e => e.user_id)).size
+  const toPick = aliveEntries.filter(e => !hasPick.get(e.id)).length
+  const left = lock && !locked ? countdown(lock, now) : null
   const finished = game.status === 'won' || game.status === 'no_winner'
 
   let line
@@ -194,11 +216,29 @@ function GameHeader({ data, mine }) {
           {myLine.t}
         </span>
       </div>
+      {!finished && (
+        <div className="grid grid-cols-3 gap-2 mt-3">
+          <Stat label={left ? 'Picks lock in' : 'Status'} value={left || (locked ? 'Locked' : '–')} accent={!!left} />
+          <Stat label="Players left" value={`${playersLeft}/${players}`} />
+          <Stat label={locked ? 'Entries left' : 'Picks'}
+            value={locked ? `${alive}/${entries.length}` : toPick === 0 && alive > 0 ? 'All in ✓' : `${toPick} to pick`}
+            color={!locked ? (toPick === 0 && alive > 0 ? 'var(--green)' : 'var(--amber)') : undefined} />
+        </div>
+      )}
       <div className="flex items-center justify-between mt-3 pt-3 text-xs" style={{ borderTop: '0.5px solid var(--border)' }}>
         <span style={{ color: finished ? 'var(--txt-primary)' : 'var(--txt-second)' }}>{line}</span>
         {!finished && <span className="font-semibold flex-shrink-0 ml-2" style={{ color: 'var(--txt-primary)' }}>{alive} left</span>}
       </div>
     </Card>
+  )
+}
+
+function Stat({ label, value, accent, color }) {
+  return (
+    <div className="rounded-lg px-2.5 py-2" style={{ background: 'var(--bg-raised)', border: `0.5px solid ${accent ? 'var(--accent-line)' : 'var(--border)'}` }}>
+      <p className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: 'var(--txt-muted)' }}>{label}</p>
+      <p className="text-sm font-bold mt-0.5" style={{ color: color || (accent ? 'var(--accent)' : 'var(--txt-primary)') }}>{value}</p>
+    </div>
   )
 }
 
@@ -346,50 +386,11 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
         </p>
       </Card>
 
-      {current.map(f => {
-        const off = VOID.includes(f.status)
-        return (
-          <Card key={f.api_fixture_id} className="p-2.5 mb-2">
-            <p className="text-[11px] text-center mb-1.5" style={{ color: 'var(--txt-muted)' }}>
-              {off ? 'Postponed' : formatUK(f.kickoff, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-            </p>
-            <div className="flex items-center gap-2">
-              <TeamButton id={f.home_team_id} name={f.home_team} off={off} used={used} myPick={myPick} saving={saving} onPick={onPick} rn={rn} />
-              <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>{game.sport === 'nfl' ? '@' : 'v'}</span>
-              <TeamButton id={f.away_team_id} name={f.away_team} off={off} used={used} myPick={myPick} saving={saving} onPick={onPick} rn={rn} />
-            </div>
-          </Card>
-        )
-      })}
+      <TeamPicker data={data} used={used} myPick={myPick} saving={saving} onPick={onPick}
+        planned={data.plans.find(p => p.entry_id === me.id && p.round === game.current_round)} />
 
-      {used.size > 0 && (
-        <p className="text-[11px] mt-2" style={{ color: 'var(--txt-muted)' }}>
-          Already used by this entry: {[...used.entries()].map(([, r]) => myPicks.find(p => p.round === r)?.team_name).filter(Boolean).join(', ')}
-        </p>
-      )}
+      <RemainingTeams data={data} entryPicks={myPicks} />
     </div>
-  )
-}
-
-function TeamButton({ id, name, off, used, myPick, saving, onPick, rn }) {
-  const chosen = myPick?.team_id === id
-  const usedRound = used.get(id)
-  const disabled = off || usedRound != null || saving != null
-  return (
-    <button type="button" disabled={disabled} onClick={() => !chosen && onPick(id, name)}
-      className="flex-1 rounded-lg px-2 py-2.5 text-sm font-semibold text-center transition-colors"
-      style={{
-        minWidth: 0,
-        background: chosen ? 'var(--accent)' : 'var(--bg-raised)',
-        color: chosen ? 'var(--on-accent)' : usedRound != null || off ? 'var(--txt-muted)' : 'var(--txt-primary)',
-        border: `0.5px solid ${chosen ? 'var(--accent)' : 'var(--border-med)'}`,
-        textDecoration: usedRound != null ? 'line-through' : 'none',
-        opacity: saving === id ? 0.6 : 1,
-      }}>
-      <span className="block truncate">{name}</span>
-      {usedRound != null && <span className="block text-[10px] font-normal" style={{ textDecoration: 'none' }}>used {rn(usedRound)}</span>}
-      {chosen && <span className="block text-[10px] font-normal">your pick ✓</span>}
-    </button>
   )
 }
 
