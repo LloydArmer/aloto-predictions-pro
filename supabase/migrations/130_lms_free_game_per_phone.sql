@@ -9,8 +9,10 @@
 --     the app keeps in the iPhone keychain (survives deleting and reinstalling
 --     the app) or Android's own device ID. Nothing about the person is stored.
 --   * lms_start_game: without Pro, a game is refused if any account that has
---     been used on the same phone has already started one. Free games can only
---     be started from the phone app.
+--     been used on the same phone has already started one. Accounts with no
+--     phone recorded yet (app versions before this, the website) keep the
+--     one-game-per-account limit, so this is safe to run before the new app
+--     version is out.
 --
 -- Needs 129. Safe to run more than once. RUN ON DEV FIRST, then Prod.
 
@@ -77,24 +79,19 @@ begin
 
   -- Free plan: one Last Man Standing game PER PHONE. Any game after that,
   -- including the next game after a roll-over, needs Pro, whichever account
-  -- on that phone starts it. A game stopped before it started does not count.
-  -- Free games can only be started from the phone app (which registers the
-  -- phone with register_device).
-  if not has_pro(auth.uid()) then
-    if not exists (select 1 from public.user_devices d where d.user_id = auth.uid()) then
-      return json_build_object('ok', false, 'error', 'device_needed');
-    end if;
-    if exists (
-      select 1 from public.lms_games g
-      where not (g.status = 'cancelled' and g.started_at is null)
-        and (g.created_by = auth.uid()
-             or g.created_by in (
-               select d2.user_id from public.user_devices d1
-               join public.user_devices d2 on d2.device_id = d1.device_id
-               where d1.user_id = auth.uid()))
-    ) then
-      return json_build_object('ok', false, 'error', 'pro_needed');
-    end if;
+  -- that has been used on the same phone starts it. Accounts with no phone
+  -- recorded (older app versions, the website) are limited per account. A
+  -- game stopped before it started does not count.
+  if not has_pro(auth.uid()) and exists (
+    select 1 from public.lms_games g
+    where not (g.status = 'cancelled' and g.started_at is null)
+      and (g.created_by = auth.uid()
+           or g.created_by in (
+             select d2.user_id from public.user_devices d1
+             join public.user_devices d2 on d2.device_id = d1.device_id
+             where d1.user_id = auth.uid()))
+  ) then
+    return json_build_object('ok', false, 'error', 'pro_needed');
   end if;
 
   select * into v_comp from competitions where id = p_competition_id;
@@ -165,5 +162,5 @@ grant execute on function public.lms_start_game(uuid, text, int, text, int, int)
 -- STEP 4 — Check. Should show user_devices_table = true and per_phone = true.
 -- ---------------------------------------------------------------------------
 select to_regclass('public.user_devices') is not null as user_devices_table,
-       position('device_needed' in pg_get_functiondef('public.lms_start_game(uuid, text, int, text, int, int)'::regprocedure)) > 0
+       position('user_devices' in pg_get_functiondef('public.lms_start_game(uuid, text, int, text, int, int)'::regprocedure)) > 0
          as per_phone;

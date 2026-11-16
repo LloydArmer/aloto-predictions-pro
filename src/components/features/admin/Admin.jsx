@@ -280,11 +280,11 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
       // Translated here so the person is told what the rule is and how to lift
       // it, rather than being shown a raw Postgres error.
       if (String(err.message || '').includes('FREE_TIER_LEAGUE_LIMIT')) {
-        toast.error('Free accounts can run one league. Upgrade to Pro for unlimited leagues and cups.')
+        toast.error('The free plan includes one league per sport on each phone, whichever account you use. Upgrade to Pro for unlimited leagues and cups.')
       } else if (String(err.message || '').includes('FREE_TIER_LMS_LIMIT')) {
-        toast.error('Free accounts can run one Last Man Standing. Upgrade to Pro for unlimited.')
+        toast.error('The free plan includes one Last Man Standing on each phone, whichever account you use. Upgrade to Pro for unlimited.')
       } else if (String(err.message || '').includes('FREE_TIER_CUP_LIMIT')) {
-        toast.error('Free accounts can run one cup competition. Upgrade to Pro for unlimited cups and season predictions.')
+        toast.error('The free plan includes one cup on each phone, whichever account you use. Upgrade to Pro for unlimited cups and season predictions.')
       } else {
         toast.error(err.message || 'Could not create competition')
       }
