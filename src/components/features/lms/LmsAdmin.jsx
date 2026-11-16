@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { registerDevice } from '../../../lib/deviceId'
 import { formatUK } from '../../../lib/time'
 import {
   loadLms, upcomingRounds, lmsLeagueOptions, leagueLabel, roundName, LMS_ERRORS, NFL_LEAGUE,
@@ -32,6 +33,7 @@ export async function startLmsGame(competitionId, { sport, leagueId, leagueName,
     p_league_name: sport === 'nfl' ? NFL_LEAGUE.name : leagueName,
     p_points: points, p_start_round: startRound,
   }
+  await registerDevice()
   let { data, error } = await supabase.rpc('lms_start_game', args)
   if (!error && data?.error === 'no_fixtures') {
     await refreshLmsFixtures(sport, id)

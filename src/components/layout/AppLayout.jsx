@@ -7,6 +7,7 @@ import { useUnreadChat } from '../../hooks/useChat'
 import { useSport, sportOf } from '../../hooks/useSport'
 import SportSwitcher from './SportSwitcher'
 import toast from 'react-hot-toast'
+import { registerDevice } from '../../lib/deviceId'
 
 const NAV_BASE = [
   { to: '/',             label: 'Dashboard',    icon: 'ti-layout-dashboard' },
@@ -19,6 +20,10 @@ const NAV_BASE = [
 
 export default function AppLayout({ children }) {
   const { user, profile, isAdmin, signOut } = useAuth()
+
+  // Note which phone this account is on (one free Last Man Standing game per
+  // phone, migration 130). Fire and forget: nothing waits on it.
+  useEffect(() => { if (user?.id) registerDevice() }, [user?.id])
   const { competitions, allCompetitions, activeSport } = useCompetitions()
   const [selectedComp, selectComp] = useSelectedCompetition(competitions)
   const { sports, choose } = useSport()
