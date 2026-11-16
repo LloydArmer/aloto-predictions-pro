@@ -1,44 +1,62 @@
 // supabase/functions/sync-lms/index.ts
 //
-// Last Man Standing: the Premier League fixture list, settling each gameweek,
-// and the notifications. See migration 123 for the rules.
+// Last Man Standing: fixtures, results and league tables from API-Sports,
+// settling each gameweek, and the notifications. See migration 126 for the
+// rules. Works for any football league API-Sports covers and for the NFL.
 //
 // Modes, chosen by the `mode` field in the request body:
 //
-//   run       (default, every 10 minutes from pg_cron, see 124)
-//             1. Refreshes the Premier League fixtures and results from
-//                API-Football, but only when it needs to (below).
-//             2. Calls lms_settle(): when every game in a gameweek has
-//                finished, players go through or are out, and a game ends
-//                when one player is left (or none).
-//             3. Sends "you're through / you're out / you've won" and the pick
-//                reminders (24 hours and 2 hours before the deadline).
-//   fixtures  Refresh the fixture list now. For an admin setting up a game
-//             before the scheduled job has loaded the season. Admins of a Last
-//             Man Standing only, at most once every 5 minutes.
+//   run       (default, every 10 minutes from pg_cron, see 127)
+//             1. For each league a game is using, refreshes the fixtures and
+//                results, and the league table, but only when it needs to.
+//             2. Calls lms_settle(): at the deadline (first kick-off) any
+//                entry with no pick is given the lowest-placed team; when
+//                every game in a gameweek has finished, entries go through or
+//                are out, and a game ends when one player is left (or none).
+//             3. Sends "you're through / you're out / you've won", the
+//                automatic-pick notice and the pick reminders (24 hours and
+//                2 hours before the deadline).
+//   fixtures  { sport: 'football' | 'nfl', league_id } Load a league's season
+//             now, for an admin setting up a game. Admins of a Last Man
+//             Standing only; a league is refreshed at most every 5 minutes.
 //
-// API COST: one request returns the whole season (380 fixtures), so a refresh
-// is always one request. The run only makes one when a Last Man Standing game
-// is open or running AND either
-//   - a game in a gameweek being played should have finished by now (kicked
-//     off over 1 hour 50 minutes ago) and has no result yet, at most every
-//     20 minutes, or
-//   - the list is more than 6 hours old (rearranged fixtures).
-// It shares the football daily quota (api_sync_log) with sync-football.
+// API COST: one request returns a whole season, one more the league table.
+// The run only asks when a game is open or running in that league AND
+//   - a game in the gameweek being played should have finished by now and
+//     has no result yet (at most every 20 minutes), or
+//   - the fixture list is more than 6 hours old (rearranged games), or
+//   - the league table is more than 12 hours old.
+// Football shares the API-Football daily quota (api_sync_log) with
+// sync-football; the NFL shares the NFL quota (nfl_sync_log) with sync-nfl.
 //
 // Self-contained on purpose: the push code is copied from _shared/push.ts so
 // this can be pasted into the Supabase dashboard editor as one file.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const API_HOST = 'https://v3.football.api-sports.io'
-const PREMIER_LEAGUE = 39
-const DAILY_LIMIT = Number(Deno.env.get('API_FOOTBALL_DAILY_LIMIT') ?? '100')
-const RESERVE = 10
+type Sport = 'football' | 'nfl'
 
 const MIN = 60 * 1000
-const FINISHED = ['FT', 'AET', 'PEN', 'AWD', 'WO']
+const HOUR = 60 * MIN
+const FINISHED = ['FT', 'AET', 'PEN', 'AWD', 'WO', 'AOT']
 const VOID = ['PST', 'CANC', 'ABD']
+const RESERVE = 10
+const NFL_LEAGUE = 1
+
+const API = {
+  football: {
+    host: 'https://v3.football.api-sports.io',
+    key: Deno.env.get('API_FOOTBALL_KEY') ?? '',
+    keyName: 'API_FOOTBALL_KEY',
+    dailyLimit: Number(Deno.env.get('API_FOOTBALL_DAILY_LIMIT') ?? '100'),
+  },
+  nfl: {
+    host: 'https://v1.american-football.api-sports.io',
+    key: Deno.env.get('API_NFL_KEY') ?? Deno.env.get('API_FOOTBALL_KEY') ?? '',
+    keyName: 'API_NFL_KEY (or API_FOOTBALL_KEY)',
+    dailyLimit: Number(Deno.env.get('API_NFL_DAILY_LIMIT') ?? '7500'),
+  },
+}
 
 const APP_URL = Deno.env.get('APP_URL') || 'https://aloto-prediction-pro.netlify.app'
 
@@ -53,66 +71,93 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 )
 
-const apiKey = Deno.env.get('API_FOOTBALL_KEY')!
-
 /* ------------------------------------------------------------------ */
-/* API-Football                                                        */
+/* API-Sports                                                          */
 /* ------------------------------------------------------------------ */
 
-async function apiGet(path: string, params: Record<string, string> = {}) {
-  const url = new URL(API_HOST + path)
+async function apiGet(sport: Sport, path: string, params: Record<string, string> = {}) {
+  const api = API[sport]
+  const url = new URL(api.host + path)
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
-  const res = await fetch(url, { headers: { 'x-apisports-key': apiKey } })
+  const res = await fetch(url, { headers: { 'x-apisports-key': api.key } })
   const body = await res.json()
+  await logRequest(sport)
   const errors = body.errors
   if (errors && (Array.isArray(errors) ? errors.length : Object.keys(errors).length)) {
     if (errors.plan) throw new Error(`API plan limit: ${errors.plan}`)
-    if (errors.token || errors.key) throw new Error('The API key was rejected. Check API_FOOTBALL_KEY in Edge Function secrets.')
+    if (errors.token || errors.key) throw new Error(`The API key was rejected. Check ${api.keyName} in Edge Function secrets.`)
     if (errors.requests) throw new Error(`Daily request limit reached: ${errors.requests}`)
     throw new Error(`API error: ${JSON.stringify(errors)}`)
   }
   return body.response ?? []
 }
 
-async function logSync(entry: Record<string, unknown>) {
-  await supabase.from('api_sync_log').insert({ kind: 'lms', requests_used: 0, ...entry })
+/** Counts the request against the right daily quota. */
+async function logRequest(sport: Sport) {
+  if (sport === 'nfl') await supabase.from('nfl_sync_log').insert({ kind: 'lms', requests_used: 1 })
+  else await supabase.from('api_sync_log').insert({ kind: 'lms', requests_used: 1 })
 }
 
-async function quotaRemaining(): Promise<number> {
-  const { data } = await supabase.rpc('api_requests_used_today')
-  return DAILY_LIMIT - RESERVE - (data ?? 0)
+async function logError(message: string) {
+  await supabase.from('api_sync_log').insert({ kind: 'lms', requests_used: 0, error: message })
 }
 
-async function lastRefresh(): Promise<number> {
-  const { data } = await supabase.from('api_sync_log')
-    .select('ran_at').eq('kind', 'lms').gt('requests_used', 0)
-    .order('ran_at', { ascending: false }).limit(1)
-  return data?.length ? +new Date(data[0].ran_at) : 0
+async function quotaRemaining(sport: Sport): Promise<number> {
+  const { data } = await supabase.rpc(sport === 'nfl' ? 'nfl_requests_used_today' : 'api_requests_used_today')
+  return API[sport].dailyLimit - RESERVE - (data ?? 0)
 }
 
-async function currentSeason(): Promise<number> {
-  const { data } = await supabase.rpc('lms_current_season')
-  if (data) return Number(data)
+/** The season to load for a league that has no games yet. */
+async function seasonToLoad(sport: Sport, leagueId: number): Promise<number> {
   const now = new Date()
+  if (sport === 'nfl') {
+    // Named for the year it starts: January and February belong to last year's.
+    return now.getUTCMonth() >= 2 ? now.getUTCFullYear() : now.getUTCFullYear() - 1
+  }
+  const { data } = await supabase.from('api_leagues').select('current_season').eq('id', leagueId).maybeSingle()
+  if (data?.current_season) return Number(data.current_season)
   return now.getUTCMonth() >= 6 ? now.getUTCFullYear() : now.getUTCFullYear() - 1
 }
 
-/** "Regular Season - 12" -> 12. Anything else (play-offs) is skipped. */
-function roundNumber(round: string | null | undefined): number | null {
+/** "Regular Season - 12" -> 12; NFL "Week 12" -> 12. Anything else is skipped. */
+function footballRound(round: string | null | undefined): number | null {
   const m = String(round ?? '').match(/Regular Season\s*-\s*(\d+)/i)
   return m ? Number(m[1]) : null
 }
+function nflWeek(week: string | null | undefined): number | null {
+  const m = String(week ?? '').match(/(\d+)/)
+  return m ? Number(m[1]) : null
+}
 
-/** The whole Premier League season in one request. */
-async function refreshFixtures(season: number) {
-  const list = await apiGet('/fixtures', { league: String(PREMIER_LEAGUE), season: String(season) })
+/** A whole season's fixtures in one request. */
+async function refreshFixtures(sport: Sport, leagueId: number, season: number) {
+  const stamp = new Date().toISOString()
+  let rows: any[]
 
-  const rows = list
-    .map((f: any) => ({
+  if (sport === 'nfl') {
+    const list = await apiGet('nfl', '/games', { league: String(leagueId), season: String(season) })
+    rows = list
+      .filter((g: any) => /regular/i.test(g.game?.stage ?? ''))
+      .map((g: any) => ({
+        sport, league_id: leagueId, season,
+        api_fixture_id: g.game.id,
+        round: nflWeek(g.game?.week),
+        kickoff: new Date(Number(g.game.date.timestamp) * 1000).toISOString(),
+        status: g.game.status?.short ?? 'NS',
+        home_team_id: g.teams.home.id,
+        home_team: g.teams.home.name,
+        away_team_id: g.teams.away.id,
+        away_team: g.teams.away.name,
+        home_goals: g.scores?.home?.total ?? null,
+        away_goals: g.scores?.away?.total ?? null,
+        updated_at: stamp,
+      }))
+  } else {
+    const list = await apiGet('football', '/fixtures', { league: String(leagueId), season: String(season) })
+    rows = list.map((f: any) => ({
+      sport, league_id: leagueId, season,
       api_fixture_id: f.fixture.id,
-      league_id: PREMIER_LEAGUE,
-      season,
-      round: roundNumber(f.league?.round),
+      round: footballRound(f.league?.round),
       kickoff: f.fixture.date,
       status: f.fixture.status?.short ?? 'NS',
       home_team_id: f.teams.home.id,
@@ -121,45 +166,132 @@ async function refreshFixtures(season: number) {
       away_team: f.teams.away.name,
       home_goals: f.goals?.home ?? null,
       away_goals: f.goals?.away ?? null,
-      updated_at: new Date().toISOString(),
+      updated_at: stamp,
     }))
-    .filter((r: any) => r.round != null)
-
-  for (let i = 0; i < rows.length; i += 200) {
-    const { error } = await supabase.from('lms_fixtures').upsert(rows.slice(i, i + 200), { onConflict: 'api_fixture_id' })
-    if (error) throw new Error(`Saving fixtures failed: ${error.message}`)
   }
 
-  await logSync({ requests_used: 1, fixtures_seen: list.length, fixtures_updated: rows.length })
+  rows = rows.filter(r => r.round != null && r.home_team_id && r.away_team_id)
+  for (let i = 0; i < rows.length; i += 200) {
+    const { error } = await supabase.from('lms_fixtures').upsert(rows.slice(i, i + 200), { onConflict: 'sport,api_fixture_id' })
+    if (error) throw new Error(`Saving fixtures failed: ${error.message}`)
+  }
+  await supabase.from('lms_sync_state').upsert(
+    { sport, league_id: leagueId, season, fixtures_at: stamp }, { onConflict: 'sport,league_id,season' })
   return rows.length
 }
 
-/** Does the run need fresh data from the API? */
-async function refreshNeeded(season: number): Promise<string | null> {
-  const { data: games } = await supabase.from('lms_games')
-    .select('id, current_round, season').in('status', ['open', 'running'])
-  if (!games?.length) return null
+/**
+ * The league table, as positions 1 (top) to N (bottom). Football uses the
+ * feed's rank (a league split into groups is ranked by points, then goal
+ * difference). The NFL is ranked across the whole league by win percentage,
+ * then points difference, so the "lowest-placed team" is the worst record.
+ */
+async function refreshStandings(sport: Sport, leagueId: number, season: number) {
+  const stamp = new Date().toISOString()
+  let table: Array<{ team_id: number; team_name: string; score: number[] }> = []
 
-  const last = await lastRefresh()
+  if (sport === 'nfl') {
+    const list = await apiGet('nfl', '/standings', { league: String(leagueId), season: String(season) })
+    const seen = new Set<number>()
+    for (const s of list) {
+      if (!s.team?.id || seen.has(s.team.id)) continue
+      seen.add(s.team.id)
+      const w = Number(s.won ?? 0), l = Number(s.lost ?? 0), t = Number(s.ties ?? 0)
+      const played = w + l + t
+      table.push({
+        team_id: s.team.id, team_name: s.team.name,
+        score: [played ? (w + t / 2) / played : 0, Number(s.points?.for ?? 0) - Number(s.points?.against ?? 0)],
+      })
+    }
+  } else {
+    const list = await apiGet('football', '/standings', { league: String(leagueId), season: String(season) })
+    const groups: any[][] = list?.[0]?.league?.standings ?? []
+    const seen = new Set<number>()
+    const single = groups.length === 1
+    for (const group of groups) {
+      for (const s of group) {
+        if (!s.team?.id || seen.has(s.team.id)) continue
+        seen.add(s.team.id)
+        table.push({
+          team_id: s.team.id, team_name: s.team.name,
+          score: single ? [-Number(s.rank ?? 999), 0] : [Number(s.points ?? 0), Number(s.goalsDiff ?? 0)],
+        })
+      }
+    }
+  }
+
+  if (!table.length) return 0
+  table.sort((a, b) => b.score[0] - a.score[0] || b.score[1] - a.score[1] || a.team_name.localeCompare(b.team_name))
+  const rows = table.map((t, i) => ({
+    sport, league_id: leagueId, season, team_id: t.team_id, team_name: t.team_name, position: i + 1, updated_at: stamp,
+  }))
+  const { error } = await supabase.from('lms_standings').upsert(rows, { onConflict: 'sport,league_id,season,team_id' })
+  if (error) throw new Error(`Saving the league table failed: ${error.message}`)
+  await supabase.from('lms_sync_state').upsert(
+    { sport, league_id: leagueId, season, standings_at: stamp }, { onConflict: 'sport,league_id,season' })
+  return rows.length
+}
+
+async function syncState(sport: Sport, leagueId: number, season: number) {
+  const { data } = await supabase.from('lms_sync_state').select('fixtures_at, standings_at')
+    .eq('sport', sport).eq('league_id', leagueId).eq('season', season).maybeSingle()
+  return {
+    fixturesAt: data?.fixtures_at ? +new Date(data.fixtures_at) : 0,
+    standingsAt: data?.standings_at ? +new Date(data.standings_at) : 0,
+  }
+}
+
+/** Why the fixtures need refreshing now, or null. */
+async function fixturesNeeded(sport: Sport, leagueId: number, season: number, rounds: number[], fixturesAt: number) {
   const now = Date.now()
+  if (!fixturesAt) return 'no fixtures yet'
+  if (now - fixturesAt > 6 * HOUR) return 'list over 6 hours old'
+  if (now - fixturesAt < 20 * MIN) return null
 
-  const { count } = await supabase.from('lms_fixtures')
-    .select('api_fixture_id', { count: 'exact', head: true }).eq('season', season)
-  if (!count) return 'no fixtures yet'
-
-  if (now - last > 6 * 60 * MIN) return 'list over 6 hours old'
-  if (now - last < 20 * MIN) return null
-
-  // A game in a gameweek someone is playing that should be over by now.
-  const rounds = [...new Set(games.map(g => g.current_round))]
+  // A game in a gameweek someone is playing that should be over by now
+  // (football about 2 hours, NFL about 3.5 hours after kick-off).
+  const length = sport === 'nfl' ? 210 * MIN : 110 * MIN
   const { data: waiting } = await supabase.from('lms_fixtures')
     .select('api_fixture_id, status')
-    .eq('season', season)
+    .eq('sport', sport).eq('league_id', leagueId).eq('season', season)
     .in('round', rounds)
-    .lt('kickoff', new Date(now - 110 * MIN).toISOString())
-    .gt('kickoff', new Date(now - 3 * 24 * 60 * MIN).toISOString())
+    .lt('kickoff', new Date(now - length).toISOString())
+    .gt('kickoff', new Date(now - 3 * 24 * HOUR).toISOString())
   const unfinished = (waiting ?? []).filter(f => !FINISHED.includes(f.status) && !VOID.includes(f.status))
   return unfinished.length ? `${unfinished.length} result(s) due` : null
+}
+
+/** Refreshes every league an open or running game is using, as needed. */
+async function refreshLeagues() {
+  const { data: games } = await supabase.from('lms_games')
+    .select('sport, league_id, season, current_round').in('status', ['open', 'running'])
+  const leagues = new Map<string, { sport: Sport; league_id: number; season: number; rounds: number[] }>()
+  for (const g of games ?? []) {
+    const k = `${g.sport}:${g.league_id}:${g.season}`
+    if (!leagues.has(k)) leagues.set(k, { sport: g.sport, league_id: g.league_id, season: g.season, rounds: [] })
+    leagues.get(k)!.rounds.push(g.current_round)
+  }
+
+  const done: unknown[] = []
+  for (const l of leagues.values()) {
+    try {
+      const state = await syncState(l.sport, l.league_id, l.season)
+      const why = await fixturesNeeded(l.sport, l.league_id, l.season, l.rounds, state.fixturesAt)
+      const tableDue = Date.now() - state.standingsAt > 12 * HOUR
+      if (!why && !tableDue) continue
+      if (await quotaRemaining(l.sport) <= 0) { done.push({ ...l, skipped: 'Daily API quota reached' }); continue }
+      const entry: Record<string, unknown> = { sport: l.sport, league_id: l.league_id }
+      if (why) { entry.fixtures = await refreshFixtures(l.sport, l.league_id, l.season); entry.why = why }
+      if (tableDue) entry.table = await refreshStandings(l.sport, l.league_id, l.season)
+      done.push(entry)
+    } catch (err) {
+      // One league failing must not stop the others settling.
+      const message = String(err instanceof Error ? err.message : err)
+      await logError(`${l.sport} ${l.league_id}: ${message}`)
+      done.push({ ...l, error: message })
+    }
+  }
+  return done
 }
 
 /* ------------------------------------------------------------------ */
@@ -168,10 +300,13 @@ async function refreshNeeded(season: number): Promise<string | null> {
 
 type Note = { user_id: string; title: string; body: string; link: string; kind: string; tag: string }
 
-function messageFor(e: any): Note | null {
+function messageFor(e: any, sports: Map<string, Sport>): Note | null {
   const link = `${APP_URL}/?competition=${e.competition_id}`
-  const gw = `GW${e.round}`
-  const tag = `lms:${e.game_id}:${e.round}:${e.kind}`
+  const word = sports.get(e.game_id) === 'nfl' ? 'Week ' : 'GW'
+  const gw = `${word}${e.round}`
+  const next = `${word}${e.next_round}`
+  const entry = e.entry_no > 1 ? ` (entry ${e.entry_no})` : ''
+  const tag = `lms:${e.game_id}:${e.round}:${e.kind}:${e.entry_no ?? ''}`
 
   switch (e.kind) {
     case 'through':
@@ -179,16 +314,16 @@ function messageFor(e: any): Note | null {
         user_id: e.user_id, link, tag, kind: 'lms',
         title: `You're through! ✅ ${e.competition}`,
         body: e.void
-          ? `${e.team}'s game was called off, so you go through. ${e.left} left. Pick for GW${e.next_round} now.`
-          : `${e.team} won in ${gw}. ${e.left} left. Pick your GW${e.next_round} team now.`,
+          ? `${e.team}'s game was called off, so you go through${entry}. ${e.left} left. Pick for ${next} now.`
+          : `${e.team} won in ${gw}${entry}. ${e.left} left. Pick your ${next} team now.`,
       }
     case 'out':
       return {
         user_id: e.user_id, link, tag, kind: 'lms',
         title: `You're out ❌ ${e.competition}`,
         body: (e.reason === 'no_pick'
-          ? `No pick for ${gw}.`
-          : `${e.team} ${e.reason === 'drew' ? 'drew' : 'lost'} in ${gw}.`)
+          ? `No team left to give you in ${gw}${entry}.`
+          : `${e.team} ${e.reason === 'drew' ? 'drew' : 'lost'} in ${gw}${entry}.`)
           + (e.no_winner ? ` Nobody's left, so the ${e.pot} points roll over to the next game.` : ''),
       }
     case 'winner':
@@ -197,15 +332,22 @@ function messageFor(e: any): Note | null {
         title: `Last Man Standing! 🏆 ${e.competition}`,
         body: `You're the last one left and win the pot: ${e.pot} points. Bragging rights are yours.`,
       }
+    case 'autopick':
+      return {
+        user_id: e.user_id, link, tag, kind: 'lms',
+        title: `No pick, so you've got ${e.team} 🎲 ${e.competition}`,
+        body: `You didn't pick for ${gw}, so you were given the lowest-placed team you hadn't used: ${e.team}. Good luck!`,
+      }
     case 'remind_24h':
     case 'remind_2h': {
       const when = new Date(e.lock_at).toLocaleString('en-GB', {
         timeZone: 'Europe/London', weekday: 'short', hour: '2-digit', minute: '2-digit',
       })
+      const what = e.missing > 1 ? `${e.missing} of your entries need a team` : 'Pick your team'
       return {
         user_id: e.user_id, link, tag, kind: 'lms',
-        title: `Pick your team ⏳ ${e.competition}`,
-        body: `${e.kind === 'remind_2h' ? 'Under 2 hours left' : 'Picks lock'} at ${when}. No pick means you're out.`,
+        title: `${what} ⏳ ${e.competition}`,
+        body: `${e.kind === 'remind_2h' ? 'Under 2 hours left' : 'Picks lock'} at ${when}. No pick and you get the lowest-placed team.`,
       }
     }
   }
@@ -261,18 +403,8 @@ async function sendAll(notes: Note[]) {
 /* ------------------------------------------------------------------ */
 
 async function run() {
-  const season = await currentSeason()
   const out: Record<string, unknown> = {}
-
-  const why = await refreshNeeded(season)
-  if (why) {
-    if (await quotaRemaining() > 0) {
-      out.refreshed = await refreshFixtures(season)
-      out.why = why
-    } else {
-      out.skipped = 'Daily API quota reached'
-    }
-  }
+  out.leagues = await refreshLeagues()
 
   const { data: events, error: settleError } = await supabase.rpc('lms_settle')
   if (settleError) throw new Error(`lms_settle failed: ${settleError.message}`)
@@ -280,10 +412,35 @@ async function run() {
   const { data: reminders, error: remindError } = await supabase.rpc('lms_due_reminders')
   if (remindError) throw new Error(`lms_due_reminders failed: ${remindError.message}`)
 
-  const notes = [...(events ?? []), ...(reminders ?? [])].map(messageFor).filter(Boolean) as Note[]
+  const all = [...(events ?? []), ...(reminders ?? [])]
+  const gameIds = [...new Set(all.map((e: any) => e.game_id))]
+  const sports = new Map<string, Sport>()
+  if (gameIds.length) {
+    const { data: gs } = await supabase.from('lms_games').select('id, sport').in('id', gameIds)
+    for (const g of gs ?? []) sports.set(g.id, g.sport)
+  }
+
+  const notes = all.map(e => messageFor(e, sports)).filter(Boolean) as Note[]
   out.events = (events ?? []).length
   out.reminders = (reminders ?? []).length
   out.push = await sendAll(notes)
+  return out
+}
+
+/** Admin set-up: load a league's season now and say which gameweeks are ahead. */
+async function loadLeague(sport: Sport, leagueId: number) {
+  const season = await seasonToLoad(sport, leagueId)
+  const state = await syncState(sport, leagueId, season)
+  const out: Record<string, unknown> = { ok: true, sport, league_id: leagueId, season }
+
+  if (Date.now() - state.fixturesAt > 5 * MIN) {
+    if (await quotaRemaining(sport) <= 0) return { ok: false, error: 'Daily API request limit reached. Try again tomorrow.' }
+    out.fixtures = await refreshFixtures(sport, leagueId, season)
+    if (!out.fixtures) return { ok: false, error: `No ${season} regular-season fixtures found for this league.` }
+  }
+  if (Date.now() - state.standingsAt > 5 * MIN) {
+    try { out.table = await refreshStandings(sport, leagueId, season) } catch (_) { /* table can follow later */ }
+  }
   return out
 }
 
@@ -315,17 +472,17 @@ Deno.serve(async (req) => {
 
     if (body.mode === 'fixtures') {
       if (!await runsALastManStanding(await callerId(req))) {
-        return json({ ok: false, error: 'Only the admin of a Last Man Standing can refresh fixtures.' })
+        return json({ ok: false, error: 'Only the admin of a Last Man Standing can load fixtures.' })
       }
-      if (Date.now() - await lastRefresh() < 5 * MIN) return json({ ok: true, note: 'Refreshed in the last 5 minutes' })
-      if (await quotaRemaining() <= 0) return json({ ok: false, error: 'Daily API request limit reached. Try again tomorrow.' })
-      const season = await currentSeason()
-      return json({ ok: true, fixtures: await refreshFixtures(season), season })
+      const sport: Sport = body.sport === 'nfl' ? 'nfl' : 'football'
+      const leagueId = sport === 'nfl' ? NFL_LEAGUE : Number(body.league_id)
+      if (!leagueId) return json({ ok: false, error: 'Choose a league first.' })
+      return json(await loadLeague(sport, leagueId))
     }
 
     return json({ ok: true, ...(await run()) })
   } catch (err) {
-    await logSync({ error: String(err instanceof Error ? err.message : err) })
+    await logError(String(err instanceof Error ? err.message : err))
     // 200 with ok:false, as sync-football: functions.invoke drops the body of
     // a non-2xx, and the admin needs to see the real reason.
     return json({ ok: false, error: String(err instanceof Error ? err.message : err) })

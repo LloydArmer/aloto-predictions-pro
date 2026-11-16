@@ -1,64 +1,135 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { formatUK } from '../../../lib/time'
-import { loadLms, upcomingRounds, currentSeason, LMS_ERRORS } from '../../../lib/lms'
+import {
+  loadLms, upcomingRounds, lmsLeagueOptions, leagueLabel, roundName, LMS_ERRORS, NFL_LEAGUE,
+} from '../../../lib/lms'
 import { Card, Button, Input, Select, Spinner, SectionLabel } from '../../ui'
 import toast from 'react-hot-toast'
 
-/** Loads the Premier League fixture list now, rather than waiting for the job. */
-export async function refreshLmsFixtures() {
-  const { data, error } = await supabase.functions.invoke('sync-lms', { body: { mode: 'fixtures' } })
+/**
+ * Loads a league's season from API-Sports now, rather than waiting for the
+ * job. Returns { season }. The NFL is always league 1.
+ */
+export async function refreshLmsFixtures(sport, leagueId) {
+  const { data, error } = await supabase.functions.invoke('sync-lms', {
+    body: { mode: 'fixtures', sport, league_id: sport === 'nfl' ? NFL_LEAGUE.id : leagueId },
+  })
   if (error) throw error
   if (!data?.ok) throw new Error(data?.error || 'Could not load the fixtures')
   return data
 }
 
 /**
- * Start the first game for a new Last Man Standing. Used straight after the
- * competition is created, so the admin has nothing more to do. Loads the
+ * Start a game. Used straight after a Last Man Standing is created, so the
+ * admin has nothing more to do, and from Admin → Game. Loads the league's
  * fixtures first if this project has none yet.
  */
-export async function startLmsGame(competitionId, points, startRound = null) {
-  let { data, error } = await supabase.rpc('lms_start_game', {
-    p_competition_id: competitionId, p_points: points, p_start_round: startRound,
-  })
+export async function startLmsGame(competitionId, { sport, leagueId, leagueName, points, startRound = null }) {
+  const id = sport === 'nfl' ? NFL_LEAGUE.id : leagueId
+  const args = {
+    p_competition_id: competitionId, p_league_id: id,
+    p_league_name: sport === 'nfl' ? NFL_LEAGUE.name : leagueName,
+    p_points: points, p_start_round: startRound,
+  }
+  let { data, error } = await supabase.rpc('lms_start_game', args)
   if (!error && data?.error === 'no_fixtures') {
-    await refreshLmsFixtures()
-    ;({ data, error } = await supabase.rpc('lms_start_game', {
-      p_competition_id: competitionId, p_points: points, p_start_round: startRound,
-    }))
+    await refreshLmsFixtures(sport, id)
+    ;({ data, error } = await supabase.rpc('lms_start_game', args))
   }
   if (error) throw error
   if (!data?.ok) throw new Error(LMS_ERRORS[data?.error] || 'Could not start the game')
   return data
 }
 
+/** Which league the game runs on. Football: any league; NFL: the NFL. */
+export function LeagueField({ sport, value, onChange, disabled }) {
+  const [options, setOptions] = useState(null)
+  useEffect(() => {
+    if (sport !== 'nfl') lmsLeagueOptions(supabase).then(setOptions)
+  }, [sport])
+
+  if (sport === 'nfl') {
+    return <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>NFL · regular season, one pick a week</p>
+  }
+  if (!options) return <Select disabled><option>Loading leagues…</option></Select>
+
+  const all = [...options.popular, ...options.more]
+  return (
+    <Select value={value?.id ?? ''} disabled={disabled} style={{ width: '100%' }} onChange={e => {
+      const l = all.find(x => String(x.id) === e.target.value)
+      if (l) onChange({ id: l.id, name: l.name })
+    }}>
+      <optgroup label="Main leagues">
+        {options.popular.map(l => <option key={l.id} value={l.id}>{leagueLabel(l)}</option>)}
+      </optgroup>
+      {options.more.length > 0 && (
+        <optgroup label="More leagues">
+          {options.more.map(l => <option key={l.id} value={l.id}>{leagueLabel(l)}</option>)}
+        </optgroup>
+      )}
+    </Select>
+  )
+}
+
 /**
- * Admin → Game, for a Last Man Standing. Start a game (points each, first
- * gameweek), change it before it starts, or stop it. Results need nothing:
- * the app settles each gameweek by itself.
+ * Admin → Game, for a Last Man Standing. Start a game (league, points per
+ * entry, first gameweek), change it before it starts, or stop it. Results
+ * need nothing: the app settles each gameweek by itself.
  */
-export default function LmsAdmin({ competitionId }) {
+export default function LmsAdmin({ competitionId, sport = 'football' }) {
   const [data, setData] = useState(null)
   const [rounds, setRounds] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [points, setPoints] = useState(10)
   const [startRound, setStartRound] = useState('')
+  const [league, setLeague] = useState(sport === 'nfl' ? NFL_LEAGUE : { id: 39, name: 'Premier League' })
+  const [loadingRounds, setLoadingRounds] = useState(false)
 
   useEffect(() => { load() }, [competitionId])
 
   async function load() {
     setLoading(true)
     try {
-      const [d, season] = await Promise.all([loadLms(supabase, competitionId), currentSeason(supabase)])
-      const up = await upcomingRounds(supabase, season)
+      const d = await loadLms(supabase, competitionId)
       setData(d)
-      setRounds(up)
-      const live = d.game && ['open', 'running'].includes(d.game.status)
-      setPoints(live && d.game.status === 'open' ? d.game.points_per_player : (d.game?.points_per_player || 10))
-      setStartRound(String(live && d.game.status === 'open' ? d.game.start_round : (up[0]?.round ?? '')))
+      const g = d.game
+      const live = g && ['open', 'running'].includes(g.status)
+      setPoints(g?.base_points || 10)
+      if (live) {
+        const up = await upcomingRounds(supabase, g.sport, g.league_id, g.season)
+        setRounds(up)
+        setStartRound(String(g.status === 'open' ? g.start_round : (up[0]?.round ?? '')))
+      } else {
+        // Start the next game on the same league as the last one.
+        const l = g ? { id: g.league_id, name: g.league_name } : league
+        setLeague(l)
+        await loadRounds(l)
+      }
     } finally { setLoading(false) }
+  }
+
+  // The gameweeks still to come in a league, loading its season if needed.
+  async function loadRounds(l) {
+    setLoadingRounds(true)
+    setRounds([]); setStartRound('')
+    try {
+      // Use what is already loaded; only ask API-Sports when the league is new
+      // here or its season has nothing left to play (it saves the daily quota).
+      const id = sport === 'nfl' ? NFL_LEAGUE.id : l.id
+      const { data: last } = await supabase.from('lms_fixtures').select('season')
+        .eq('sport', sport).eq('league_id', id).order('season', { ascending: false }).limit(1)
+      let up = last?.length ? await upcomingRounds(supabase, sport, id, last[0].season) : []
+      if (!up.length) {
+        const r = await refreshLmsFixtures(sport, id)
+        up = await upcomingRounds(supabase, sport, id, r.season)
+      }
+      setRounds(up)
+      setStartRound(String(up[0]?.round ?? ''))
+    } catch (err) {
+      toast.error(err.message || 'Could not load that league')
+    } finally { setLoadingRounds(false) }
   }
 
   async function act(fn, ok) {
@@ -81,42 +152,44 @@ export default function LmsAdmin({ competitionId }) {
   const live = game && ['open', 'running'].includes(game.status)
   const lastNoWinner = data.games.find(g => g.status === 'no_winner' && !g.rolled_into)
   const pts = Math.max(1, Math.min(1000, Number(points) || 0))
-  const roundLabel = r => `GW${r.round} · first kick-off ${formatUK(r.lock, { weekday: 'short', day: 'numeric', month: 'short' })}`
+  const nextLevel = lastNoWinner ? lastNoWinner.rollover_level + 1 : 0
+  const rn = r => roundName({ sport }, r)
+  const roundLabel = r => `${rn(r.round)} · first kick-off ${formatUK(r.lock, { weekday: 'short', day: 'numeric', month: 'short' })}`
 
-  const roundPicker = (
-    rounds.length ? (
-      <Select value={startRound} onChange={e => setStartRound(e.target.value)}>
-        {rounds.map(r => <option key={r.round} value={r.round}>{roundLabel(r)}</option>)}
-      </Select>
-    ) : (
-      <div className="flex items-center gap-2">
-        <p className="text-xs flex-1" style={{ color: 'var(--txt-muted)' }}>No Premier League fixtures loaded yet.</p>
-        <Button size="sm" disabled={busy} onClick={() => act(refreshLmsFixtures, 'Fixtures loaded')}>Load fixtures</Button>
-      </div>
-    )
+  const roundPicker = loadingRounds ? (
+    <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--txt-muted)' }}><Spinner size="sm" /> Loading fixtures…</div>
+  ) : rounds.length ? (
+    <Select value={startRound} onChange={e => setStartRound(e.target.value)}>
+      {rounds.map(r => <option key={r.round} value={r.round}>{roundLabel(r)}</option>)}
+    </Select>
+  ) : (
+    <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>No gameweeks still to come in this league's season.</p>
   )
 
   return (
     <div>
       {live && (
         <Card className="p-4 mb-4">
-          <SectionLabel>Game {game.game_number} · {game.status === 'open' ? 'taking entries' : 'under way'}</SectionLabel>
+          <SectionLabel>Game {game.game_number} · {game.league_name} · {game.status === 'open' ? 'taking entries' : 'under way'}</SectionLabel>
           <div className="grid grid-cols-3 gap-2 mt-3 text-center">
             <Stat label="Pot" value={`${data.pot}`} sub="pts" />
-            <Stat label="Players" value={data.entries.length} sub={`${data.entries.filter(e => e.status === 'alive').length} still in`} />
-            <Stat label="Gameweek" value={`GW${game.current_round}`} sub={data.lock ? (data.locked ? 'locked' : `locks ${formatUK(data.lock, { weekday: 'short' })}`) : '—'} />
+            <Stat label="Entries" value={data.entries.length}
+              sub={`${data.players} player${data.players === 1 ? '' : 's'} · ${data.entries.filter(e => e.status === 'alive').length} in`} />
+            <Stat label={sport === 'nfl' ? 'Week' : 'Gameweek'} value={rn(game.current_round)} sub={data.lock ? (data.locked ? 'locked' : `locks ${formatUK(data.lock, { weekday: 'short' })}`) : '—'} />
           </div>
-          {game.carried_points > 0 && (
-            <p className="text-[11px] mt-3" style={{ color: 'var(--txt-muted)' }}>Includes {game.carried_points} pts rolled over from the last game.</p>
-          )}
+          <p className="text-[11px] mt-3" style={{ color: 'var(--txt-muted)' }}>
+            {game.entry_points} pts per entry
+            {game.rollover_level > 0 && ` (roll-over ${game.rollover_level}; entries carried from the last game add ${game.base_points})`}
+            {game.carried_points > 0 && `. Includes ${game.carried_points} pts rolled over.`}
+          </p>
 
           {game.status === 'open' && (
             <div className="mt-4 pt-4 flex flex-col gap-3" style={{ borderTop: '0.5px solid var(--border)' }}>
               <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
-                Anyone who joins with the code before the first kick-off is entered. It starts by itself at the first kick-off (with at least 2 players; otherwise it moves to the next gameweek).
+                Players can join with the code, and add extra entries, until the first kick-off. The game starts by itself then (with at least 2 players; otherwise it moves on a {sport === 'nfl' ? 'week' : 'gameweek'}).
               </p>
-              <Field label="Points each player brings"><Input type="number" min={1} max={1000} value={points} onChange={e => setPoints(e.target.value)} /></Field>
-              <Field label="First gameweek">{roundPicker}</Field>
+              <Field label="Points per entry (before any roll-over)"><Input type="number" min={1} max={1000} value={points} onChange={e => setPoints(e.target.value)} /></Field>
+              <Field label={sport === 'nfl' ? 'First week' : 'First gameweek'}>{roundPicker}</Field>
               <Button variant="primary" disabled={busy || !startRound}
                 onClick={() => act(() => rpc('lms_update_game', { p_game_id: game.id, p_points: pts, p_start_round: Number(startRound) }), 'Game updated')}>
                 Save changes
@@ -125,8 +198,8 @@ export default function LmsAdmin({ competitionId }) {
           )}
 
           <div className="mt-4 pt-3 flex items-center justify-between gap-2" style={{ borderTop: '0.5px solid var(--border)' }}>
-            <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Results and knock-outs are automatic.</p>
-            <Button size="sm" disabled={busy} onClick={() => {
+            <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Results, knock-outs and missed picks are automatic.</p>
+            <Button size="sm" className="flex-shrink-0 whitespace-nowrap" disabled={busy} onClick={() => {
               if (!window.confirm(`Stop Game ${game.game_number}? Nobody wins it${game.carried_points ? ', and the rolled-over points go back for the next game' : ''}. This cannot be undone.`)) return
               act(() => rpc('lms_cancel_game', { p_game_id: game.id }), 'Game stopped')
             }}>Stop game</Button>
@@ -143,14 +216,22 @@ export default function LmsAdmin({ competitionId }) {
             </p>
           )}
           <div className="flex flex-col gap-3 mt-3">
-            <Field label="Points each player brings"><Input type="number" min={1} max={1000} value={points} onChange={e => setPoints(e.target.value)} /></Field>
-            <Field label="First gameweek">{roundPicker}</Field>
+            <Field label="League">
+              <LeagueField sport={sport} value={league} disabled={busy || loadingRounds}
+                onChange={l => { setLeague(l); loadRounds(l) }} />
+            </Field>
+            <Field label="Points per entry"><Input type="number" min={1} max={1000} value={points} onChange={e => setPoints(e.target.value)} /></Field>
+            <Field label={sport === 'nfl' ? 'First week' : 'First gameweek'}>{roundPicker}</Field>
             {lastNoWinner && (
-              <p className="text-xs" style={{ color: 'var(--green)' }}>{lastNoWinner.pot} pts roll over from Game {lastNoWinner.game_number}.</p>
+              <p className="text-xs" style={{ color: 'var(--green)' }}>
+                {lastNoWinner.pot} pts roll over from Game {lastNoWinner.game_number}. New entries cost {pts * (nextLevel + 1)} pts; everyone from Game {lastNoWinner.game_number} is re-entered for {pts} more.
+              </p>
             )}
-            <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Everyone in this competition is entered. Points are bragging points only, never money.</p>
-            <Button variant="primary" disabled={busy || !startRound}
-              onClick={() => act(() => startLmsGame(competitionId, pts, Number(startRound)), 'Game started')}>
+            <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Everyone in this competition gets one entry. Points are bragging points only, never money.</p>
+            <Button variant="primary" disabled={busy || loadingRounds || !startRound}
+              onClick={() => act(() => startLmsGame(competitionId, {
+                sport, leagueId: league.id, leagueName: league.name, points: pts, startRound: Number(startRound),
+              }), 'Game started')}>
               Start game
             </Button>
           </div>
@@ -158,8 +239,11 @@ export default function LmsAdmin({ competitionId }) {
       )}
 
       <div className="flex items-center justify-between">
-        <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Fixtures and results update by themselves every few minutes.</p>
-        <Button size="sm" className="flex-shrink-0 whitespace-nowrap" disabled={busy} onClick={() => act(refreshLmsFixtures, 'Fixtures refreshed')}>Refresh now</Button>
+        <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Fixtures, results and the league table update by themselves.</p>
+        {live && (
+          <Button size="sm" className="flex-shrink-0 whitespace-nowrap" disabled={busy}
+            onClick={() => act(() => refreshLmsFixtures(game.sport, game.league_id), 'Fixtures refreshed')}>Refresh now</Button>
+        )}
       </div>
     </div>
   )

@@ -18,8 +18,8 @@ import { fitName } from '../../../lib/names'
 import SeasonTab from './SeasonTab'
 import { F1RacesTab, F1ScoringTab, F1SeasonTab } from '../f1/F1Admin'
 import ChatModerationTab, { useOpenReportCount } from './ChatModerationTab'
-import LmsAdmin, { startLmsGame } from '../lms/LmsAdmin'
-import { isLms, LMS_FORMAT } from '../../../lib/lms'
+import LmsAdmin, { startLmsGame, LeagueField } from '../lms/LmsAdmin'
+import { isLms, LMS_FORMAT, NFL_LEAGUE, roundName } from '../../../lib/lms'
 import toast from 'react-hot-toast'
 
 // Short labels on purpose. "Gameweeks & fixtures" and "Season predictions" made
@@ -186,7 +186,7 @@ export default function Admin() {
       )}
       {(onCupTab ? pickedOk : managesSelected) && <>
         {lmsSelected ? <>
-          {tab === 'lms' && <LmsAdmin competitionId={selectedComp} />}
+          {tab === 'lms' && <LmsAdmin competitionId={selectedComp} sport={competitions.find(c => c.id === selectedComp)?.sport || 'football'} />}
         </> : isF1Sport ? <>
           {tab === 'rules' && <F1ScoringTab competitionId={selectedComp} />}
           {tab === 'gameweeks' && <F1RacesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
@@ -210,6 +210,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
   const [lmsPoints, setLmsPoints] = useState(10)
+  const [lmsLeague, setLmsLeague] = useState({ id: 39, name: 'Premier League' })
   const [isPro, setIsPro] = useState(null)   // null while unknown
 
   // Told before they fill the form in, not after they submit it. Being stopped
@@ -254,8 +255,12 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
         // Start its first game straight away, on the next gameweek, so the
         // admin only has to share the code.
         try {
-          const g = await startLmsGame(comp.id, Math.max(1, Math.min(1000, Number(lmsPoints) || 10)))
-          toast.success(`Last Man Standing created. It starts in GW${g.start_round}. Share the code from Players.`)
+          const g = await startLmsGame(comp.id, {
+            sport, leagueId: sport === 'nfl' ? NFL_LEAGUE.id : lmsLeague.id,
+            leagueName: sport === 'nfl' ? NFL_LEAGUE.name : lmsLeague.name,
+            points: Math.max(1, Math.min(1000, Number(lmsPoints) || 10)),
+          })
+          toast.success(`Last Man Standing created. It starts in ${roundName({ sport }, g.start_round)}. Share the code from Players.`)
         } catch (err) {
           toast.success('Last Man Standing created.')
           toast.error(`${err.message} You can start the game in Admin → Game.`)
@@ -306,8 +311,13 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
             <div className="flex items-center gap-2.5">
               <CompetitionIcon format={format} size="md" />
-              {/* NFL is league only: no cups, so nothing to choose. */}
-              {leagueOnly ? (
+              {/* NFL has no cups: League or Last Man Standing. F1 is league only. */}
+              {sport === 'nfl' ? (
+              <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
+                <option value="league">League{leagueLimitReached ? ' — Pro' : ''}</option>
+                <option value={LMS_FORMAT}>Last Man Standing{lmsLimitReached ? ' — Pro' : ''}</option>
+              </Select>
+              ) : leagueOnly ? (
                 <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>League{leagueLimitReached ? ' — Pro' : ''}</span>
               ) : (
               <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
@@ -321,10 +331,12 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
           </div>
           {format === LMS_FORMAT && (
             <div>
-              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Points each player brings</p>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>League</p>
+              <LeagueField sport={sport} value={lmsLeague} onChange={setLmsLeague} />
+              <p className="text-xs mb-1 mt-3" style={{ color: 'var(--txt-muted)' }}>Points per entry</p>
               <Input type="number" min={1} max={1000} value={lmsPoints} onChange={e => setLmsPoints(e.target.value)} />
               <p className="text-[11px] mt-1.5" style={{ color: 'var(--txt-muted)' }}>
-                Every Premier League gameweek, each player picks one team to win. Draw or lose and they're out, and no team can be picked twice. The last one standing takes everyone's points. Results are automatic. The first game starts on the next gameweek.
+                Every {sport === 'nfl' ? 'week' : 'gameweek'}, each entry picks one team to win. Draw or lose and it's out, and no team can be picked twice. No pick by the first kick-off and the entry gets the lowest-placed team. Players can have several entries. The last one standing takes the pot. Results are automatic. The first game starts on the next {sport === 'nfl' ? 'week' : 'gameweek'}.
               </p>
             </div>
           )}

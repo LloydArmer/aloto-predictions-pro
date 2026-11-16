@@ -1,9 +1,10 @@
--- 124_last_man_standing_schedule.sql
+-- 127_last_man_standing_schedule.sql
 --
 -- Runs the Last Man Standing job (sync-lms) every 10 minutes. Each run:
---   1. refreshes the Premier League fixtures and results when it needs to,
+--   1. refreshes the fixtures, results and league tables of every league a game
+--      is using (football or NFL) when it needs to,
 --   2. moves players through or knocks them out once a gameweek has finished
---      (lms_settle, from 123),
+--      and gives out the automatic picks at the deadline (lms_settle, from 126),
 --   3. sends the "you're through / you're out / you've won" notifications and
 --      the pick reminders (24 hours and 2 hours before the deadline).
 --
@@ -11,13 +12,13 @@
 -- holds this project's address and key, and points the copy at sync-lms. So
 -- the same file works on Dev and Prod with nothing to fill in.
 --
--- COST: sync-lms only calls API-Football when a Last Man Standing game is
+-- COST: sync-lms only calls API-Sports when a Last Man Standing game is
 -- running, and then at most once every 20 minutes while a game it is waiting
 -- on should have finished, plus once every 6 hours to catch rearranged
--- fixtures. The rest of the time a run only checks the database.
+-- fixtures, and the league tables twice a day. The rest of the time a run only checks the database.
 --
 -- Deploy sync-lms BEFORE running this. Run on Dev first, then Prod.
--- Needs 123. Safe to run more than once: the old copy is replaced.
+-- Needs 126. Safe to run more than once: the old copy is replaced.
 
 -- ---------------------------------------------------------------------------
 -- STEP 1 — Remove an earlier copy, if any.

@@ -7,24 +7,26 @@ import { supabase } from '../../../lib/supabase'
 import { formatUK } from '../../../lib/time'
 import {
   loadLms, usedTeams, pickState, STATE_STYLE, scoreLine, OUT_REASON, LMS_ERRORS, VOID,
+  roundName, entryTag, MAX_ENTRIES,
 } from '../../../lib/lms'
 import { Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import toast from 'react-hot-toast'
 
 const TABS = [
-  { key: 'pick',    label: 'My pick',  icon: 'ti-target-arrow' },
+  { key: 'pick',    label: 'My picks', icon: 'ti-target-arrow' },
   { key: 'players', label: 'Players',  icon: 'ti-users' },
   { key: 'history', label: 'History',  icon: 'ti-history' },
 ]
 
 /**
- * Last Man Standing, for players. Shown in place of the football Dashboard,
- * Predict and Standings whenever the competition selected is a Last Man
- * Standing (see App.jsx), so it carries its own competition switcher.
+ * Last Man Standing, for players. Shown in place of the football or NFL
+ * Dashboard, Predict and Standings whenever the competition selected is a Last
+ * Man Standing (see App.jsx), so it carries its own competition switcher.
  *
- *   My pick   the gameweek's fixtures; tap the team you think will win.
- *   Players   who's still in, who's out and why, who has picked.
+ *   My picks  your entries; for each, the gameweek's fixtures to pick from.
+ *             Extra entries can be added until the first kick-off.
+ *   Players   every entry: still in, out and why, who has picked.
  *   History   every gameweek's picks once locked, and past games.
  */
 export default function LastManStanding({ initialTab = 'pick' }) {
@@ -35,6 +37,7 @@ export default function LastManStanding({ initialTab = 'pick' }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(null)
+  const [entryId, setEntryId] = useState(null)
 
   useEffect(() => { setTab(initialTab) }, [initialTab])
   useEffect(() => { if (comp && user) load(); }, [comp, user?.id])
@@ -53,21 +56,53 @@ export default function LastManStanding({ initialTab = 'pick' }) {
     return () => clearInterval(t)
   }, [playing, comp])
 
-  const me = data?.entries?.find(e => e.user_id === user?.id)
-  const myPicks = useMemo(() => (data?.picks || []).filter(p => p.user_id === user?.id), [data, user?.id])
-  const myPick = myPicks.find(p => p.round === data?.game?.current_round)
+  const myEntries = useMemo(
+    () => (data?.entries || []).filter(e => e.user_id === user?.id).sort((a, b) => a.entry_no - b.entry_no),
+    [data, user?.id])
+  // The entry on screen: the one chosen, else the first still in.
+  const entry = myEntries.find(e => e.id === entryId)
+    || myEntries.find(e => e.status === 'alive') || myEntries[0] || null
+  const entryPicks = useMemo(() => (data?.picks || []).filter(p => p.entry_id === entry?.id), [data, entry?.id])
+  const entryPick = entryPicks.find(p => p.round === data?.game?.current_round)
+
+  async function call(fn, args, ok) {
+    const { data: r, error } = await supabase.rpc(fn, args)
+    if (error) throw error
+    if (!r?.ok) { toast.error(LMS_ERRORS[r?.error] || 'Something went wrong'); return null }
+    if (ok) toast.success(ok)
+    await load(true)
+    return r
+  }
 
   async function pick(teamId, teamName) {
     setSaving(teamId)
     try {
-      const { data: r, error } = await supabase.rpc('lms_make_pick', { p_game_id: data.game.id, p_team_id: teamId })
-      if (error) throw error
-      if (!r?.ok) { toast.error(LMS_ERRORS[r?.error] || 'Could not save your pick'); return }
-      toast.success(`${teamName} picked for GW${data.game.current_round}`)
-      await load(true)
+      const tag = myEntries.length > 1 ? ` (entry ${entry.entry_no})` : ''
+      await call('lms_make_pick', { p_entry_id: entry.id, p_team_id: teamId },
+        `${teamName} picked for ${roundName(data.game, data.game.current_round)}${tag}`)
     } catch (err) {
       toast.error(err.message || 'Could not save your pick')
     } finally { setSaving(null) }
+  }
+
+  async function addEntry() {
+    if (!window.confirm(`Add another entry for ${data.game.entry_points} pts? It's a separate life with its own picks.`)) return
+    setSaving('entry')
+    try {
+      const r = await call('lms_add_entry', { p_game_id: data.game.id }, 'Entry added')
+      if (r) setEntryId(r.entry_id)
+    } catch (err) { toast.error(err.message || 'Could not add an entry') }
+    finally { setSaving(null) }
+  }
+
+  async function removeEntry(e) {
+    if (!window.confirm(`Remove entry ${e.entry_no}? Its ${e.stake} pts come out of the pot.`)) return
+    setSaving('entry')
+    try {
+      await call('lms_remove_entry', { p_entry_id: e.id }, 'Entry removed')
+      setEntryId(null)
+    } catch (err) { toast.error(err.message || 'Could not remove the entry') }
+    finally { setSaving(null) }
   }
 
   const compObj = competitions.find(c => c.id === comp)
@@ -84,7 +119,7 @@ export default function LastManStanding({ initialTab = 'pick' }) {
             action={compObj?.my_role === 'admin' ? <Link to="/admin" className="btn btn-primary btn-sm">Go to Admin</Link> : null} />
         </Card>
       ) : <>
-        <GameHeader data={data} me={me} />
+        <GameHeader data={data} mine={myEntries} />
 
         <div className="tab-strip mb-3">
           {TABS.map(t => (
@@ -96,7 +131,11 @@ export default function LastManStanding({ initialTab = 'pick' }) {
           ))}
         </div>
 
-        {tab === 'pick' && <PickTab data={data} me={me} myPicks={myPicks} myPick={myPick} onPick={pick} saving={saving} />}
+        {tab === 'pick' && <>
+          <EntryBar data={data} mine={myEntries} entry={entry} onSelect={setEntryId}
+            onAdd={addEntry} onRemove={removeEntry} saving={saving} />
+          <PickTab data={data} me={entry} myPicks={entryPicks} myPick={entryPick} onPick={pick} saving={saving} />
+        </>}
         {tab === 'players' && <PlayersTab data={data} userId={user?.id} />}
         {tab === 'history' && <HistoryTab data={data} userId={user?.id} />}
       </>}
@@ -105,33 +144,35 @@ export default function LastManStanding({ initialTab = 'pick' }) {
 }
 
 // ───────────────────────── Header ─────────────────────────
-function GameHeader({ data, me }) {
-  const { game, entries, pot, lock, locked } = data
+function GameHeader({ data, mine }) {
+  const { game, entries, pot, lock, locked, players } = data
+  const rn = r => roundName(game, r)
   const alive = entries.filter(e => e.status === 'alive').length
   const finished = game.status === 'won' || game.status === 'no_winner'
 
   let line
-  if (game.status === 'won') line = `Won by ${game.winner?.display_name || 'a player'} in GW${game.ended_round}`
-  else if (game.status === 'no_winner') line = `No winner. Everyone left went out in GW${game.ended_round}, so the pot rolls over`
-  else if (!lock) line = `GW${game.current_round} · fixtures loading`
-  else if (locked) line = `GW${game.current_round} · locked, results come in automatically`
-  else line = `GW${game.current_round} · picks lock ${formatUK(lock, { weekday: 'short', day: 'numeric', month: 'short' })}`
+  if (game.status === 'won') line = `Won by ${game.winner?.display_name || 'a player'} in ${rn(game.ended_round)}`
+  else if (game.status === 'no_winner') line = `No winner. Everyone left went out in ${rn(game.ended_round)}, so the pot rolls over`
+  else if (!lock) line = `${rn(game.current_round)} · fixtures loading`
+  else if (locked) line = `${rn(game.current_round)} · locked, results come in automatically`
+  else line = `${rn(game.current_round)} · picks lock ${formatUK(lock, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
 
-  const myLine = !me ? { t: 'Not in this game', c: 'var(--txt-muted)' }
-    : me.status === 'winner' ? { t: 'Winner 🏆', c: 'var(--gold, var(--amber))' }
-    : me.status === 'out' ? { t: `Out in GW${me.out_round}`, c: 'var(--red)' }
-    : { t: 'Still in', c: 'var(--green)' }
+  const myAlive = mine.filter(e => e.status === 'alive').length
+  const myLine = !mine.length ? { t: 'Not in this game', c: 'var(--txt-muted)' }
+    : mine.some(e => e.status === 'winner') ? { t: 'Winner 🏆', c: 'var(--gold, var(--amber))' }
+    : myAlive === 0 ? { t: 'Out', c: 'var(--red)' }
+    : { t: mine.length > 1 ? `${myAlive} of ${mine.length} still in` : 'Still in', c: 'var(--green)' }
 
   return (
     <Card className="p-4 mb-3">
       <div className="flex items-start justify-between gap-3">
         <div style={{ minWidth: 0 }}>
-          <SectionLabel>Last Man Standing · Game {game.game_number}</SectionLabel>
+          <SectionLabel>Last Man Standing · {game.league_name} · Game {game.game_number}</SectionLabel>
           <p className="text-3xl font-bold mt-1" style={{ color: 'var(--txt-primary)' }}>
             {pot}<span className="text-sm font-medium ml-1.5" style={{ color: 'var(--txt-muted)' }}>pts in the pot</span>
           </p>
           <p className="text-[11px] mt-0.5" style={{ color: 'var(--txt-muted)' }}>
-            {game.points_per_player} × {entries.length} player{entries.length === 1 ? '' : 's'}
+            {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} from {players} player{players === 1 ? '' : 's'}
             {game.carried_points > 0 && ` + ${game.carried_points} rolled over`}
           </p>
         </div>
@@ -142,15 +183,66 @@ function GameHeader({ data, me }) {
       </div>
       <div className="flex items-center justify-between mt-3 pt-3 text-xs" style={{ borderTop: '0.5px solid var(--border)' }}>
         <span style={{ color: finished ? 'var(--txt-primary)' : 'var(--txt-second)' }}>{line}</span>
-        {!finished && <span className="font-semibold" style={{ color: 'var(--txt-primary)' }}>{alive} left</span>}
+        {!finished && <span className="font-semibold flex-shrink-0 ml-2" style={{ color: 'var(--txt-primary)' }}>{alive} left</span>}
       </div>
+    </Card>
+  )
+}
+
+// ───────────────────────── Entries ─────────────────────────
+function EntryBar({ data, mine, entry, onSelect, onAdd, onRemove, saving }) {
+  const { game, locked, picks } = data
+  const canAdd = game.status === 'open' && !locked && mine.length > 0 && mine.length < MAX_ENTRIES
+  if (!mine.length || (mine.length === 1 && !canAdd)) return null
+
+  return (
+    <Card className="p-3 mb-3">
+      <div className="flex items-center justify-between mb-2">
+        <SectionLabel>Your entries</SectionLabel>
+        {canAdd && entry && entry.entry_no > 1 && (
+          <button type="button" className="text-[11px]" style={{ color: 'var(--txt-muted)' }}
+            disabled={saving != null} onClick={() => onRemove(entry)}>Remove entry {entry.entry_no}</button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {mine.map(e => {
+          const on = e.id === entry?.id
+          const picked = picks.some(p => p.entry_id === e.id && p.round === game.current_round)
+          const color = e.status === 'out' ? 'var(--red)' : e.status === 'winner' ? 'var(--amber)' : picked ? 'var(--green)' : 'var(--amber)'
+          return (
+            <button key={e.id} type="button" onClick={() => onSelect(e.id)}
+              className="rounded-full px-3 py-1 text-xs font-semibold"
+              style={{
+                background: on ? 'var(--accent-dim)' : 'var(--bg-raised)',
+                color: on ? 'var(--accent)' : 'var(--txt-primary)',
+                border: `0.5px solid ${on ? 'var(--accent)' : 'var(--border-med)'}`,
+              }}>
+              Entry {e.entry_no}
+              <span className="ml-1.5" style={{ color }}>●</span>
+            </button>
+          )
+        })}
+        {canAdd && (
+          <button type="button" onClick={onAdd} disabled={saving != null}
+            className="rounded-full px-3 py-1 text-xs font-semibold"
+            style={{ background: 'transparent', color: 'var(--accent)', border: '0.5px dashed var(--accent)' }}>
+            + Add entry · {game.entry_points} pts
+          </button>
+        )}
+      </div>
+      {canAdd && (
+        <p className="text-[11px] mt-2" style={{ color: 'var(--txt-muted)' }}>
+          Each entry is a separate life with its own picks. Entries close at the first kick-off.
+        </p>
+      )}
     </Card>
   )
 }
 
 // ───────────────────────── My pick ─────────────────────────
 function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
-  const { game, current, locked, fixturesById } = data
+  const { game, current, locked, fixturesById, teamCount } = data
+  const rn = r => roundName(game, r)
   const finished = !['open', 'running'].includes(game.status)
 
   if (finished) return (
@@ -160,7 +252,11 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
           ? `${game.winner?.display_name || 'The winner'} took the ${game.pot} point pot.`
           : `Nobody was left standing, so the ${game.pot} points roll into the next game.`}
       </p>
-      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>The next game starts when the admin sets it up. Everyone in the competition is entered.</p>
+      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>
+        {game.status === 'won'
+          ? 'The next game starts when the admin sets it up. Everyone in the competition gets an entry.'
+          : `Everyone in this game is re-entered in the next one for ${game.base_points} more points. New entries cost ${game.base_points * (game.rollover_level + 2)}.`}
+      </p>
     </Card>
   )
 
@@ -175,18 +271,18 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
     const lastPick = myPicks.find(p => p.round === me.out_round)
     return (
       <Card className="p-4">
-        <p className="text-sm font-semibold" style={{ color: 'var(--red)' }}>You're out</p>
+        <p className="text-sm font-semibold" style={{ color: 'var(--red)' }}>{me.entry_no > 1 ? `Entry ${me.entry_no} is out` : "You're out"}</p>
         <p className="text-xs mt-1" style={{ color: 'var(--txt-second)' }}>
           {me.out_reason === 'no_pick'
-            ? `No pick for GW${me.out_round}.`
-            : `${lastPick?.team_name || 'Your team'} ${me.out_reason} in GW${me.out_round}.`}
+            ? `No team left to give in ${rn(me.out_round)}.`
+            : `${lastPick?.team_name || 'Your team'}${lastPick?.auto ? ' (given automatically)' : ''} ${me.out_reason} in ${rn(me.out_round)}.`}
           {' '}Keep an eye on who's left in Players.
         </p>
       </Card>
     )
   }
 
-  const used = usedTeams(myPicks, game.current_round)
+  const used = usedTeams(myPicks, game.current_round, teamCount)
 
   if (locked) {
     const f = myPick ? fixturesById.get(myPick.api_fixture_id) : null
@@ -194,20 +290,24 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
     const st = state ? STATE_STYLE[state] : null
     return (
       <Card className="p-4">
-        <SectionLabel>Your GW{game.current_round} pick</SectionLabel>
+        <SectionLabel>{me.entry_no > 1 ? `Entry ${me.entry_no} · ` : 'Your '}{rn(game.current_round)} pick</SectionLabel>
         {myPick ? <>
           <div className="flex items-center justify-between mt-2">
-            <p className="text-lg font-bold" style={{ color: 'var(--txt-primary)' }}>{myPick.team_name}</p>
+            <p className="text-lg font-bold" style={{ color: 'var(--txt-primary)' }}>
+              {myPick.team_name}
+              {myPick.auto && <span className="text-[10px] font-semibold ml-2 px-1.5 py-0.5 rounded" style={{ color: 'var(--amber)', background: 'var(--amber-dim)' }}>AUTO</span>}
+            </p>
             <span className="text-xs font-semibold" style={{ color: st.color }}>{st.label}</span>
           </div>
           <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>
             {scoreLine(f) || (f ? `${f.home_team} v ${f.away_team} · ${formatUK(f.kickoff, { weekday: 'short' })}` : '')}
           </p>
           <p className="text-[11px] mt-2" style={{ color: 'var(--txt-muted)' }}>
-            Scores update every few minutes. Players move on automatically once every game this gameweek has finished.
+            {myPick.auto && 'No pick was made, so this entry was given the lowest-placed team it had not used. '}
+            Scores update every few minutes. Entries move on automatically once every game has finished.
           </p>
         </> : (
-          <p className="text-sm mt-2" style={{ color: 'var(--red)' }}>No pick made. You'll be out when the gameweek is settled.</p>
+          <p className="text-sm mt-2" style={{ color: 'var(--amber)' }}>No pick made. This entry is being given the lowest-placed team it hasn't used; it shows here within a few minutes.</p>
         )}
       </Card>
     )
@@ -215,7 +315,7 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
 
   if (!current.length) return (
     <Card className="p-4">
-      <p className="text-sm" style={{ color: 'var(--txt-muted)' }}>The GW{game.current_round} fixtures aren't loaded yet. They appear automatically.</p>
+      <p className="text-sm" style={{ color: 'var(--txt-muted)' }}>The {rn(game.current_round)} fixtures aren't loaded yet. They appear automatically.</p>
     </Card>
   )
 
@@ -223,10 +323,12 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
     <div>
       <Card className="p-3 mb-3" style={myPick ? undefined : { background: 'var(--amber-dim)', borderColor: 'var(--amber-line)' }}>
         <p className="text-sm font-semibold" style={{ color: myPick ? 'var(--green)' : 'var(--amber)' }}>
-          {myPick ? `Your pick: ${myPick.team_name}` : 'Pick a team to win'}
+          {me.entry_no > 1
+            ? `Entry ${me.entry_no}: ${myPick ? `your pick is ${myPick.team_name}` : 'pick a team to win'}`
+            : (myPick ? `Your pick: ${myPick.team_name}` : 'Pick a team to win')}
         </p>
         <p className="text-[11px] mt-0.5" style={{ color: 'var(--txt-muted)' }}>
-          {myPick ? 'You can change it until the first kick-off. ' : 'Win and you go through, draw or lose and you are out. '}
+          {myPick ? 'You can change it until the first kick-off. ' : 'Win and you go through, draw or lose and you are out. No pick by the first kick-off and you get the lowest-placed team. '}
           Nobody sees your pick until picks lock.
         </p>
       </Card>
@@ -236,12 +338,12 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
         return (
           <Card key={f.api_fixture_id} className="p-2.5 mb-2">
             <p className="text-[11px] text-center mb-1.5" style={{ color: 'var(--txt-muted)' }}>
-              {off ? 'Postponed' : formatUK(f.kickoff, { weekday: 'short', day: 'numeric', month: 'short' })}
+              {off ? 'Postponed' : formatUK(f.kickoff, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </p>
             <div className="flex items-center gap-2">
-              <TeamButton id={f.home_team_id} name={f.home_team} off={off} used={used} myPick={myPick} saving={saving} onPick={onPick} />
-              <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>v</span>
-              <TeamButton id={f.away_team_id} name={f.away_team} off={off} used={used} myPick={myPick} saving={saving} onPick={onPick} />
+              <TeamButton id={f.home_team_id} name={f.home_team} off={off} used={used} myPick={myPick} saving={saving} onPick={onPick} rn={rn} />
+              <span className="text-xs flex-shrink-0" style={{ color: 'var(--txt-muted)' }}>{game.sport === 'nfl' ? '@' : 'v'}</span>
+              <TeamButton id={f.away_team_id} name={f.away_team} off={off} used={used} myPick={myPick} saving={saving} onPick={onPick} rn={rn} />
             </div>
           </Card>
         )
@@ -249,14 +351,14 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
 
       {used.size > 0 && (
         <p className="text-[11px] mt-2" style={{ color: 'var(--txt-muted)' }}>
-          Already used: {[...used.entries()].map(([, r]) => myPicks.find(p => p.round === r)?.team_name).filter(Boolean).join(', ')}
+          Already used by this entry: {[...used.entries()].map(([, r]) => myPicks.find(p => p.round === r)?.team_name).filter(Boolean).join(', ')}
         </p>
       )}
     </div>
   )
 }
 
-function TeamButton({ id, name, off, used, myPick, saving, onPick }) {
+function TeamButton({ id, name, off, used, myPick, saving, onPick, rn }) {
   const chosen = myPick?.team_id === id
   const usedRound = used.get(id)
   const disabled = off || usedRound != null || saving != null
@@ -272,7 +374,7 @@ function TeamButton({ id, name, off, used, myPick, saving, onPick }) {
         opacity: saving === id ? 0.6 : 1,
       }}>
       <span className="block truncate">{name}</span>
-      {usedRound != null && <span className="block text-[10px] font-normal" style={{ textDecoration: 'none' }}>used GW{usedRound}</span>}
+      {usedRound != null && <span className="block text-[10px] font-normal" style={{ textDecoration: 'none' }}>used {rn(usedRound)}</span>}
       {chosen && <span className="block text-[10px] font-normal">your pick ✓</span>}
     </button>
   )
@@ -281,25 +383,30 @@ function TeamButton({ id, name, off, used, myPick, saving, onPick }) {
 // ───────────────────────── Players ─────────────────────────
 function PlayersTab({ data, userId }) {
   const { game, entries, picks, locked, hasPick, fixturesById } = data
-  const name = e => e.profile?.display_name || 'Player'
-  const thisRound = new Map(picks.filter(p => p.round === game.current_round).map(p => [p.user_id, p]))
-  const pickIn = (uid, r) => picks.find(p => p.user_id === uid && p.round === r)
+  const rn = r => roundName(game, r)
+  const name = e => `${e.profile?.display_name || 'Player'}${entryTag(e, entries) ? ` ${entryTag(e, entries)}` : ''}`
+  const thisRound = new Map(picks.filter(p => p.round === game.current_round).map(p => [p.entry_id, p]))
+  const pickIn = (entryId, r) => picks.find(p => p.entry_id === entryId && p.round === r)
 
   const winners = entries.filter(e => e.status === 'winner')
   const alive = entries.filter(e => e.status === 'alive').sort((a, b) => name(a).localeCompare(name(b)))
   const out = entries.filter(e => e.status === 'out')
     .sort((a, b) => (b.out_round ?? 0) - (a.out_round ?? 0) || name(a).localeCompare(name(b)))
   const running = ['open', 'running'].includes(game.status)
-  const picked = alive.filter(e => hasPick.get(e.user_id)).length
+  const picked = alive.filter(e => hasPick.get(e.id)).length
+  const winnerIds = [...new Set(winners.map(e => e.user_id))]
 
   return (
     <div>
-      {winners.map(e => (
-        <Card key={e.user_id} className="p-3 mb-3" style={{ borderColor: 'var(--gold-line, var(--amber-line))', background: 'var(--gold-dim, var(--amber-dim))' }}>
-          <p className="text-sm font-bold" style={{ color: 'var(--txt-primary)' }}>🏆 {name(e)}{e.user_id === userId && ' (you)'}</p>
-          <p className="text-[11px]" style={{ color: 'var(--txt-second)' }}>Last one standing, won {game.pot} pts in GW{game.ended_round}</p>
-        </Card>
-      ))}
+      {winnerIds.map(uid => {
+        const e = winners.find(w => w.user_id === uid)
+        return (
+          <Card key={uid} className="p-3 mb-3" style={{ borderColor: 'var(--gold-line, var(--amber-line))', background: 'var(--gold-dim, var(--amber-dim))' }}>
+            <p className="text-sm font-bold" style={{ color: 'var(--txt-primary)' }}>🏆 {e.profile?.display_name || 'Player'}{uid === userId && ' (you)'}</p>
+            <p className="text-[11px]" style={{ color: 'var(--txt-second)' }}>Last one standing, won {game.pot} pts in {rn(game.ended_round)}</p>
+          </Card>
+        )
+      })}
 
       {running && (
         <Card className="mb-3 overflow-hidden">
@@ -308,14 +415,14 @@ function PlayersTab({ data, userId }) {
             {!locked && <span className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>{picked} of {alive.length} picked</span>}
           </div>
           {alive.map(e => {
-            const p = thisRound.get(e.user_id)
+            const p = thisRound.get(e.id)
             const st = locked && p ? STATE_STYLE[pickState(p, fixturesById.get(p.api_fixture_id))] : null
             return (
-              <Row key={e.user_id} mine={e.user_id === userId} name={name(e)}
+              <Row key={e.id} mine={e.user_id === userId} name={name(e)}
                 right={locked
-                  ? (p ? <span><span style={{ color: 'var(--txt-primary)' }}>{p.team_name}</span> <span style={{ color: st.color }}>· {st.label}</span></span>
-                       : <span style={{ color: 'var(--red)' }}>No pick</span>)
-                  : (hasPick.get(e.user_id)
+                  ? (p ? <span><span style={{ color: 'var(--txt-primary)' }}>{p.team_name}</span>{p.auto && <AutoTag />} <span style={{ color: st.color }}>· {st.label}</span></span>
+                       : <span style={{ color: 'var(--amber)' }}>Auto pick coming</span>)
+                  : (hasPick.get(e.id)
                       ? <span style={{ color: 'var(--green)' }}>Picked ✓</span>
                       : <span style={{ color: 'var(--txt-muted)' }}>Not picked yet</span>)} />
             )
@@ -327,11 +434,11 @@ function PlayersTab({ data, userId }) {
         <Card className="mb-3 overflow-hidden">
           <div className="px-4 pt-3 pb-2"><SectionLabel>Out ({out.length})</SectionLabel></div>
           {out.map(e => {
-            const p = pickIn(e.user_id, e.out_round)
+            const p = pickIn(e.id, e.out_round)
             return (
-              <Row key={e.user_id} mine={e.user_id === userId} name={name(e)} faded
+              <Row key={e.id} mine={e.user_id === userId} name={name(e)} faded
                 right={<span style={{ color: 'var(--txt-muted)' }}>
-                  GW{e.out_round} · {e.out_reason === 'no_pick' ? 'no pick' : `${p?.team_name || 'team'} ${OUT_REASON[e.out_reason]}`}
+                  {rn(e.out_round)} · {e.out_reason === 'no_pick' ? OUT_REASON.no_pick : `${p?.team_name || 'team'}${p?.auto ? ' (auto)' : ''} ${OUT_REASON[e.out_reason]}`}
                 </span>} />
             )
           })}
@@ -339,6 +446,10 @@ function PlayersTab({ data, userId }) {
       )}
     </div>
   )
+}
+
+function AutoTag() {
+  return <span className="text-[9px] font-semibold ml-1 px-1 py-px rounded" style={{ color: 'var(--amber)', background: 'var(--amber-dim)' }}>AUTO</span>
 }
 
 function Row({ name, right, mine, faded }) {
@@ -356,7 +467,14 @@ function Row({ name, right, mine, faded }) {
 // ───────────────────────── History ─────────────────────────
 function HistoryTab({ data, userId }) {
   const { game, games, entries, picks, locked } = data
-  const names = new Map(entries.map(e => [e.user_id, e.profile?.display_name || 'Player']))
+  const rn = r => roundName(game, r)
+  const byId = new Map(entries.map(e => [e.id, e]))
+  const label = id => {
+    const e = byId.get(id)
+    if (!e) return 'Player'
+    const t = entryTag(e, entries)
+    return `${e.profile?.display_name || 'Player'}${t ? ` ${t}` : ''}`
+  }
   const lastShown = locked || !['open', 'running'].includes(game.status) ? game.current_round : game.current_round - 1
   const rounds = []
   for (let r = lastShown; r >= game.start_round; r--) rounds.push(r)
@@ -365,22 +483,21 @@ function HistoryTab({ data, userId }) {
     <div>
       {rounds.length === 0 && (
         <Card className="p-4 mb-3">
-          <p className="text-sm" style={{ color: 'var(--txt-muted)' }}>Picks show here once the first gameweek locks.</p>
+          <p className="text-sm" style={{ color: 'var(--txt-muted)' }}>Picks show here once the first {game.sport === 'nfl' ? 'week' : 'gameweek'} locks.</p>
         </Card>
       )}
 
       {rounds.map(r => {
-        const list = picks.filter(p => p.round === r)
-          .sort((a, b) => (names.get(a.user_id) || '').localeCompare(names.get(b.user_id) || ''))
+        const list = picks.filter(p => p.round === r).sort((a, b) => label(a.entry_id).localeCompare(label(b.entry_id)))
         return (
           <Card key={r} className="mb-3 overflow-hidden">
-            <div className="px-4 pt-3 pb-2"><SectionLabel>GW{r}</SectionLabel></div>
+            <div className="px-4 pt-3 pb-2"><SectionLabel>{rn(r)}</SectionLabel></div>
             {list.length === 0 && <p className="px-4 pb-3 text-xs" style={{ color: 'var(--txt-muted)' }}>No picks.</p>}
             {list.map(p => {
               const st = STATE_STYLE[pickState(p, data.fixturesById.get(p.api_fixture_id))]
               return (
-                <Row key={p.id} mine={p.user_id === userId} name={names.get(p.user_id) || 'Player'}
-                  right={<span><span style={{ color: 'var(--txt-primary)' }}>{p.team_name}</span> <span style={{ color: st.color }}>· {st.label}</span></span>} />
+                <Row key={p.id} mine={p.user_id === userId} name={label(p.entry_id)}
+                  right={<span><span style={{ color: 'var(--txt-primary)' }}>{p.team_name}</span>{p.auto && <AutoTag />} <span style={{ color: st.color }}>· {st.label}</span></span>} />
               )
             })}
           </Card>
@@ -391,7 +508,7 @@ function HistoryTab({ data, userId }) {
         <Card className="mb-3 overflow-hidden">
           <div className="px-4 pt-3 pb-2"><SectionLabel>Past games</SectionLabel></div>
           {games.filter(g => g.status === 'won' || g.status === 'no_winner').map(g => (
-            <Row key={g.id} name={`Game ${g.game_number}`}
+            <Row key={g.id} name={`Game ${g.game_number} · ${g.league_name}`}
               right={<span style={{ color: 'var(--txt-second)' }}>
                 {g.status === 'won' ? `${g.winner?.display_name || 'Winner'} won ${g.pot} pts` : `No winner · ${g.pot} pts rolled over`}
               </span>} />
