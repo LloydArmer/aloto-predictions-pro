@@ -40,7 +40,8 @@ export default function SportSwitcher({ activeSport, allCompetitions, onSelectCo
         aria-label={`Sport: ${current?.name}. Change sport`}
         style={{ gap: 5, paddingLeft: 9, paddingRight: 8 }}>
         <span aria-hidden="true">{current?.emoji}</span>
-        <span className="aloto-sport-name">{current?.name}</span>
+        {/* "Last Man Standing" is too long for the bar: LMS there, in full in the list. */}
+        <span className="aloto-sport-name">{current?.id === 'lms' ? 'LMS' : current?.name}</span>
         <i className={`ti ${open ? 'ti-chevron-up' : 'ti-chevron-down'} text-xs`} aria-hidden="true" />
       </button>
 
@@ -54,7 +55,7 @@ export default function SportSwitcher({ activeSport, allCompetitions, onSelectCo
             {sports.map(s => (
               <button key={s.id} role="option" aria-selected={s.id === activeSport}
                 onClick={() => pick(s.id)}
-                className="flex items-center gap-2 px-3 py-2 text-sm w-full text-left"
+                className="flex items-center gap-2 px-3 py-2 text-sm w-full text-left whitespace-nowrap"
                 style={{
                   color: s.id === activeSport ? 'var(--accent)' : 'var(--txt-second)',
                   fontWeight: s.id === activeSport ? 500 : 400,

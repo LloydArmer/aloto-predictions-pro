@@ -172,7 +172,7 @@ const PLAYING = [
     title: 'Last Man Standing',
     summary: 'Each gameweek, pick one team to win. Win and you go through, draw or lose and you\'re out. The last player left takes the pot. Football (the league your admin chose) or NFL.',
     steps: [
-      ['Open it', 'Tap the Last Man Standing at the top of Dashboard, Predict or Standings.'],
+      ['Open it', 'Tap the sport menu at the top of the screen and choose 👑 Last Man Standing. Dashboard and Predict show your picks, Standings shows who\'s still in.'],
       ['Pick a team', 'My picks → tap the team you think will win this gameweek (NFL: this week). Change it as often as you like until the first kick-off.'],
       ['Add entries', 'Want more than one life? My picks → + Add entry, before the first kick-off. Each entry costs the entry points and makes its own picks. Tap Entry 1, Entry 2… to switch between them.'],
       ['Wait for the results', 'They come in by themselves. When every game in the gameweek has finished, you\'re told whether each entry is through or out.'],
@@ -352,7 +352,7 @@ const ADMIN = [
     summary: 'Admin is in the top bar on a tablet or computer, and in the top-right menu on a phone.',
     steps: [
       ['Choose the sport', 'Switch to football, NFL or F1 in the top bar first. A competition belongs to one sport. NFL and F1 are leagues only.'],
-      ['Create it', 'Admin → Competitions. League for a points table, Knockout or Group + Knockout for a cup, Last Man Standing for the knock-out pick game.'],
+      ['Create it', 'Admin → Competitions. League for a points table, Knockout or Group + Knockout for a cup. For a Last Man Standing, first choose 👑 Last Man Standing in the sport menu at the top.'],
       ['Set the points', 'Admin → Scoring. In NFL that is the correct winner, team score, each margin line and the two full house bonuses. Set any to 0 to switch it off.'],
       ['Invite people', 'Admin → Players. Share the six-character join code.'],
       ['Cups', 'Admin → Cup. A cup borrows its scoring from a league you nominate, so set the league up first.'],
@@ -365,10 +365,10 @@ const ADMIN = [
     title: 'Running a Last Man Standing',
     summary: 'There are no fixtures or results to enter. You choose the league; its fixtures, results and table load by themselves and each gameweek is settled automatically.',
     steps: [
-      ['Create it', 'Admin → Competitions → Format: Last Man Standing. In Football choose the league (Premier League, Championship, La Liga and more); in NFL it\'s the NFL. Set the points per entry (10 by default). The first game starts on the next gameweek.'],
+      ['Create it', 'Choose 👑 Last Man Standing in the sport menu at the top, then Admin → Competitions. Pick Football or NFL; for Football choose the league (Premier League, Championship, La Liga and more). Set the points per entry (10 by default). The first game starts on the next gameweek.'],
       ['Invite people', 'Admin → Players → share the join code. Anyone who joins before the first kick-off gets an entry, and players can add extra entries themselves.'],
       ['Change it', 'Admin → Game. Before the first kick-off you can change the points and the first gameweek.'],
-      ['Next game', 'When a game ends, Admin → Game → Start the next game, on any league. Everyone in the competition gets one entry.'],
+      ['Next game', 'When a game ends, Admin → Game → Start the next game. You can switch between Football and NFL, and pick any league. Everyone in the competition gets one entry.'],
     ],
     notes: [
       ['Missed picks', 'Handled for you: at the first kick-off any entry without a pick gets the lowest-placed team it hasn\'t used.'],

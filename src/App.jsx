@@ -58,11 +58,14 @@ const FootballStandings = orLastManStanding(Standings, 'players')
 const NflDashboardOrLms = orLastManStanding(NflDashboard, 'pick')
 const NflPredictOrLms   = orLastManStanding(NflPredict, 'pick')
 const NflStandingsOrLms = orLastManStanding(NflStandings, 'players')
+// The Last Man Standing section of the sport menu (Brittany, 16 Nov 2026).
+const LmsPick    = () => <LastManStanding initialTab="pick" />
+const LmsPlayers = () => <LastManStanding initialTab="players" />
 
 // Pages that each sport draws its own way.
-function PredictForSport() { return <SportRoute football={FootballPredict} nfl={NflPredictOrLms} f1={F1Predict} /> }
-function DashboardForSport() { return <SportRoute football={FootballDashboard} nfl={NflDashboardOrLms} f1={F1Dashboard} /> }
-function StandingsForSport() { return <SportRoute football={FootballStandings} nfl={NflStandingsOrLms} f1={F1Standings} /> }
+function PredictForSport() { return <SportRoute football={FootballPredict} nfl={NflPredictOrLms} f1={F1Predict} lms={LmsPick} /> }
+function DashboardForSport() { return <SportRoute football={FootballDashboard} nfl={NflDashboardOrLms} f1={F1Dashboard} lms={LmsPick} /> }
+function StandingsForSport() { return <SportRoute football={FootballStandings} nfl={NflStandingsOrLms} f1={F1Standings} lms={LmsPlayers} /> }
 
 function wrap(Page) {
   return (

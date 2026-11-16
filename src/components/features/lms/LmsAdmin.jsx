@@ -28,7 +28,7 @@ export async function refreshLmsFixtures(sport, leagueId) {
 export async function startLmsGame(competitionId, { sport, leagueId, leagueName, points, startRound = null }) {
   const id = sport === 'nfl' ? NFL_LEAGUE.id : leagueId
   const args = {
-    p_competition_id: competitionId, p_league_id: id,
+    p_competition_id: competitionId, p_sport: sport, p_league_id: id,
     p_league_name: sport === 'nfl' ? NFL_LEAGUE.name : leagueName,
     p_points: points, p_start_round: startRound,
   }
@@ -40,6 +40,24 @@ export async function startLmsGame(competitionId, { sport, leagueId, leagueName,
   if (error) throw error
   if (!data?.ok) throw new Error(LMS_ERRORS[data?.error] || 'Could not start the game')
   return data
+}
+
+/** Football or NFL, for a game in the Last Man Standing section. */
+export function GameSportField({ value, onChange, disabled }) {
+  const opts = [['football', '⚽ Football'], ['nfl', '🏈 NFL']]
+  return (
+    <div className="flex gap-2">
+      {opts.map(([id, label]) => (
+        <button key={id} type="button" disabled={disabled} onClick={() => onChange(id)}
+          className="flex-1 rounded-lg py-2 text-sm font-semibold"
+          style={{
+            background: value === id ? 'var(--accent-dim)' : 'var(--bg-raised)',
+            color: value === id ? 'var(--accent)' : 'var(--txt-second)',
+            border: `0.5px solid ${value === id ? 'var(--accent)' : 'var(--border-med)'}`,
+          }}>{label}</button>
+      ))}
+    </div>
+  )
 }
 
 /** Which league the game runs on. Football: any league; NFL: the NFL. */
@@ -77,7 +95,11 @@ export function LeagueField({ sport, value, onChange, disabled }) {
  * entry, first gameweek), change it before it starts, or stop it. Results
  * need nothing: the app settles each gameweek by itself.
  */
-export default function LmsAdmin({ competitionId, sport = 'football' }) {
+export default function LmsAdmin({ competitionId, sport: compSport = 'football' }) {
+  // A Last Man Standing made inside Football or NFL keeps that sport; one in
+  // the Last Man Standing section chooses it for each game.
+  const chooseSport = !['football', 'nfl'].includes(compSport)
+  const [sport, setSport] = useState(chooseSport ? 'football' : compSport)
   const [data, setData] = useState(null)
   const [rounds, setRounds] = useState([])
   const [loading, setLoading] = useState(true)
@@ -97,21 +119,23 @@ export default function LmsAdmin({ competitionId, sport = 'football' }) {
       const g = d.game
       const live = g && ['open', 'running'].includes(g.status)
       setPoints(g?.base_points || 10)
+      const s = chooseSport ? (g?.sport || 'football') : compSport
+      setSport(s)
       if (live) {
         const up = await upcomingRounds(supabase, g.sport, g.league_id, g.season)
         setRounds(up)
         setStartRound(String(g.status === 'open' ? g.start_round : (up[0]?.round ?? '')))
       } else {
         // Start the next game on the same league as the last one.
-        const l = g ? { id: g.league_id, name: g.league_name } : league
+        const l = g ? { id: g.league_id, name: g.league_name } : (s === 'nfl' ? NFL_LEAGUE : league)
         setLeague(l)
-        await loadRounds(l)
+        await loadRounds(l, s)
       }
     } finally { setLoading(false) }
   }
 
   // The gameweeks still to come in a league, loading its season if needed.
-  async function loadRounds(l) {
+  async function loadRounds(l, sport) {
     setLoadingRounds(true)
     setRounds([]); setStartRound('')
     try {
@@ -216,9 +240,17 @@ export default function LmsAdmin({ competitionId, sport = 'football' }) {
             </p>
           )}
           <div className="flex flex-col gap-3 mt-3">
+            {chooseSport && (
+              <Field label="Sport">
+                <GameSportField value={sport} disabled={busy || loadingRounds} onChange={s => {
+                  const l = s === 'nfl' ? NFL_LEAGUE : { id: 39, name: 'Premier League' }
+                  setSport(s); setLeague(l); loadRounds(l, s)
+                }} />
+              </Field>
+            )}
             <Field label="League">
               <LeagueField sport={sport} value={league} disabled={busy || loadingRounds}
-                onChange={l => { setLeague(l); loadRounds(l) }} />
+                onChange={l => { setLeague(l); loadRounds(l, sport) }} />
             </Field>
             <Field label="Points per entry"><Input type="number" min={1} max={1000} value={points} onChange={e => setPoints(e.target.value)} /></Field>
             <Field label={sport === 'nfl' ? 'First week' : 'First gameweek'}>{roundPicker}</Field>

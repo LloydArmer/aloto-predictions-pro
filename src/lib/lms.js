@@ -10,6 +10,8 @@
  */
 
 export const LMS_FORMAT = 'last_man_standing'
+/** Its own entry in the sport menu (migration 128). */
+export const LMS_SPORT = 'lms'
 
 export const FINISHED = ['FT', 'AET', 'PEN', 'AWD', 'WO', 'AOT']
 export const VOID = ['PST', 'CANC', 'ABD']
@@ -101,6 +103,7 @@ export const LMS_ERRORS = {
   started: 'The game has started, so this can no longer be changed.',
   entries_closed: 'Entries closed at the first kick-off.',
   too_many: `You can have up to ${MAX_ENTRIES} entries.`,
+  bad_sport: 'Choose Football or NFL for the game.',
 }
 
 /** Entry label: "Entry 2" when a player has more than one, else blank. */

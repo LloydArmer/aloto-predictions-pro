@@ -18,8 +18,8 @@ import { fitName } from '../../../lib/names'
 import SeasonTab from './SeasonTab'
 import { F1RacesTab, F1ScoringTab, F1SeasonTab } from '../f1/F1Admin'
 import ChatModerationTab, { useOpenReportCount } from './ChatModerationTab'
-import LmsAdmin, { startLmsGame, LeagueField } from '../lms/LmsAdmin'
-import { isLms, LMS_FORMAT, NFL_LEAGUE, roundName } from '../../../lib/lms'
+import LmsAdmin, { startLmsGame, LeagueField, GameSportField } from '../lms/LmsAdmin'
+import { isLms, LMS_FORMAT, LMS_SPORT, NFL_LEAGUE, roundName } from '../../../lib/lms'
 import toast from 'react-hot-toast'
 
 // Short labels on purpose. "Gameweeks & fixtures" and "Season predictions" made
@@ -60,13 +60,15 @@ export default function Admin() {
 
   // A Last Man Standing has no fixtures, scoring, cup or season of its own: its
   // Game tab replaces them all.
-  const lmsSelected = isLms(competitions.find(c => c.id === selectedComp))
+  // The Last Man Standing section of the sport menu only ever has those.
+  const lmsSelected = activeSport === LMS_SPORT || isLms(competitions.find(c => c.id === selectedComp))
   const LMS_TABS = ['competitions', 'lms', 'participants', 'chat']
   const tabs = useMemo(() => {
     if (lmsSelected) return TABS.filter(t => LMS_TABS.includes(t.key))
     const list = (leagueOnlySport ? TABS.filter(t => t.key !== 'config') : TABS).filter(t => t.key !== 'lms')
     return isF1Sport ? list.map(t => t.key === 'gameweeks' ? { ...t, label: 'Races', icon: 'ti-flag' } : t) : list
   }, [leagueOnlySport, isF1Sport, lmsSelected])
+  const lmsHasComp = isLms(competitions.find(c => c.id === selectedComp))
   useEffect(() => {
     if (leagueOnlySport && tab === 'config') setTab('competitions')
     if (lmsSelected && !LMS_TABS.includes(tab)) setTab('lms')
@@ -186,7 +188,7 @@ export default function Admin() {
       )}
       {(onCupTab ? pickedOk : managesSelected) && <>
         {lmsSelected ? <>
-          {tab === 'lms' && <LmsAdmin competitionId={selectedComp} sport={competitions.find(c => c.id === selectedComp)?.sport || 'football'} />}
+          {tab === 'lms' && lmsHasComp && <LmsAdmin competitionId={selectedComp} sport={competitions.find(c => c.id === selectedComp)?.sport || 'football'} />}
         </> : isF1Sport ? <>
           {tab === 'rules' && <F1ScoringTab competitionId={selectedComp} />}
           {tab === 'gameweeks' && <F1RacesTab competitionId={selectedComp} competitions={competitions} refetchComps={refetchComps} />}
@@ -211,6 +213,10 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
   const [format, setFormat] = useState('league')
   const [lmsPoints, setLmsPoints] = useState(10)
   const [lmsLeague, setLmsLeague] = useState({ id: 39, name: 'Premier League' })
+  // In the Last Man Standing section the admin chooses Football or NFL.
+  const lmsSection = sport === LMS_SPORT
+  const [lmsSport, setLmsSport] = useState('football')
+  const gameSport = lmsSection ? lmsSport : sport
   const [isPro, setIsPro] = useState(null)   // null while unknown
 
   // Told before they fill the form in, not after they submit it. Being stopped
@@ -233,7 +239,8 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
   // One Last Man Standing on the free plan (123).
   const lmsCount = competitions.filter(c => c.created_by === user?.id && c.format === LMS_FORMAT).length
   const lmsLimitReached = isPro === false && lmsCount >= 1
-  const limitHit = format === 'league' ? leagueLimitReached : format === LMS_FORMAT ? lmsLimitReached : cupLimitReached
+  const fmt = lmsSection ? LMS_FORMAT : format
+  const limitHit = fmt === 'league' ? leagueLimitReached : fmt === LMS_FORMAT ? lmsLimitReached : cupLimitReached
   // No longer editable: the icon is derived from `format`. The column is still
   // written (blank) so nothing downstream has to change.
   const emoji = ''
@@ -248,19 +255,19 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
     if (!name.trim()) { toast.error('Give the competition a name'); return }
     setSaving(true)
     try {
-      const comp = await createCompetition({ name: name.trim(), format, emoji, created_by: user.id })
+      const comp = await createCompetition({ name: name.trim(), format: fmt, emoji, created_by: user.id })
       setSelectedComp(comp.id)
       setName(''); setFormat('league')
-      if (format === LMS_FORMAT) {
+      if (fmt === LMS_FORMAT) {
         // Start its first game straight away, on the next gameweek, so the
         // admin only has to share the code.
         try {
           const g = await startLmsGame(comp.id, {
-            sport, leagueId: sport === 'nfl' ? NFL_LEAGUE.id : lmsLeague.id,
-            leagueName: sport === 'nfl' ? NFL_LEAGUE.name : lmsLeague.name,
+            sport: gameSport, leagueId: gameSport === 'nfl' ? NFL_LEAGUE.id : lmsLeague.id,
+            leagueName: gameSport === 'nfl' ? NFL_LEAGUE.name : lmsLeague.name,
             points: Math.max(1, Math.min(1000, Number(lmsPoints) || 10)),
           })
-          toast.success(`Last Man Standing created. It starts in ${roundName({ sport }, g.start_round)}. Share the code from Players.`)
+          toast.success(`Last Man Standing created. It starts in ${roundName({ sport: gameSport }, g.start_round)}. Share the code from Players.`)
         } catch (err) {
           toast.success('Last Man Standing created.')
           toast.error(`${err.message} You can start the game in Admin → Game.`)
@@ -302,7 +309,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name</p>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder={sport === 'f1' ? "F1 Predictions 2027" : leagueOnly ? "NFL Pick Em 2026" : format === LMS_FORMAT ? "Last Man Standing 2026/27" : "Premier League Preds 2025/26"} />
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder={lmsSection ? "Last Man Standing 2026/27" : sport === 'f1' ? "F1 Predictions 2027" : leagueOnly ? "NFL Pick Em 2026" : "Premier League Preds 2025/26"} />
           </div>
           <div>
             {/* The icon follows the format — there is nothing to choose, so
@@ -310,13 +317,11 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
                 will carry. */}
             <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
             <div className="flex items-center gap-2.5">
-              <CompetitionIcon format={format} size="md" />
-              {/* NFL has no cups: League or Last Man Standing. F1 is league only. */}
-              {sport === 'nfl' ? (
-              <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
-                <option value="league">League{leagueLimitReached ? ' — Pro' : ''}</option>
-                <option value={LMS_FORMAT}>Last Man Standing{lmsLimitReached ? ' — Pro' : ''}</option>
-              </Select>
+              <CompetitionIcon format={fmt} size="md" />
+              {/* Last Man Standing has its own section in the sport menu.
+                  NFL and F1 are league only. */}
+              {lmsSection ? (
+                <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>Last Man Standing{lmsLimitReached ? ' — Pro' : ''}</span>
               ) : leagueOnly ? (
                 <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>League{leagueLimitReached ? ' — Pro' : ''}</span>
               ) : (
@@ -324,27 +329,30 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
                 <option value="league">League{leagueLimitReached ? ' — Pro' : ''}</option>
                 <option value="knockout">Knockout{cupLimitReached ? ' — Pro' : ''}</option>
                 <option value="group_knockout">Group + Knockout{cupLimitReached ? ' — Pro' : ''}</option>
-                <option value={LMS_FORMAT}>Last Man Standing{lmsLimitReached ? ' — Pro' : ''}</option>
               </Select>
               )}
             </div>
           </div>
-          {format === LMS_FORMAT && (
+          {fmt === LMS_FORMAT && (
             <div>
-              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>League</p>
-              <LeagueField sport={sport} value={lmsLeague} onChange={setLmsLeague} />
+              {lmsSection && <>
+                <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Sport</p>
+                <GameSportField value={lmsSport} onChange={setLmsSport} />
+              </>}
+              <p className="text-xs mb-1 mt-3" style={{ color: 'var(--txt-muted)' }}>League</p>
+              <LeagueField sport={gameSport} value={lmsLeague} onChange={setLmsLeague} />
               <p className="text-xs mb-1 mt-3" style={{ color: 'var(--txt-muted)' }}>Points per entry</p>
               <Input type="number" min={1} max={1000} value={lmsPoints} onChange={e => setLmsPoints(e.target.value)} />
               <p className="text-[11px] mt-1.5" style={{ color: 'var(--txt-muted)' }}>
-                Every {sport === 'nfl' ? 'week' : 'gameweek'}, each entry picks one team to win. Draw or lose and it's out, and no team can be picked twice. No pick by the first kick-off and the entry gets the lowest-placed team. Players can have several entries. The last one standing takes the pot. Results are automatic. The first game starts on the next {sport === 'nfl' ? 'week' : 'gameweek'}.
+                Every {gameSport === 'nfl' ? 'week' : 'gameweek'}, each entry picks one team to win. Draw or lose and it's out, and no team can be picked twice. No pick by the first kick-off and the entry gets the lowest-placed team. Players can have several entries. The last one standing takes the pot. Results are automatic. The first game starts on the next {gameSport === 'nfl' ? 'week' : 'gameweek'}.
               </p>
             </div>
           )}
           {limitHit && (
             <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
-              {format === 'league'
+              {fmt === 'league'
                 ? 'The free plan includes one league. Upgrade to Pro in Settings → ALOTO Pro to run more.'
-                : format === LMS_FORMAT
+                : fmt === LMS_FORMAT
                 ? 'The free plan includes one Last Man Standing. Upgrade to Pro in Settings → ALOTO Pro to run more.'
                 : 'The free plan includes one cup. Upgrade to Pro in Settings → ALOTO Pro to run more.'}
             </p>

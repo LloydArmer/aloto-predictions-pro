@@ -11,6 +11,7 @@ import {
 } from '../../../lib/lms'
 import { Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
+import JoinCompetition from '../competitions/JoinCompetition'
 import toast from 'react-hot-toast'
 
 const TABS = [
@@ -31,7 +32,7 @@ const TABS = [
  */
 export default function LastManStanding({ initialTab = 'pick' }) {
   const { user } = useAuth()
-  const { competitions } = useCompetitions()
+  const { competitions, loading: compsLoading } = useCompetitions()
   const [comp, setComp] = useSelectedCompetition(competitions)
   const [tab, setTab] = useState(initialTab)
   const [data, setData] = useState(null)
@@ -106,6 +107,18 @@ export default function LastManStanding({ initialTab = 'pick' }) {
   }
 
   const compObj = competitions.find(c => c.id === comp)
+
+  // In the Last Man Standing section with none to show yet: how to get one.
+  if (!compsLoading && competitions.length === 0) return (
+    <div>
+      <Card className="p-6 text-center mb-4">
+        <EmptyState icon="ti-crown" title="No Last Man Standing yet"
+          description="Pick one team to win each week; the last one standing takes the pot. Join one with the code you were sent, or set one up in Admin."
+          action={<Link to="/admin" className="btn btn-primary btn-sm">Set one up in Admin</Link>} />
+      </Card>
+      <JoinCompetition onJoined={() => window.location.reload()} />
+    </div>
+  )
 
   return (
     <div>
