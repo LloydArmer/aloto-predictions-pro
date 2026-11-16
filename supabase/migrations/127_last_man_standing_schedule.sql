@@ -54,6 +54,6 @@ select jobname,
        schedule,
        case when active then 'on' else 'OFF' end as state,
        position('sync-lms' in command) > 0 as calls_sync_lms,
-       left(regexp_replace(command, '(Bearer|apikey"?\s*:\s*"?)\s*[A-Za-z0-9._-]{20,}', '\1 [hidden]', 'g'), 160) as command_start
+       left(regexp_replace(command, '(Bearer|apikey"?\s*:\s*"?)\s*[A-Za-z0-9._-]{20,}', '\1 [hidden]', 'gi'), 160) as command_start
 from cron.job
 order by jobname;
