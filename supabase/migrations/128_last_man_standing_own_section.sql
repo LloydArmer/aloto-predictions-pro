@@ -14,6 +14,16 @@
 -- Safe to run more than once. Needs 126. RUN ON DEV FIRST, then Prod.
 
 -- ---------------------------------------------------------------------------
+-- STEP 0 — 126 must have been run on this project first.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.lms_games') is null then
+    raise exception 'Run 126_last_man_standing.sql on this project first, then this file.';
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- STEP 1 — The new entry in the sport menu.
 -- ---------------------------------------------------------------------------
 insert into public.sports (id, name, emoji, sort_order, enabled)
@@ -51,12 +61,12 @@ create or replace function public.lms_start_game(
 returns json
 language plpgsql security definer set search_path = public as $$
 declare
-  v_comp   competitions;
+  v_comp   public.competitions;
   v_sport  text;
   v_season int;
   v_start  int;
   v_lock   timestamptz;
-  v_carry  lms_games;
+  v_carry  public.lms_games;
   v_level  int := 0;
   v_entry  int;
   v_number int;
