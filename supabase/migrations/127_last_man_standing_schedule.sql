@@ -9,8 +9,8 @@
 --      the pick reminders (24 hours and 2 hours before the deadline).
 --
 -- It copies an existing job that calls one of this project's edge functions
--- (aloto-live-scores, sync-nfl-live or aloto-live-activity-push, whichever
--- this project has), so it already holds the project's address and key, and
+-- (aloto-live-scores, sync-nfl-live or aloto-live-activity-push first, else
+-- any job that calls an edge function), so it already holds the project's address and key, and
 -- points the copy at sync-lms. The same file works on Dev and Prod with
 -- nothing to fill in, and the key is never written in this file.
 
@@ -34,14 +34,14 @@ select cron.schedule(
   'aloto-lms',
   '*/10 * * * *',
   regexp_replace(
-    regexp_replace(command, '/functions/v1/[A-Za-z0-9_-]+', '/functions/v1/sync-lms'),
+    regexp_replace(command, '(/functions/v1/|\.functions\.supabase\.co/)[A-Za-z0-9_-]+', '\1sync-lms'),
     'timeout_milliseconds\s*:=\s*\d+', 'timeout_milliseconds:=10000'))
 from (
   select command
   from cron.job
-  where jobname in ('aloto-live-scores', 'sync-nfl-live', 'aloto-live-activity-push')
-    and command like '%/functions/v1/%'
-  order by array_position(array['aloto-live-scores', 'sync-nfl-live', 'aloto-live-activity-push'], jobname)
+  where jobname <> 'aloto-lms'
+    and command ~ '(/functions/v1/|\.functions\.supabase\.co/)[A-Za-z0-9_-]+'
+  order by coalesce(array_position(array['aloto-live-scores', 'sync-nfl-live', 'aloto-live-activity-push'], jobname), 99), jobname
   limit 1
 ) j;
 
@@ -53,6 +53,7 @@ from (
 select jobname,
        schedule,
        case when active then 'on' else 'OFF' end as state,
-       position('sync-lms' in command) > 0 as calls_sync_lms
+       position('sync-lms' in command) > 0 as calls_sync_lms,
+       left(regexp_replace(command, '(Bearer|apikey"?\s*:\s*"?)\s*[A-Za-z0-9._-]{20,}', '\1 [hidden]', 'g'), 160) as command_start
 from cron.job
 order by jobname;
