@@ -12,6 +12,7 @@ import ProUpgrade from './ProUpgrade'
 import BadgePicker from './BadgePicker'
 import Diagnostics from './Diagnostics'
 import toast from 'react-hot-toast'
+import { Capacitor } from '@capacitor/core'
 
 export default function Settings() {
   const { user, profile, isAdmin, fetchProfile, signOut } = useAuth()
@@ -196,7 +197,7 @@ export default function Settings() {
       // the message it raises is the accurate one to show.
       const msg = err?.message || ''
       toast.error(msg.includes('limit') || msg.includes('Pro')
-        ? 'The free plan includes one league. Upgrade to Pro for more.'
+        ? 'The free plan includes one league per sport on each phone. Upgrade to Pro for more.'
         : 'Could not create the league')
     } finally { setCreating(false) }
   }
@@ -266,7 +267,18 @@ export default function Settings() {
       {/* Offered to anyone who does not already run a competition — which is
           every new user. Joining someone else's league with a code is the other
           route, and both are on this screen. */}
-      {!compsLoading && !runsACompetition && (
+      {/* On the website only the site admin creates competitions (Brittany,
+          16 Nov 2026); everyone else is pointed to the app. */}
+      {!compsLoading && !runsACompetition && !Capacitor.isNativePlatform() && !isAdmin && (
+        <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'var(--accent-line)' }}>
+          <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>Run your own league</p>
+          <p className="text-xs mb-3" style={{ color:'var(--txt-second)' }}>
+            Set up your own league, cup or Last Man Standing in the free ALOTO app, then invite your friends with a join code.
+          </p>
+          <a href="https://apps.apple.com/gb/app/id6805768246" target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm">Get the app</a>
+        </Card>
+      )}
+      {!compsLoading && !runsACompetition && (Capacitor.isNativePlatform() || isAdmin) && (
         <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'var(--accent-line)' }}>
           <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>Run your own league</p>
           <p className="text-xs mb-3" style={{ color:'var(--txt-second)' }}>

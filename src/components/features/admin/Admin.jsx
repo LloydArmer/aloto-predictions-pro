@@ -20,6 +20,7 @@ import { F1RacesTab, F1ScoringTab, F1SeasonTab } from '../f1/F1Admin'
 import ChatModerationTab, { useOpenReportCount } from './ChatModerationTab'
 import LmsAdmin, { startLmsGame, LeagueField, GameSportField } from '../lms/LmsAdmin'
 import { isLms, LMS_FORMAT, LMS_SPORT, NFL_LEAGUE, roundName } from '../../../lib/lms'
+import { Capacitor } from '@capacitor/core'
 import toast from 'react-hot-toast'
 
 // Short labels on purpose. "Gameweeks & fixtures" and "Season predictions" made
@@ -117,7 +118,7 @@ export default function Admin() {
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <i className="ti ti-lock text-4xl mb-4" style={{ color: 'var(--txt-muted)' }} />
       <p className="text-sm font-medium" style={{ color: 'var(--txt-second)' }}>You don't run a competition yet</p>
-      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>Create a league in Settings and you'll manage it here</p>
+      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>{Capacitor.isNativePlatform() ? "Create a league in Settings and you'll manage it here" : "Set one up in the ALOTO app and you'll manage it here too"}</p>
     </div>
   )
 
@@ -178,7 +179,8 @@ export default function Admin() {
       {tab === 'competitions' && (
         <CompetitionsTab user={user} competitions={managed} loading={compsLoading}
           createCompetition={createCompetition} refetchComps={refetchComps}
-          selectedComp={selectedComp} setSelectedComp={setSelectedComp} leagueOnly={leagueOnlySport} sport={activeSport} />
+          selectedComp={selectedComp} setSelectedComp={setSelectedComp} leagueOnly={leagueOnlySport} sport={activeSport}
+          canCreate={Capacitor.isNativePlatform() || isAdmin} />
       )}
 
       {/* The other tabs only open for a competition this person runs. They
@@ -208,7 +210,7 @@ export default function Admin() {
 
 
 // ───────────────────────── Competitions ─────────────────────────
-function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp, leagueOnly = false, sport = 'football' }) {
+function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp, leagueOnly = false, sport = 'football', canCreate = true }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
   const [lmsPoints, setLmsPoints] = useState(10)
@@ -304,62 +306,76 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
 
   return (
     <div>
+      {/* On the website only the site admin creates competitions (Brittany,
+          16 Nov 2026): everyone else sets them up in the phone app, where the
+          free plan is counted per phone. Joining and playing are unchanged. */}
+      {canCreate ? (
       <Card className="p-4 mb-5">
-        <AdminLabel className="mb-3">Create competition</AdminLabel>
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <div>
-            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name</p>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder={lmsSection ? "Last Man Standing 2026/27" : sport === 'f1' ? "F1 Predictions 2027" : leagueOnly ? "NFL Pick Em 2026" : "Premier League Preds 2025/26"} />
-          </div>
-          <div>
-            {/* The icon follows the format — there is nothing to choose, so
-                nothing is asked. The picker shows the glyph the competition
-                will carry. */}
-            <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
-            <div className="flex items-center gap-2.5">
-              <CompetitionIcon format={fmt} size="md" />
-              {/* Last Man Standing has its own section in the sport menu.
-                  NFL and F1 are league only. */}
-              {lmsSection ? (
-                <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>Last Man Standing{lmsLimitReached ? ' — Pro' : ''}</span>
-              ) : leagueOnly ? (
-                <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>League{leagueLimitReached ? ' — Pro' : ''}</span>
-              ) : (
-              <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
-                <option value="league">League{leagueLimitReached ? ' — Pro' : ''}</option>
-                <option value="knockout">Knockout{cupLimitReached ? ' — Pro' : ''}</option>
-                <option value="group_knockout">Group + Knockout{cupLimitReached ? ' — Pro' : ''}</option>
-              </Select>
-              )}
-            </div>
-          </div>
-          {fmt === LMS_FORMAT && (
+          <AdminLabel className="mb-3">Create competition</AdminLabel>
+          <form onSubmit={submit} className="flex flex-col gap-3">
             <div>
-              {lmsSection && <>
-                <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Sport</p>
-                <GameSportField value={lmsSport} onChange={setLmsSport} />
-              </>}
-              <p className="text-xs mb-1 mt-3" style={{ color: 'var(--txt-muted)' }}>League</p>
-              <LeagueField sport={gameSport} value={lmsLeague} onChange={setLmsLeague} />
-              <p className="text-xs mb-1 mt-3" style={{ color: 'var(--txt-muted)' }}>Points per entry</p>
-              <Input type="number" min={1} max={1000} value={lmsPoints} onChange={e => setLmsPoints(e.target.value)} />
-              <p className="text-[11px] mt-1.5" style={{ color: 'var(--txt-muted)' }}>
-                Every {gameSport === 'nfl' ? 'week' : 'gameweek'}, each entry picks one team to win. Draw or lose and it's out, and no team can be picked twice. No pick by the first kick-off and the entry gets the lowest-placed team. Players can have several entries. The last one standing takes the pot. Results are automatic. The first game starts on the next {gameSport === 'nfl' ? 'week' : 'gameweek'}.
-              </p>
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Name</p>
+              <Input value={name} onChange={e => setName(e.target.value)} placeholder={lmsSection ? "Last Man Standing 2026/27" : sport === 'f1' ? "F1 Predictions 2027" : leagueOnly ? "NFL Pick Em 2026" : "Premier League Preds 2025/26"} />
             </div>
-          )}
-          {limitHit && (
-            <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
-              {fmt === 'league'
-                ? 'The free plan includes one league. Upgrade to Pro in Settings → ALOTO Pro to run more.'
-                : fmt === LMS_FORMAT
-                ? 'The free plan includes one Last Man Standing. Upgrade to Pro in Settings → ALOTO Pro to run more.'
-                : 'The free plan includes one cup. Upgrade to Pro in Settings → ALOTO Pro to run more.'}
-            </p>
-          )}
-          <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Creating…' : 'Create competition'}</Button>
-        </form>
-      </Card>
+            <div>
+              {/* The icon follows the format — there is nothing to choose, so
+                  nothing is asked. The picker shows the glyph the competition
+                  will carry. */}
+              <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Format</p>
+              <div className="flex items-center gap-2.5">
+                <CompetitionIcon format={fmt} size="md" />
+                {/* Last Man Standing has its own section in the sport menu.
+                    NFL and F1 are league only. */}
+                {lmsSection ? (
+                  <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>Last Man Standing{lmsLimitReached ? ' — Pro' : ''}</span>
+                ) : leagueOnly ? (
+                  <span className="text-sm" style={{ color: 'var(--txt-primary)' }}>League{leagueLimitReached ? ' — Pro' : ''}</span>
+                ) : (
+                <Select value={format} onChange={e => changeFormat(e.target.value)} style={{ flex: '1 1 auto', minWidth: 0 }}>
+                  <option value="league">League{leagueLimitReached ? ' — Pro' : ''}</option>
+                  <option value="knockout">Knockout{cupLimitReached ? ' — Pro' : ''}</option>
+                  <option value="group_knockout">Group + Knockout{cupLimitReached ? ' — Pro' : ''}</option>
+                </Select>
+                )}
+              </div>
+            </div>
+            {fmt === LMS_FORMAT && (
+              <div>
+                {lmsSection && <>
+                  <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>Sport</p>
+                  <GameSportField value={lmsSport} onChange={setLmsSport} />
+                </>}
+                <p className="text-xs mb-1 mt-3" style={{ color: 'var(--txt-muted)' }}>League</p>
+                <LeagueField sport={gameSport} value={lmsLeague} onChange={setLmsLeague} />
+                <p className="text-xs mb-1 mt-3" style={{ color: 'var(--txt-muted)' }}>Points per entry</p>
+                <Input type="number" min={1} max={1000} value={lmsPoints} onChange={e => setLmsPoints(e.target.value)} />
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--txt-muted)' }}>
+                  Every {gameSport === 'nfl' ? 'week' : 'gameweek'}, each entry picks one team to win. Draw or lose and it's out, and no team can be picked twice. No pick by the first kick-off and the entry gets the lowest-placed team. Players can have several entries. The last one standing takes the pot. Results are automatic. The first game starts on the next {gameSport === 'nfl' ? 'week' : 'gameweek'}.
+                </p>
+              </div>
+            )}
+            {limitHit && (
+              <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
+                {fmt === 'league'
+                  ? 'The free plan includes one league. Upgrade to Pro in Settings → ALOTO Pro to run more.'
+                  : fmt === LMS_FORMAT
+                  ? 'The free plan includes one Last Man Standing. Upgrade to Pro in Settings → ALOTO Pro to run more.'
+                  : 'The free plan includes one cup. Upgrade to Pro in Settings → ALOTO Pro to run more.'}
+              </p>
+            )}
+            <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Creating…' : 'Create competition'}</Button>
+          </form>
+        </Card>
+      ) : (
+        <Card className="p-4 mb-5">
+          <AdminLabel className="mb-2">Create competition</AdminLabel>
+          <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>New competitions are set up in the ALOTO app.</p>
+          <p className="text-xs mt-1 mb-3" style={{ color: 'var(--txt-muted)' }}>
+            Download it free, sign in with this account and go to Admin. You can still run the competitions you already have here.
+          </p>
+          <a href="https://apps.apple.com/gb/app/id6805768246" target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm">Get the app</a>
+        </Card>
+      )}
 
       <AdminLabel className="mb-2">Your competitions</AdminLabel>
       {loading ? <div className="flex justify-center py-10"><Spinner /></div>
