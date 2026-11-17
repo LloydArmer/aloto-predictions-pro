@@ -12,6 +12,7 @@ import {
 import { PickGrid, LiveGames, RemainingTeams } from './LmsStats'
 import { TeamPicker } from './LmsPicker'
 import LmsPlanner from './LmsPlanner'
+import LmsApprovals from './LmsApprovals'
 import { Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import CompetitionSelector from '../../layout/CompetitionSelector'
 import JoinCompetition from '../competitions/JoinCompetition'
@@ -68,7 +69,7 @@ export default function LastManStanding({ initialTab = 'pick' }) {
   }, [playing, comp])
 
   const myEntries = useMemo(
-    () => (data?.entries || []).filter(e => e.user_id === user?.id).sort((a, b) => a.entry_no - b.entry_no),
+    () => (data?.allEntries || []).filter(e => e.user_id === user?.id).sort((a, b) => a.entry_no - b.entry_no),
     [data, user?.id])
   // The entry on screen: the one chosen, else the first still in.
   const entry = myEntries.find(e => e.id === entryId)
@@ -97,11 +98,19 @@ export default function LastManStanding({ initialTab = 'pick' }) {
   }
 
   async function addEntry() {
-    if (!window.confirm(`Add another entry for ${data.game.entry_points} pts? It's a separate life with its own picks.`)) return
+    const first = myEntries.length === 0
+    const isAdmin = compObj?.my_role === 'admin'
+    const ask = first
+      ? `Join this game for ${data.game.entry_points} pts?`
+      : `Add another entry for ${data.game.entry_points} pts? It's a separate life with its own picks.`
+    if (!window.confirm(isAdmin ? ask : `${ask} The admin needs to approve it before the first kick-off.`)) return
     setSaving('entry')
     try {
-      const r = await call('lms_add_entry', { p_game_id: data.game.id }, 'Entry added')
-      if (r) setEntryId(r.entry_id)
+      const r = await call('lms_add_entry', { p_game_id: data.game.id })
+      if (r) {
+        toast.success(r.approved === false ? 'Sent to the admin for approval' : (first ? "You're in" : 'Entry added'))
+        setEntryId(r.entry_id)
+      }
     } catch (err) { toast.error(err.message || 'Could not add an entry') }
     finally { setSaving(null) }
   }
@@ -160,6 +169,9 @@ export default function LastManStanding({ initialTab = 'pick' }) {
         )}
         {tab === 'pick' && <PickTab data={data} me={entry} myPicks={entryPicks} myPick={entryPick} onPick={pick} saving={saving} />}
         {tab === 'games' && <LiveGames data={data} userId={user?.id} />}
+        {(tab === 'pick' || tab === 'players') && (
+          <LmsApprovals data={data} isAdmin={compObj?.my_role === 'admin'} onDone={() => load(true)} />
+        )}
         {tab === 'players' && <PlayersTab data={data} userId={user?.id} />}
         {tab === 'grid' && <PickGrid data={data} userId={user?.id} />}
         {tab === 'planner' && <LmsPlanner data={data} entry={entry} entryPicks={entryPicks} onSaved={() => load(true)} />}
@@ -192,11 +204,13 @@ function GameHeader({ data, mine }) {
   else if (locked) line = `${rn(game.current_round)} · locked, results come in automatically`
   else line = `${rn(game.current_round)} · picks lock ${formatUK(lock, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
 
-  const myAlive = mine.filter(e => e.status === 'alive').length
+  const myIn = mine.filter(e => e.approved !== false)
+  const myAlive = myIn.filter(e => e.status === 'alive').length
   const myLine = !mine.length ? { t: 'Not in this game', c: 'var(--txt-muted)' }
+    : mine.every(e => e.approved === false) ? { t: 'Waiting for approval', c: 'var(--amber)' }
     : mine.some(e => e.status === 'winner') ? { t: 'Winner 🏆', c: 'var(--gold, var(--amber))' }
     : myAlive === 0 ? { t: 'Out', c: 'var(--red)' }
-    : { t: mine.length > 1 ? `${myAlive} of ${mine.length} still in` : 'Still in', c: 'var(--green)' }
+    : { t: myIn.length > 1 ? `${myAlive} of ${myIn.length} still in` : 'Still in', c: 'var(--green)' }
 
   return (
     <Card className="p-4 mb-3">
@@ -245,14 +259,15 @@ function Stat({ label, value, accent, color }) {
 // ───────────────────────── Entries ─────────────────────────
 function EntryBar({ data, mine, entry, onSelect, onAdd, onRemove, saving }) {
   const { game, locked, picks } = data
-  const canAdd = game.status === 'open' && !locked && mine.length > 0 && mine.length < MAX_ENTRIES
-  if (!mine.length || (mine.length === 1 && !canAdd)) return null
+  const canAdd = game.status === 'open' && !locked && mine.length < MAX_ENTRIES
+  if (!mine.length && !canAdd) return null
+  if (mine.length === 1 && !canAdd && mine[0].approved !== false) return null
 
   return (
     <Card className="p-3 mb-3">
       <div className="flex items-center justify-between mb-2">
         <SectionLabel>Your entries</SectionLabel>
-        {canAdd && entry && entry.entry_no > 1 && (
+        {canAdd && entry && (mine.length > 1 || entry.approved === false) && (
           <button type="button" className="text-[11px]" style={{ color: 'var(--txt-muted)' }}
             disabled={saving != null} onClick={() => onRemove(entry)}>Remove entry {entry.entry_no}</button>
         )}
@@ -261,6 +276,7 @@ function EntryBar({ data, mine, entry, onSelect, onAdd, onRemove, saving }) {
         {mine.map(e => {
           const on = e.id === entry?.id
           const picked = picks.some(p => p.entry_id === e.id && p.round === game.current_round)
+          const waiting = e.approved === false
           const color = e.status === 'out' ? 'var(--red)' : e.status === 'winner' ? 'var(--amber)' : picked ? 'var(--green)' : 'var(--amber)'
           return (
             <button key={e.id} type="button" onClick={() => onSelect(e.id)}
@@ -271,7 +287,9 @@ function EntryBar({ data, mine, entry, onSelect, onAdd, onRemove, saving }) {
                 border: `0.5px solid ${on ? 'var(--accent)' : 'var(--border-med)'}`,
               }}>
               Entry {e.entry_no}
-              <span className="ml-1.5" style={{ color }}>●</span>
+              {waiting
+                ? <span className="ml-1.5 text-[9px] font-bold" style={{ color: 'var(--amber)' }}>PENDING</span>
+                : <span className="ml-1.5" style={{ color }}>●</span>}
             </button>
           )
         })}
@@ -279,13 +297,13 @@ function EntryBar({ data, mine, entry, onSelect, onAdd, onRemove, saving }) {
           <button type="button" onClick={onAdd} disabled={saving != null}
             className="rounded-full px-3 py-1 text-xs font-semibold"
             style={{ background: 'transparent', color: 'var(--accent)', border: '0.5px dashed var(--accent)' }}>
-            + Add entry · {game.entry_points} pts
+            {mine.length ? '+ Add entry' : 'Join this game'} · {game.entry_points} pts
           </button>
         )}
       </div>
       {canAdd && (
         <p className="text-[11px] mt-2" style={{ color: 'var(--txt-muted)' }}>
-          Each entry is a separate life with its own picks. Entries close at the first kick-off.
+          Each entry is a separate life with its own picks. The admin approves each entry. Entries close at the first kick-off.
         </p>
       )}
     </Card>
@@ -310,6 +328,13 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
           ? 'The next game starts when the admin sets it up. Everyone in the competition gets an entry.'
           : `Everyone in this game is re-entered in the next one for ${game.base_points} more points. New entries cost ${game.base_points * (game.rollover_level + 2)}.`}
       </p>
+    </Card>
+  )
+
+  if (!me && game.status === 'open' && !locked) return (
+    <Card className="p-4">
+      <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>You're not in this game yet.</p>
+      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>Tap Join this game above. The admin approves each entry, and you can join more than once for extra lives.</p>
     </Card>
   )
 
@@ -374,6 +399,12 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
 
   return (
     <div>
+      {me.approved === false && (
+        <Card className="p-3 mb-3" style={{ background: 'var(--amber-dim)', borderColor: 'var(--amber-line)' }}>
+          <p className="text-sm font-semibold" style={{ color: 'var(--amber)' }}>Waiting for the admin to approve this entry</p>
+          <p className="text-[11px] mt-0.5" style={{ color: 'var(--txt-muted)' }}>You can pick now. If it isn't approved by the first kick-off, it's removed.</p>
+        </Card>
+      )}
       <Card className="p-3 mb-3" style={myPick ? undefined : { background: 'var(--amber-dim)', borderColor: 'var(--amber-line)' }}>
         <p className="text-sm font-semibold" style={{ color: myPick ? 'var(--green)' : 'var(--amber)' }}>
           {me.entry_no > 1

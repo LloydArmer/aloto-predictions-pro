@@ -97,7 +97,6 @@ export const LMS_ERRORS = {
   locked: 'Picks for this gameweek have locked.',
   not_playing: "That team doesn't play in this gameweek.",
   used: 'This entry has already picked that team.',
-  not_admin: 'Only the admin can do that.',
   not_lms: 'This competition is not a Last Man Standing.',
   already_running: 'A game is already running. It has to finish (or be stopped) first.',
   bad_points: 'Points per entry must be between 1 and 1000.',
@@ -105,6 +104,7 @@ export const LMS_ERRORS = {
   started: 'The game has started, so this can no longer be changed.',
   entries_closed: 'Entries closed at the first kick-off.',
   too_many: `You can have up to ${MAX_ENTRIES} entries.`,
+  not_admin: 'Only the admin can do that.',
   bad_sport: 'Choose Football or NFL for the game.',
   device_needed: 'Start your free Last Man Standing game from the ALOTO app on your phone.',
   pro_needed: 'The free plan includes one Last Man Standing game per phone. Upgrade to Pro in Settings → ALOTO Pro to start another, including after a roll-over.',
@@ -144,7 +144,11 @@ export async function loadLms(supabase, competitionId) {
     supabase.from('lms_plans').select('*').eq('game_id', game.id),
   ])
 
-  const list = entries || []
+  // Entries waiting for the admin (migration 133) are kept apart: they are
+  // not in the game until approved. Before 133 every entry counts.
+  const everyEntry = entries || []
+  const list = everyEntry.filter(e => e.approved !== false)
+  const pending = everyEntry.filter(e => e.approved === false)
   const seasonFixtures = season || []
   const fixtures = seasonFixtures.filter(f => f.round >= game.start_round && f.round <= game.current_round)
   const fixturesById = new Map(seasonFixtures.map(f => [f.api_fixture_id, f]))
@@ -159,6 +163,8 @@ export async function loadLms(supabase, competitionId) {
     games: all,
     game,
     entries: list,
+    pending,
+    allEntries: everyEntry,
     picks: picks || [],
     fixturesById,
     seasonFixtures,

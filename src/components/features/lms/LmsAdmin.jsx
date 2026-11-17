@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import LmsApprovals from './LmsApprovals'
 import { supabase } from '../../../lib/supabase'
 import { registerDevice } from '../../../lib/deviceId'
 import { formatUK } from '../../../lib/time'
@@ -214,8 +215,9 @@ export default function LmsAdmin({ competitionId, sport: compSport = 'football' 
 
           {game.status === 'open' && (
             <div className="mt-4 pt-4 flex flex-col gap-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+              <LmsApprovals data={data} isAdmin onDone={load} />
               <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
-                Players can join with the code, and add extra entries, until the first kick-off. The game starts by itself then (with at least 2 players; otherwise it moves on a {sport === 'nfl' ? 'week' : 'gameweek'}).
+                Players join with the code, then tap Join this game (more than once for extra entries) until the first kick-off. You approve each entry here or under Players; any still waiting at the first kick-off are removed. The game starts by itself then (with at least 2 players; otherwise it moves on a {sport === 'nfl' ? 'week' : 'gameweek'}).
               </p>
               <Field label="Points per entry (before any roll-over)"><Input type="number" min={1} max={1000} value={points} onChange={e => setPoints(e.target.value)} /></Field>
               <Field label={sport === 'nfl' ? 'First week' : 'First gameweek'}>{roundPicker}</Field>
