@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import LmsApprovals from './LmsApprovals'
+import LmsApprovals, { LmsAddPlayers } from './LmsApprovals'
 import { supabase } from '../../../lib/supabase'
 import { registerDevice } from '../../../lib/deviceId'
 import { formatUK } from '../../../lib/time'
@@ -216,6 +216,7 @@ export default function LmsAdmin({ competitionId, sport: compSport = 'football' 
           {game.status === 'open' && (
             <div className="mt-4 pt-4 flex flex-col gap-3" style={{ borderTop: '0.5px solid var(--border)' }}>
               <LmsApprovals data={data} isAdmin onDone={load} />
+              <LmsAddPlayers competitionId={competitionId} data={data} onDone={load} />
               <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
                 Players join with the code, then tap Join this game (more than once for extra entries) until the first kick-off. You approve each entry here or under Players; any still waiting at the first kick-off are removed. The game starts by itself then (with at least 2 players; otherwise it moves on a {sport === 'nfl' ? 'week' : 'gameweek'}).
               </p>
