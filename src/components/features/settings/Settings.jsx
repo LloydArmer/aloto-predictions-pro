@@ -13,12 +13,16 @@ import BadgePicker from './BadgePicker'
 import Diagnostics from './Diagnostics'
 import toast from 'react-hot-toast'
 import { Capacitor } from '@capacitor/core'
+import { LMS_FORMAT, LMS_SPORT } from '../../../lib/lms'
 
 export default function Settings() {
   const { user, profile, isAdmin, fetchProfile, signOut } = useAuth()
   // Whether this person runs a competition comes from their role in each one,
   // not the global profile flag, which was only ever true for one account.
-  const { competitions, loading: compsLoading, createCompetition } = useCompetitions()
+  const { competitions, loading: compsLoading, createCompetition, activeSport } = useCompetitions()
+  // In the Last Man Standing section a competition can only be a Last Man
+  // Standing (migration 128), so this card creates one of those there.
+  const lmsSection = activeSport === LMS_SPORT
   const runsACompetition = competitions.some(c => c.my_role === 'admin')
   const navigate = useNavigate()
   // WhatsApp and SMS were removed from this screen. Nothing sent them — there
@@ -185,20 +189,24 @@ export default function Settings() {
     try {
       // createCompetition registers the creator as its admin, so no role needs
       // granting separately — the participants row is the permission.
-      await createCompetition({ name, format: 'league', emoji: null, created_by: user.id })
+      await createCompetition({ name, format: lmsSection ? LMS_FORMAT : 'league', emoji: null, created_by: user.id })
 
       // Re-read the profile so isAdmin picks up the new competition and the
       // Admin tab appears without needing a reload.
       await fetchProfile(user.id)
-      toast.success('League created — set up your gameweeks in Admin')
+      toast.success(lmsSection
+        ? 'Last Man Standing created. Choose its league and start the game in Admin → Game.'
+        : 'League created — set up your gameweeks in Admin')
       navigate('/admin')
     } catch (err) {
-      // The free tier allows one league. The database trigger enforces it, so
+      // The free tier allows one of each. The database trigger enforces it, so
       // the message it raises is the accurate one to show.
       const msg = err?.message || ''
-      toast.error(msg.includes('limit') || msg.includes('Pro')
-        ? 'The free plan includes one league per sport on each phone. Upgrade to Pro for more.'
-        : 'Could not create the league')
+      toast.error(msg.includes('FREE_TIER_LMS_LIMIT')
+        ? 'The free plan includes one Last Man Standing on each phone. Upgrade to Pro for unlimited.'
+        : /limit|pro/i.test(msg)
+          ? 'The free plan includes one league per sport on each phone. Upgrade to Pro for more.'
+          : lmsSection ? 'Could not create the Last Man Standing' : 'Could not create the league')
     } finally { setCreating(false) }
   }
 
@@ -280,10 +288,11 @@ export default function Settings() {
       )}
       {!compsLoading && !runsACompetition && (Capacitor.isNativePlatform() || isAdmin) && (
         <Card className="p-4 mb-5" style={{ background:'var(--accent-dim)', borderColor:'var(--accent-line)' }}>
-          <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>Run your own league</p>
+          <p className="text-xs font-medium mb-1" style={{ color:'var(--accent)' }}>{lmsSection ? 'Run your own Last Man Standing' : 'Run your own league'}</p>
           <p className="text-xs mb-3" style={{ color:'var(--txt-second)' }}>
-            Create a league, add your fixtures, and invite your friends with a join code.
-            You'll be its admin. Free for one league.
+            {lmsSection
+              ? "Create a Last Man Standing, choose its league, and invite your friends with a join code. You'll be its admin. Free for one game."
+              : "Create a league, add your fixtures, and invite your friends with a join code. You'll be its admin. Free for one league."}
           </p>
           <div className="flex gap-2">
             <input
@@ -291,7 +300,7 @@ export default function Settings() {
               // bare browser field — white on white, so you could not see what
               // you were typing.
               className="input flex-1"
-              placeholder="e.g. The Office League"
+              placeholder={lmsSection ? 'e.g. Office LMS 2026/27' : 'e.g. The Office League'}
               value={newLeagueName}
               onChange={e => setNewLeagueName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') startLeague() }}
