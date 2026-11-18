@@ -178,12 +178,12 @@ const PLAYING = [
       ['Add entries', 'Want more than one life? My picks → + Add entry, before the first kick-off. Each entry costs the entry points, needs the admin\'s approval and makes its own picks. Tap Entry 1, Entry 2… to switch between them.'],
       ['Wait for the results', 'They come in by themselves. When every game in the gameweek has finished, you\'re told whether each entry is through or out.'],
       ['Pick again', 'Still in? Pick for the next gameweek. A team that entry has already used is crossed out. Teams left, under the list, shows what that entry still has.'],
-      ['Plan ahead', 'Planner → Fixtures shows every team\'s games for the rest of the season, green for easier and red for harder (from the league table). Tap a game to plan that team for that gameweek; tap again to remove it. My route lists your plan. It\'s private and never picks for you; a planned team shows PLANNED on My picks.'],
+      ['Plan ahead', 'Planner → Fixtures shows every team\'s games for the rest of the season, green for easier and red for harder (from the league table). Tap a game to plan that team for that gameweek; tap again to remove it. My route lists your plan. It\'s private. A planned team shows PLANNED on My picks, and if you forget to pick, your planned team is used for you.'],
       ['Follow the gameweek', 'Games shows every fixture with the live score and, once picks lock, who is on each side and how many are at risk. Grid shows every player\'s pick in every gameweek: green through, red out, amber still playing. Tap a gameweek at the top to see what share picked each team.'],
     ],
     notes: [
       ['Deadline', 'The first kick-off of the gameweek. After that nobody can pick, change a pick or add an entry. You get a reminder 24 hours and 2 hours before.'],
-      ['Forgot to pick?', 'You\'re not out. At the deadline the entry is given the lowest-placed team in the league table that plays that gameweek and that entry hasn\'t used yet. It shows with an AUTO tag.'],
+      ['Forgot to pick?', 'You\'re not out. At the deadline the entry is given the team you planned for that gameweek in the Planner (if it plays and you haven\'t used it). With no plan, it gets the lowest-placed team in the league table that plays that gameweek and that entry hasn\'t used yet. It shows with an AUTO tag.'],
       ['Hidden picks', 'Nobody sees anyone else\'s pick until the deadline. Before then, Players and Grid show who has picked (✓), not what. The top of the screen counts down to the deadline and says whether all picks are in.'],
       ['Each team once', 'An entry can\'t pick the same team twice. Once it has used every team in the league, the list starts again.'],
       ['Postponed games', 'If your team\'s game is postponed or abandoned, you go through, and that team still counts as used.'],
@@ -375,7 +375,7 @@ const ADMIN = [
       ['Next game', 'When a game ends, Admin → Game → Start the next game. You can switch between Football and NFL, and pick any league. You get an entry; players join and you approve them as before. After a roll-over, everyone from the rolled game is re-entered automatically.'],
     ],
     notes: [
-      ['Missed picks', 'Handled for you: at the first kick-off any entry without a pick gets the lowest-placed team it hasn\'t used.'],
+      ['Missed picks', 'Handled for you: at the first kick-off any entry without a pick gets the team its player planned for that gameweek, or else the lowest-placed team it hasn\'t used.'],
       ['Roll-overs', 'If nobody wins, the pot rolls into the next game and entries cost 10 more (20, then 30…). Players from the rolled game are re-entered for the extra 10 only.'],
       ['Free plan', 'One game is free per phone, whichever account you use. Starting another, including the next game after a roll-over, needs Pro.'],
       ['Fewer than 2 players', 'Fewer than 2 approved players at the first kick-off: the game waits and starts on the following gameweek instead, and waiting entries stay waiting.'],

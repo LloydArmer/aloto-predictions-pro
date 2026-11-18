@@ -381,11 +381,11 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
             {scoreLine(f) || (f ? `${f.home_team} v ${f.away_team} · ${formatUK(f.kickoff, { weekday: 'short' })}` : '')}
           </p>
           <p className="text-[11px] mt-2" style={{ color: 'var(--txt-muted)' }}>
-            {myPick.auto && 'No pick was made, so this entry was given the lowest-placed team it had not used. '}
+            {myPick.auto && 'No pick was made, so this entry was given its planned team, or the lowest-placed team it had not used. '}
             Scores update every few minutes. Entries move on automatically once every game has finished.
           </p>
         </> : (
-          <p className="text-sm mt-2" style={{ color: 'var(--amber)' }}>No pick made. This entry is being given the lowest-placed team it hasn't used; it shows here within a few minutes.</p>
+          <p className="text-sm mt-2" style={{ color: 'var(--amber)' }}>No pick made. This entry is being given its planned team, or the lowest-placed team it hasn't used; it shows here within a few minutes.</p>
         )}
       </Card>
     )
@@ -412,7 +412,7 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
             : (myPick ? `Your pick: ${myPick.team_name}` : 'Pick a team to win')}
         </p>
         <p className="text-[11px] mt-0.5" style={{ color: 'var(--txt-muted)' }}>
-          {myPick ? 'You can change it until the first kick-off. ' : 'Win and you go through, draw or lose and you are out. No pick by the first kick-off and you get the lowest-placed team. '}
+          {myPick ? 'You can change it until the first kick-off. ' : 'Win and you go through, draw or lose and you are out. No pick by the first kick-off and you get your planned team, or the lowest-placed team. '}
           Nobody sees your pick until picks lock.
         </p>
       </Card>

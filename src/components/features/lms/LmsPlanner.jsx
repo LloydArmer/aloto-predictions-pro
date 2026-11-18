@@ -15,7 +15,7 @@ import { TeamCode } from './LmsStats'
  *             league table. Tap one to plan that team for that gameweek.
  *   My route  the plan as a list, gameweek by gameweek.
  *
- * A plan is private and is only a note (migration 132): it never makes a pick.
+ * A plan is private. At the deadline a missed pick uses the planned team (migration 136).
  */
 export default function LmsPlanner({ data, entry, entryPicks, onSaved }) {
   const { game, seasonFixtures, standings, teamCount, locked, plans, plannerReady } = data
@@ -177,7 +177,7 @@ export default function LmsPlanner({ data, entry, entryPicks, onSaved }) {
           </div>
         </Card>
         <p className="text-[10px] px-1" style={{ color: 'var(--txt-muted)' }}>
-          Easier and harder come from the league table: an opponent well below or well above. Faded teams have been used by this entry. Your plan is private and doesn't make a pick for you.
+          Easier and harder come from the league table: an opponent well below or well above. Faded teams have been used by this entry. Your plan is private. If you forget to pick, your planned team is used as your pick at the deadline.
         </p>
       </> : (
         <Card className="mb-3 overflow-hidden">
