@@ -1,6 +1,7 @@
 -- =============================================================================
--- 135 — One-off: put every player in "ALOTO Predictions League 26/27" into
+-- 135 — One-off: put every player in "ALOTO Predictions League - 26/27" into
 -- the open game of "ALOTO LMS" (one approved entry each).
+-- (Names are matched ignoring spaces, dashes and capitals.)
 --
 -- Adds them to the ALOTO LMS competition if they are not in it yet, then
 -- gives anyone without an entry in the open game one entry, approved.
@@ -16,13 +17,14 @@ declare
   v_game   public.lms_games;
   v_n      int;
 begin
-  select count(*) into v_n from competitions where name ilike 'ALOTO Predictions League 26/27';
-  if v_n <> 1 then raise exception 'Expected one competition named ALOTO Predictions League 26/27, found %', v_n; end if;
-  select id into v_league from competitions where name ilike 'ALOTO Predictions League 26/27';
+  -- Matched ignoring spaces, dashes and capitals, so "ALOTO Predictions League - 26/27" is found.
+  select count(*) into v_n from competitions where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'alotopredictionsleague2627';
+  if v_n <> 1 then raise exception 'Expected one competition named ALOTO Predictions League - 26/27, found %', v_n; end if;
+  select id into v_league from competitions where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'alotopredictionsleague2627';
 
-  select count(*) into v_n from competitions where name ilike 'ALOTO LMS' and format = 'last_man_standing';
+  select count(*) into v_n from competitions where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'alotolms' and format = 'last_man_standing';
   if v_n <> 1 then raise exception 'Expected one Last Man Standing named ALOTO LMS, found %', v_n; end if;
-  select id into v_lms from competitions where name ilike 'ALOTO LMS' and format = 'last_man_standing';
+  select id into v_lms from competitions where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'alotolms' and format = 'last_man_standing';
 
   select * into v_game from lms_games where competition_id = v_lms and status = 'open';
   if v_game.id is null then raise exception 'ALOTO LMS has no game taking entries'; end if;
@@ -58,7 +60,7 @@ end $$;
 -- Check: everyone in the open ALOTO LMS game, with their entries.
 select pr.display_name, count(e.id) as entries, bool_and(e.approved) as approved
 from lms_games g
-join competitions c on c.id = g.competition_id and c.name ilike 'ALOTO LMS'
+join competitions c on c.id = g.competition_id and regexp_replace(lower(c.name), '[^a-z0-9]', '', 'g') = 'alotolms' and c.format = 'last_man_standing'
 join lms_entries e on e.game_id = g.id
 join profiles pr on pr.id = e.user_id
 where g.status = 'open'
