@@ -238,7 +238,7 @@ export function LiveGames({ data, userId }) {
   const atRisk = states.filter(s => BAD.includes(s.state)).length
   const safe = states.filter(s => GOOD.includes(s.state)).length
 
-  if (!running) return <Card className="p-4"><p className="text-sm" style={{ color: 'var(--txt-muted)' }}>This game has finished. See the Grid for every pick.</p></Card>
+  if (!running) return <Card className="p-4"><p className="text-sm" style={{ color: 'var(--txt-muted)' }}>This game has finished. Standings → Grid shows every pick.</p></Card>
   if (!fixtures.length) return <Card className="p-4"><p className="text-sm" style={{ color: 'var(--txt-muted)' }}>The {roundName(game, game.current_round)} fixtures aren't loaded yet.</p></Card>
 
   return (

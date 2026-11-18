@@ -18,40 +18,48 @@ import CompetitionSelector from '../../layout/CompetitionSelector'
 import JoinCompetition from '../competitions/JoinCompetition'
 import toast from 'react-hot-toast'
 
-const TABS = [
-  { key: 'pick',    label: 'My picks', icon: 'ti-target-arrow' },
-  { key: 'games',   label: 'Games',    icon: 'ti-ball-football' },
-  { key: 'players', label: 'Players',  icon: 'ti-users' },
-  { key: 'grid',    label: 'Grid',     icon: 'ti-table' },
-  { key: 'planner', label: 'Planner',  icon: 'ti-route' },
-  { key: 'history', label: 'History',  icon: 'ti-history' },
-]
+// Each bottom-bar page shows its own part of the game (Brittany, 18 Nov 2026):
+//   Dashboard  how the gameweek is going: the pot, the countdown, your entries
+//              at a glance, approvals, and the gameweek's games live.
+//   Predict    what you do: this week's pick and the planner.
+//   Standings  everyone else: who's still in, the grid of picks, past games.
+const PAGES = {
+  dashboard: [],
+  predict: [
+    { key: 'pick',    label: 'This week', icon: 'ti-target-arrow' },
+    { key: 'planner', label: 'Planner',   icon: 'ti-route' },
+  ],
+  standings: [
+    { key: 'players', label: 'Players', icon: 'ti-users' },
+    { key: 'grid',    label: 'Grid',    icon: 'ti-table' },
+    { key: 'history', label: 'History', icon: 'ti-history' },
+  ],
+}
 
 /**
  * Last Man Standing, for players. Shown in place of the football or NFL
  * Dashboard, Predict and Standings whenever the competition selected is a Last
  * Man Standing (see App.jsx), so it carries its own competition switcher.
+ * `page` says which of the three it is (see PAGES):
  *
- *   My picks  your entries; for each, the gameweek's teams to pick from with
- *             form and table position, and the teams it has left. Extra
- *             entries can be added until the first kick-off.
- *   Games     this gameweek's fixtures, live, with who is on each side.
- *   Players   every entry: still in, out and why, who has picked.
- *   Grid      every entry's pick in every gameweek; tap a gameweek for the breakdown.
- *   Planner   plan which team each entry uses in the gameweeks ahead.
- *   History   every gameweek's picks once locked, and past games.
+ *   dashboard  game header, your entries at a glance, approvals, games live.
+ *   predict    This week: your entries and the teams to pick from, with form,
+ *              table position and teams left. Planner: the gameweeks ahead.
+ *   standings  Players: who's still in, out and why. Grid: every pick in every
+ *              gameweek. History: past gameweeks and games.
  */
-export default function LastManStanding({ initialTab = 'pick' }) {
+export default function LastManStanding({ page = 'dashboard' }) {
   const { user } = useAuth()
   const { competitions, loading: compsLoading } = useCompetitions()
   const [comp, setComp] = useSelectedCompetition(competitions)
-  const [tab, setTab] = useState(initialTab)
+  const tabs = PAGES[page] || []
+  const [tab, setTab] = useState(tabs[0]?.key || null)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(null)
   const [entryId, setEntryId] = useState(null)
 
-  useEffect(() => { setTab(initialTab) }, [initialTab])
+  useEffect(() => { setTab((PAGES[page] || [])[0]?.key || null) }, [page])
   useEffect(() => { if (comp && user) load(); }, [comp, user?.id])
 
   async function load(quiet = false) {
@@ -151,31 +159,38 @@ export default function LastManStanding({ initialTab = 'pick' }) {
             action={compObj?.my_role === 'admin' ? <Link to="/admin" className="btn btn-primary btn-sm">Go to Admin</Link> : null} />
         </Card>
       ) : <>
-        <GameHeader data={data} mine={myEntries} />
+        {page === 'dashboard'
+          ? <GameHeader data={data} mine={myEntries} />
+          : <SlimHeader data={data} mine={myEntries} />}
 
-        <div className="tab-strip mb-3">
-          {TABS.map(t => (
+        {tabs.length > 0 && <div className="tab-strip mb-3">
+          {tabs.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors"
               style={{ background: tab === t.key ? 'var(--accent-dim)' : 'transparent', color: tab === t.key ? 'var(--accent)' : 'var(--txt-second)', fontWeight: tab === t.key ? 500 : 400 }}>
               <i className={`ti ${t.icon}`} aria-hidden="true" />{t.label}
             </button>
           ))}
-        </div>
+        </div>}
 
-        {(tab === 'pick' || tab === 'planner') && (
+        {page === 'dashboard' && <>
+          <MyEntries data={data} mine={myEntries} />
+          <LmsApprovals data={data} isAdmin={compObj?.my_role === 'admin'} onDone={() => load(true)} />
+          <LiveGames data={data} userId={user?.id} />
+        </>}
+
+        {page === 'predict' && (tab === 'pick' || tab === 'planner') && (
           <EntryBar data={data} mine={myEntries} entry={entry} onSelect={setEntryId}
             onAdd={addEntry} onRemove={removeEntry} saving={saving} />
         )}
-        {tab === 'pick' && <PickTab data={data} me={entry} myPicks={entryPicks} myPick={entryPick} onPick={pick} saving={saving} />}
-        {tab === 'games' && <LiveGames data={data} userId={user?.id} />}
-        {(tab === 'pick' || tab === 'players') && (
+        {page === 'predict' && tab === 'pick' && <PickTab data={data} me={entry} myPicks={entryPicks} myPick={entryPick} onPick={pick} saving={saving} />}
+        {page === 'standings' && tab === 'players' && (
           <LmsApprovals data={data} isAdmin={compObj?.my_role === 'admin'} onDone={() => load(true)} />
         )}
-        {tab === 'players' && <PlayersTab data={data} userId={user?.id} />}
-        {tab === 'grid' && <PickGrid data={data} userId={user?.id} />}
-        {tab === 'planner' && <LmsPlanner data={data} entry={entry} entryPicks={entryPicks} onSaved={() => load(true)} />}
-        {tab === 'history' && <HistoryTab data={data} userId={user?.id} />}
+        {page === 'standings' && tab === 'players' && <PlayersTab data={data} userId={user?.id} />}
+        {page === 'standings' && tab === 'grid' && <PickGrid data={data} userId={user?.id} />}
+        {page === 'predict' && tab === 'planner' && <LmsPlanner data={data} entry={entry} entryPicks={entryPicks} onSaved={() => load(true)} />}
+        {page === 'standings' && tab === 'history' && <HistoryTab data={data} userId={user?.id} />}
       </>}
     </div>
   )
@@ -204,13 +219,7 @@ function GameHeader({ data, mine }) {
   else if (locked) line = `${rn(game.current_round)} · locked, results come in automatically`
   else line = `${rn(game.current_round)} · picks lock ${formatUK(lock, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
 
-  const myIn = mine.filter(e => e.approved !== false)
-  const myAlive = myIn.filter(e => e.status === 'alive').length
-  const myLine = !mine.length ? { t: 'Not in this game', c: 'var(--txt-muted)' }
-    : mine.every(e => e.approved === false) ? { t: 'Waiting for approval', c: 'var(--amber)' }
-    : mine.some(e => e.status === 'winner') ? { t: 'Winner 🏆', c: 'var(--gold, var(--amber))' }
-    : myAlive === 0 ? { t: 'Out', c: 'var(--red)' }
-    : { t: myIn.length > 1 ? `${myAlive} of ${myIn.length} still in` : 'Still in', c: 'var(--green)' }
+  const myLine = myStatus(mine)
 
   return (
     <Card className="p-4 mb-3">
@@ -243,6 +252,96 @@ function GameHeader({ data, mine }) {
         <span style={{ color: finished ? 'var(--txt-primary)' : 'var(--txt-second)' }}>{line}</span>
         {!finished && <span className="font-semibold flex-shrink-0 ml-2" style={{ color: 'var(--txt-primary)' }}>{alive} left</span>}
       </div>
+    </Card>
+  )
+}
+
+/** Predict and Standings: one line with the gameweek, the deadline and your status. */
+function SlimHeader({ data, mine }) {
+  const { game, lock, locked, entries } = data
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(t)
+  }, [])
+  const rn = r => roundName(game, r)
+  const finished = !['open', 'running'].includes(game.status)
+  const left = lock && !locked ? countdown(lock, now) : null
+  const alive = entries.filter(e => e.status === 'alive').length
+  const s = myStatus(mine)
+  return (
+    <Card className="px-4 py-2.5 mb-3">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span style={{ color: 'var(--txt-second)', minWidth: 0 }} className="truncate">
+          <span className="font-semibold" style={{ color: 'var(--txt-primary)' }}>{finished ? `Game ${game.game_number} finished` : rn(game.current_round)}</span>
+          {!finished && (left
+            ? <> · picks lock in <span className="font-semibold" style={{ color: 'var(--accent)' }}>{left}</span></>
+            : locked ? ' · locked' : '')}
+          {!finished && ` · ${alive} left`}
+        </span>
+        <span className="font-semibold flex-shrink-0" style={{ color: s.c }}>{s.t}</span>
+      </div>
+    </Card>
+  )
+}
+
+function myStatus(mine) {
+  const myIn = mine.filter(e => e.approved !== false)
+  const myAlive = myIn.filter(e => e.status === 'alive').length
+  return !mine.length ? { t: 'Not in this game', c: 'var(--txt-muted)' }
+    : mine.every(e => e.approved === false) ? { t: 'Waiting for approval', c: 'var(--amber)' }
+    : mine.some(e => e.status === 'winner') ? { t: 'Winner 🏆', c: 'var(--gold, var(--amber))' }
+    : myAlive === 0 ? { t: 'Out', c: 'var(--red)' }
+    : { t: myIn.length > 1 ? `${myAlive} of ${myIn.length} still in` : 'Still in', c: 'var(--green)' }
+}
+
+/** Dashboard: each of your entries in one line, with this gameweek's pick. */
+function MyEntries({ data, mine }) {
+  const { game, picks, locked, fixturesById } = data
+  const rn = r => roundName(game, r)
+  const running = ['open', 'running'].includes(game.status)
+  const canJoin = game.status === 'open' && !locked && mine.length < MAX_ENTRIES
+  if (!running && !mine.length) return null
+
+  const needPick = !locked && mine.some(e => e.status === 'alive' && !picks.some(p => p.entry_id === e.id && p.round === game.current_round))
+
+  return (
+    <Card className="mb-3 overflow-hidden">
+      <div className="flex items-center justify-between px-4 pt-3 pb-2">
+        <SectionLabel>{mine.length > 1 ? 'Your entries' : 'Your entry'}</SectionLabel>
+        {running && (mine.length ? (needPick || canJoin) : canJoin) && (
+          <Link to="/predict" className="text-[11px] font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: needPick ? 'var(--accent)' : 'var(--accent-dim)', color: needPick ? 'var(--on-accent)' : 'var(--accent)' }}>
+            {needPick ? 'Make your pick →' : mine.length ? '+ Add entry →' : 'Join this game →'}
+          </Link>
+        )}
+      </div>
+      {!mine.length && (
+        <p className="px-4 pb-3 text-xs" style={{ color: 'var(--txt-muted)' }}>
+          {canJoin ? "You're not in this game yet. Join on Predict before the first kick-off." : "You're not in this game. You can join the next one."}
+        </p>
+      )}
+      {mine.map(e => {
+        const p = picks.find(x => x.entry_id === e.id && x.round === game.current_round)
+        const outPick = e.status === 'out' ? picks.find(x => x.entry_id === e.id && x.round === e.out_round) : null
+        const st = locked && p ? STATE_STYLE[pickState(p, fixturesById.get(p.api_fixture_id))] : null
+        let right
+        if (e.approved === false) right = <span style={{ color: 'var(--amber)' }}>Waiting for approval</span>
+        else if (e.status === 'winner') right = <span style={{ color: 'var(--gold, var(--amber))' }}>Winner 🏆</span>
+        else if (e.status === 'out') right = <span style={{ color: 'var(--red)' }}>Out {rn(e.out_round)}{outPick ? ` · ${outPick.team_name}` : ''}</span>
+        else if (locked) right = p
+          ? <span><span style={{ color: 'var(--txt-primary)' }}>{p.team_name}</span>{p.auto && <AutoTag />} <span style={{ color: st.color }}>· {st.label}</span></span>
+          : <span style={{ color: 'var(--amber)' }}>Auto pick coming</span>
+        else right = p
+          ? <span style={{ color: 'var(--green)' }}>{p.team_name} ✓</span>
+          : <span style={{ color: 'var(--amber)' }}>Not picked yet</span>
+        return (
+          <div key={e.id} className="flex items-center gap-2 px-4 py-2 text-xs" style={{ borderTop: '0.5px solid var(--border)' }}>
+            <span className="flex-1 text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>{mine.length > 1 ? `Entry ${e.entry_no}` : 'You'}</span>
+            <span className="text-right">{right}</span>
+          </div>
+        )
+      })}
     </Card>
   )
 }
@@ -341,7 +440,7 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
   if (!me) return (
     <Card className="p-4">
       <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>You joined after this game started.</p>
-      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>You'll be in the next game. Follow how this one goes in Players.</p>
+      <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>You'll be in the next game. Follow how this one goes in Standings.</p>
     </Card>
   )
 
@@ -354,7 +453,7 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
           {me.out_reason === 'no_pick'
             ? `No team left to give in ${rn(me.out_round)}.`
             : `${lastPick?.team_name || 'Your team'}${lastPick?.auto ? ' (given automatically)' : ''} ${me.out_reason} in ${rn(me.out_round)}.`}
-          {' '}Keep an eye on who's left in Players.
+          {' '}Keep an eye on who's left in Standings.
         </p>
       </Card>
     )

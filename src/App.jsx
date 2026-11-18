@@ -40,31 +40,32 @@ function Protected({ children }) {
 /**
  * A football page, unless the competition on screen is a Last Man Standing,
  * which has its own screen in place of Dashboard, Predict and Standings (it has
- * no gameweeks, predictions or table of its own). Each page opens it on the tab
- * that matches: Dashboard and Predict on the pick, Standings on the players.
+ * no gameweeks, predictions or table of its own). Each page shows its own part:
+ * Dashboard the gameweek at a glance, Predict the pick, Standings the players.
  */
-function orLastManStanding(Football, tab) {
+function orLastManStanding(Football, page) {
   return function FootballPage() {
     const { competitions, loading } = useCompetitions()
     const [selected] = useSelectedCompetition(competitions)
     if (loading) return null
-    return isLms(competitions.find(c => c.id === selected)) ? <LastManStanding initialTab={tab} /> : <Football />
+    return isLms(competitions.find(c => c.id === selected)) ? <LastManStanding page={page} /> : <Football />
   }
 }
-const FootballDashboard = orLastManStanding(Dashboard, 'pick')
-const FootballPredict   = orLastManStanding(Predict, 'pick')
-const FootballStandings = orLastManStanding(Standings, 'players')
+const FootballDashboard = orLastManStanding(Dashboard, 'dashboard')
+const FootballPredict   = orLastManStanding(Predict, 'predict')
+const FootballStandings = orLastManStanding(Standings, 'standings')
 // An NFL Last Man Standing (Brittany, 16 Nov 2026) shows the same screens.
-const NflDashboardOrLms = orLastManStanding(NflDashboard, 'pick')
-const NflPredictOrLms   = orLastManStanding(NflPredict, 'pick')
-const NflStandingsOrLms = orLastManStanding(NflStandings, 'players')
+const NflDashboardOrLms = orLastManStanding(NflDashboard, 'dashboard')
+const NflPredictOrLms   = orLastManStanding(NflPredict, 'predict')
+const NflStandingsOrLms = orLastManStanding(NflStandings, 'standings')
 // The Last Man Standing section of the sport menu (Brittany, 16 Nov 2026).
-const LmsPick    = () => <LastManStanding initialTab="pick" />
-const LmsPlayers = () => <LastManStanding initialTab="players" />
+const LmsDashboard = () => <LastManStanding page="dashboard" />
+const LmsPick      = () => <LastManStanding page="predict" />
+const LmsPlayers   = () => <LastManStanding page="standings" />
 
 // Pages that each sport draws its own way.
 function PredictForSport() { return <SportRoute football={FootballPredict} nfl={NflPredictOrLms} f1={F1Predict} lms={LmsPick} /> }
-function DashboardForSport() { return <SportRoute football={FootballDashboard} nfl={NflDashboardOrLms} f1={F1Dashboard} lms={LmsPick} /> }
+function DashboardForSport() { return <SportRoute football={FootballDashboard} nfl={NflDashboardOrLms} f1={F1Dashboard} lms={LmsDashboard} /> }
 function StandingsForSport() { return <SportRoute football={FootballStandings} nfl={NflStandingsOrLms} f1={F1Standings} lms={LmsPlayers} /> }
 
 function wrap(Page) {
