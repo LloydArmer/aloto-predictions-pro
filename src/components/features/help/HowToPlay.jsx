@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, SectionLabel } from '../../ui'
 
 /**
@@ -18,6 +18,8 @@ import { Card, SectionLabel } from '../../ui'
  * Deliberately vague about specific football point values: every admin sets
  * their own, so quoting numbers would be wrong for most leagues. The NFL screen
  * shows its own values above the games, so the guide points there.
+ *
+ * Guides with a video tutorial show a Watch video button first (VIDEOS below).
  *
  * REVIEW THIS FILE WITH EVERY APP UPDATE BUILD. If a screen, tab, menu item,
  * reminder or Pro rule changes, the guide that mentions it changes too.
@@ -439,9 +441,96 @@ const ADMIN = [
 /*  Layout                                                                    */
 /* ========================================================================== */
 
+/* ========================================================================== */
+/*  Video tutorials                                                           */
+/* ========================================================================== */
+
+// Short screen-recorded walkthroughs with captions and a voice-over. Hosted on
+// the website rather than bundled, so they don't add 50 MB to the app download.
+// Re-record the matching video whenever a screen it shows changes.
+const VIDEO_BASE = 'https://aloto-marketing.netlify.app/videos/'
+
+const VIDEOS = {
+  start:            [['Join a league, and find your way around', 'players/01-join-and-find-your-way-around.mp4']],
+  predict:          [['Make your predictions', 'players/02-make-your-predictions.mp4']],
+  triple:           [['Make your predictions (Triple Points near the end)', 'players/02-make-your-predictions.mp4']],
+  standings:        [['Standings, results and chat', 'players/03-standings-results-chat.mp4']],
+  cups:             [['Playing in a cup', 'players/04-playing-in-a-cup.mp4']],
+  season:           [['Season predictions', 'players/05-season-predictions.mp4']],
+  lms:              [['Last Man Standing', 'players/06-last-man-standing.mp4']],
+  reminders:        [['Reminders, and your kit', 'players/07-reminders-and-your-kit.mp4']],
+  'admin-setup': [
+    ['Create your league and invite players', 'admin/01-create-your-league.mp4'],
+    ['Points and scoring', 'admin/04-points-and-scoring.mp4'],
+    ['Set up a knockout cup', 'admin/05-knockout-cup.mp4'],
+    ['Set up a Group + Knockout cup', 'admin/06-group-and-knockout.mp4'],
+  ],
+  'admin-fixtures': [
+    ['Add a gameweek and fixtures', 'admin/02-add-gameweek-and-fixtures.mp4'],
+    ['Results and finishing a gameweek', 'admin/03-results-and-finishing.mp4'],
+    ['One gameweek for your league and cup', 'admin/07-one-gameweek-league-and-cup.mp4'],
+  ],
+  'admin-season':   [['Season predictions setup', 'admin/08-season-predictions.mp4']],
+  'admin-lms':      [['Running a Last Man Standing', 'admin/09-last-man-standing.mp4']],
+}
+
+function Videos({ items }) {
+  const [playing, setPlaying] = useState(null)
+  return (
+    <div className="mb-3">
+      {items.map(([title, file]) => (
+        <button key={file + title} onClick={() => setPlaying(file)}
+          className="flex items-center gap-2.5 w-full text-left rounded-lg px-3 py-2.5 mb-1.5"
+          style={{ background: 'var(--accent-dim)', border: '0.5px solid var(--accent-line, var(--accent))' }}>
+          <i className="ti ti-player-play-filled text-base flex-shrink-0" style={{ color: 'var(--accent)' }} aria-hidden="true"/>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium" style={{ color: 'var(--txt-primary)' }}>Watch video</span>
+            <span className="block text-xs" style={{ color: 'var(--txt-muted)' }}>{title}</span>
+          </span>
+        </button>
+      ))}
+      {playing && <VideoPlayer src={VIDEO_BASE + playing} onClose={() => setPlaying(null)}/>}
+    </div>
+  )
+}
+
+// Full-screen player. The videos are recorded at phone size, so they fill the
+// screen in portrait. Closes with the X or the Escape key.
+function VideoPlayer({ src, onClose }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+  }, [onClose])
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Video tutorial"
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {failed
+        ? <p className="text-sm px-6 text-center" style={{ color: '#fff' }}>
+            The video couldn't load. Check your connection and try again.
+          </p>
+        : <video src={src} controls autoPlay playsInline onError={() => setFailed(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}/>}
+      <button onClick={onClose} aria-label="Close video"
+        style={{
+          position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 12px)', right: 12,
+          width: 40, height: 40, borderRadius: 20, background: 'rgba(0,0,0,0.6)',
+          border: '1px solid rgba(255,255,255,0.3)', color: '#fff', fontSize: 20,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+        <i className="ti ti-x" aria-hidden="true"/>
+      </button>
+    </div>
+  )
+}
+
 function Guide({ guide }) {
   return (
     <>
+      {VIDEOS[guide.key] && <Videos items={VIDEOS[guide.key]}/>}
       {guide.summary && <P>{guide.summary}</P>}
       {guide.steps && <Steps items={guide.steps}/>}
       {guide.notes && <Notes items={guide.notes}/>}
