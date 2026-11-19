@@ -1482,6 +1482,7 @@ function roundLabel(v) { return ALL_ROUND_TABS.find(r => r.value === v)?.label |
 // ───────────────────────── Config (Group Stage + Bracket combined) ─────────────────────────
 function ConfigTab({ competitionId, competitions }) {
   const comp = competitions.find(c => c.id === competitionId)
+  const [bracketKey, setBracketKey] = useState(0)
   if (!competitionId) return <EmptyState icon="ti-settings" title="Create a competition first" />
   if (comp?.format === 'league') {
     return <EmptyState icon="ti-settings" title="Not needed for League competitions" description="Config covers the group stage and knockout bracket, which only apply to Knockout or Group + Knockout competitions." />
@@ -1491,18 +1492,18 @@ function ConfigTab({ competitionId, competitions }) {
       {comp?.format === 'group_knockout' && (
         <>
           <AdminLabel className="mb-3">Group stage</AdminLabel>
-          <GroupStageTab competitionId={competitionId} competitions={competitions} />
+          <GroupStageTab competitionId={competitionId} competitions={competitions} onKnockoutCreated={() => setBracketKey(k => k + 1)} />
           <div className="my-6" style={{ borderTop: '0.5px solid var(--border)' }} />
         </>
       )}
       <AdminLabel className="mb-3">Cup competition</AdminLabel>
-      <BracketTab competitionId={competitionId} competitions={competitions} />
+      <BracketTab key={bracketKey} competitionId={competitionId} competitions={competitions} />
     </div>
   )
 }
 
 // ───────────────────────── Group Stage ─────────────────────────
-function GroupStageTab({ competitionId, competitions }) {
+function GroupStageTab({ competitionId, competitions, onKnockoutCreated }) {
   const comp = competitions.find(c => c.id === competitionId)
   const [participants, setParticipants] = useState([])
   const [fixtures, setFixtures] = useState([])
@@ -1695,7 +1696,10 @@ function GroupStageTab({ competitionId, competitions }) {
         await supabase.from('bracket_matches').insert(playoffInserts)
       }
 
-      toast.success('Knockout draw generated — check the Bracket tab')
+      toast.success('Knockout draw generated — it\'s below, under Cup competition')
+      // The bracket below is its own component with its own data: without
+      // this it kept offering "Generate bracket for all N" over the new draw.
+      onKnockoutCreated?.()
     } catch { toast.error('Could not generate knockout draw') }
     finally { setGeneratingPlayoff(false) }
   }
@@ -1923,6 +1927,12 @@ function BracketTab({ competitionId, competitions }) {
         supabase.from('bracket_round_gameweeks').select('*').eq('competition_id', competitionId),
       ])
       setMatches(m || [])
+      // Round-level mapping starts on the round being played now, not Round
+      // of 16, so "Save mapping" after a reload saves to the right round.
+      const order = ['playoff', ...ROUND_OPTIONS.map(r => r.value)]
+      const cur = order.find(r => (m || []).some(x => x.round === r && x.status !== 'completed' && !x.is_replay))
+        || order.find(r => (m || []).some(x => x.round === r))
+      if (cur) setRound(cur)
       setGameweeks(sortGameweeks(gws))
       setParticipants(parts || [])
       const map = {}
@@ -2329,7 +2339,13 @@ function BracketTab({ competitionId, competitions }) {
       {hasAnyMatches && (
         <Card className="p-4 mt-4">
           <AdminLabel className="mb-2">Gameweek mapping</AdminLabel>
-          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>Assign a gameweek to each match individually above, or set a round-level mapping here.</p>
+          <p className="text-xs mb-2" style={{ color: 'var(--txt-muted)' }}>Assign a gameweek to each match individually above, or set a round-level mapping here.</p>
+          <label className="flex items-center gap-2 text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
+            Round
+            <Select value={round} onChange={e => setRound(e.target.value)} style={{ maxWidth: 200 }}>
+              {roundOrder.filter(r => matches.some(m => m.round === r)).map(r => <option key={r} value={r}>{roundLabel(r)}</option>)}
+            </Select>
+          </label>
           <div className="flex flex-wrap gap-2 mb-3">
             {gameweeks.length === 0 && <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>No gameweeks yet — add some in the Gameweeks tab first</span>}
             {gameweeks.map(gw => (
