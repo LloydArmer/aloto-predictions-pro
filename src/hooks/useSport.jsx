@@ -37,9 +37,14 @@ export function SportProvider({ children }) {
   const userId = useRef(null)
   const { isSiteAdmin } = useAuth()
 
-  // Last Man Standing is in the iPhone and Android app for everyone, but on
-  // the website only for the site admin (Brittany, 16 Nov 2026).
-  const hidden = (!Capacitor.isNativePlatform() && !isSiteAdmin) ? ['lms'] : []
+  // Last Man Standing is in the iPhone and Android app for everyone. On the
+  // website it shows for the site admin (Brittany, 16 Nov 2026) and for anyone
+  // already in a Last Man Standing competition, so Android players, who use
+  // the website until the Play Store app is out, can play (20 Nov 2026).
+  // Starting a game on the website is still only for the site admin.
+  const [inLms, setInLms] = useState(false)
+  const native = Capacitor.isNativePlatform()
+  const hidden = (!native && !isSiteAdmin && !inLms) ? ['lms'] : []
   const visibleSports = sports.filter(s => !hidden.includes(s.id))
 
   useEffect(() => {
@@ -63,6 +68,32 @@ export function SportProvider({ children }) {
 
     return () => { cancelled = true; subscription.unsubscribe() }
   }, [])
+
+  // Website only: is this person in any Last Man Standing competition?
+  // Checked again when they come back to the tab or join a competition.
+  useEffect(() => {
+    if (native) return
+    let cancelled = false
+    async function check() {
+      const { data: { session } } = await supabase.auth.getSession()
+      const uid = session?.user?.id
+      if (!uid) { if (!cancelled) setInLms(false); return }
+      const { data, error } = await supabase.from('participants')
+        .select('competition_id, competitions!inner(sport)')
+        .eq('user_id', uid).eq('competitions.sport', 'lms').limit(1)
+      if (!cancelled && !error) setInLms((data?.length || 0) > 0)
+    }
+    check()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { check() })
+    const onFocus = () => check()
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('aloto:competitions-changed', onFocus)
+    return () => {
+      cancelled = true; subscription.unsubscribe()
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('aloto:competitions-changed', onFocus)
+    }
+  }, [native])
 
   function choose(sportId) {
     setChosen(sportId)

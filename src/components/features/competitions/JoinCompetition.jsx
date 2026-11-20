@@ -44,6 +44,7 @@ export default function JoinCompetition({ onJoined, compact = false }) {
         toast.success(`Joined "${data.name}"`)
       }
       setCode('')
+      window.dispatchEvent(new Event('aloto:competitions-changed'))
       // Open on the competition just joined, in whatever sport it is. Clearing
       // the chosen sport lets it follow the competition, so joining an NFL
       // league from the football side doesn't leave it out of sight.
