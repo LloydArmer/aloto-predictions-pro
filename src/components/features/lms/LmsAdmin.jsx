@@ -202,15 +202,15 @@ export default function LmsAdmin({ competitionId, sport: compSport = 'football' 
         <Card className="p-4 mb-4">
           <SectionLabel>Game {game.game_number} · {game.league_name} · {game.status === 'open' ? 'taking entries' : 'under way'}</SectionLabel>
           <div className="grid grid-cols-3 gap-2 mt-3 text-center">
-            <Stat label="Pot" value={`${data.pot}`} sub="pts" />
+            <Stat label="To play for" value={`${data.pot}`} sub="pts" />
             <Stat label="Entries" value={data.entries.length}
               sub={`${data.players} player${data.players === 1 ? '' : 's'} · ${data.entries.filter(e => e.status === 'alive').length} in`} />
             <Stat label={sport === 'nfl' ? 'Week' : 'Gameweek'} value={rn(game.current_round)} sub={data.lock ? (data.locked ? 'locked' : `locks ${formatUK(data.lock, { weekday: 'short' })}`) : '—'} />
           </div>
           <p className="text-[11px] mt-3" style={{ color: 'var(--txt-muted)' }}>
             {game.entry_points} pts per entry
-            {game.rollover_level > 0 && ` (roll-over ${game.rollover_level}; entries carried from the last game add ${game.base_points})`}
-            {game.carried_points > 0 && `. Includes ${game.carried_points} pts rolled over.`}
+            {game.rollover_level > 0 && ` (carry-over ${game.rollover_level}; entries carried from the last game add ${game.base_points})`}
+            {game.carried_points > 0 && `. Includes ${game.carried_points} pts carried over.`}
           </p>
 
           {game.status === 'open' && (
@@ -220,7 +220,7 @@ export default function LmsAdmin({ competitionId, sport: compSport = 'football' 
               <p className="text-xs" style={{ color: 'var(--txt-muted)' }}>
                 Players join with the code, then tap Join this game (more than once for extra entries) until the first kick-off. You approve each entry here or under Players; any still waiting at the first kick-off are removed. The game starts by itself then (with at least 2 players; otherwise it moves on a {sport === 'nfl' ? 'week' : 'gameweek'}).
               </p>
-              <Field label="Points per entry (before any roll-over)"><Input type="number" min={1} max={1000} value={points} onChange={e => setPoints(e.target.value)} /></Field>
+              <Field label="Points per entry (before any carry-over)"><Input type="number" min={1} max={1000} value={points} onChange={e => setPoints(e.target.value)} /></Field>
               <Field label={sport === 'nfl' ? 'First week' : 'First gameweek'}>{roundPicker}</Field>
               <Button variant="primary" disabled={busy || !startRound}
                 onClick={() => act(() => rpc('lms_update_game', { p_game_id: game.id, p_points: pts, p_start_round: Number(startRound) }), 'Game updated')}>
@@ -232,7 +232,7 @@ export default function LmsAdmin({ competitionId, sport: compSport = 'football' 
           <div className="mt-4 pt-3 flex items-center justify-between gap-2" style={{ borderTop: '0.5px solid var(--border)' }}>
             <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Results, knock-outs and missed picks are automatic.</p>
             <Button size="sm" className="flex-shrink-0 whitespace-nowrap" disabled={busy} onClick={() => {
-              if (!window.confirm(`Stop Game ${game.game_number}? Nobody wins it${game.carried_points ? ', and the rolled-over points go back for the next game' : ''}. This cannot be undone.`)) return
+              if (!window.confirm(`Stop Game ${game.game_number}? Nobody wins it${game.carried_points ? ', and the carried-over points go back for the next game' : ''}. This cannot be undone.`)) return
               act(() => rpc('lms_cancel_game', { p_game_id: game.id }), 'Game stopped')
             }}>Stop game</Button>
           </div>
@@ -264,13 +264,13 @@ export default function LmsAdmin({ competitionId, sport: compSport = 'football' 
             <Field label={sport === 'nfl' ? 'First week' : 'First gameweek'}>{roundPicker}</Field>
             {lastNoWinner && (
               <p className="text-xs" style={{ color: 'var(--green)' }}>
-                {lastNoWinner.pot} pts roll over from Game {lastNoWinner.game_number}. New entries cost {pts * (nextLevel + 1)} pts; everyone from Game {lastNoWinner.game_number} is re-entered for {pts} more.
+                {lastNoWinner.pot} pts carry over from Game {lastNoWinner.game_number}. New entries are worth {pts * (nextLevel + 1)} pts; everyone from Game {lastNoWinner.game_number} is re-entered for {pts} more.
               </p>
             )}
             <p className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>Everyone in this competition gets one entry. Points are bragging points only, never money.</p>
             {isPro === false && data.games.some(g => g.status !== 'cancelled' || g.started_at) && (
               <p className="text-xs" style={{ color: 'var(--amber)' }}>
-                The free plan includes one Last Man Standing game. Another game, including one after a roll-over, needs Pro: Settings → ALOTO Pro.
+                The free plan includes one Last Man Standing game. Another game, including one after a carry-over, needs Pro: Settings → ALOTO Pro.
               </p>
             )}
             <Button variant="primary" disabled={busy || loadingRounds || !startRound}

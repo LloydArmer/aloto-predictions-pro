@@ -216,7 +216,7 @@ export default function ProUpgrade() {
 function ProBenefits() {
   return (
     <div className="text-xs" style={{ color: 'var(--txt-second)', lineHeight: 1.7 }}>
-      <p>· Unlimited leagues, cups and Last Man Standing games, roll-overs included</p>
+      <p>· Unlimited leagues, cups and Last Man Standing games, carry-overs included</p>
       <p>· Individual season predictions, including questions you write yourself</p>
       <p>· NFL: MVP and division winner questions, and your own</p>
       <p>· F1: the full drivers' and constructors' table predictions</p>

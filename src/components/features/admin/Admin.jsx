@@ -350,7 +350,7 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
                 <p className="text-xs mb-1 mt-3" style={{ color: 'var(--txt-muted)' }}>Points per entry</p>
                 <Input type="number" min={1} max={1000} value={lmsPoints} onChange={e => setLmsPoints(e.target.value)} />
                 <p className="text-[11px] mt-1.5" style={{ color: 'var(--txt-muted)' }}>
-                  Every {gameSport === 'nfl' ? 'week' : 'gameweek'}, each entry picks one team to win. Draw or lose and it's out, and no team can be picked twice. No pick by the first kick-off and the entry gets the lowest-placed team. Players can have several entries. The last one standing takes the pot. Results are automatic. The first game starts on the next {gameSport === 'nfl' ? 'week' : 'gameweek'}.
+                  Every {gameSport === 'nfl' ? 'week' : 'gameweek'}, each entry picks one team to win. Draw or lose and it's out, and no team can be picked twice. No pick by the first kick-off and the entry gets the lowest-placed team. Players can have several entries. The last one standing wins the bragging points (points only, never money). Results are automatic. The first game starts on the next {gameSport === 'nfl' ? 'week' : 'gameweek'}.
                 </p>
               </div>
             )}

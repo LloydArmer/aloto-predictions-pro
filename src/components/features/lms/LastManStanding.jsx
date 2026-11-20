@@ -109,8 +109,8 @@ export default function LastManStanding({ page = 'dashboard' }) {
     const first = myEntries.length === 0
     const isAdmin = compObj?.my_role === 'admin'
     const ask = first
-      ? `Join this game for ${data.game.entry_points} pts?`
-      : `Add another entry for ${data.game.entry_points} pts? It's a separate life with its own picks.`
+      ? `Join this game? It's for points only: no money, nothing to pay.`
+      : `Add another entry? It's a separate life with its own picks.`
     if (!window.confirm(isAdmin ? ask : `${ask} The admin needs to approve it before the first kick-off.`)) return
     setSaving('entry')
     try {
@@ -124,7 +124,7 @@ export default function LastManStanding({ page = 'dashboard' }) {
   }
 
   async function removeEntry(e) {
-    if (!window.confirm(`Remove entry ${e.entry_no}? Its ${e.stake} pts come out of the pot.`)) return
+    if (!window.confirm(`Remove entry ${e.entry_no}?`)) return
     setSaving('entry')
     try {
       await call('lms_remove_entry', { p_entry_id: e.id }, 'Entry removed')
@@ -140,7 +140,7 @@ export default function LastManStanding({ page = 'dashboard' }) {
     <div>
       <Card className="p-6 text-center mb-4">
         <EmptyState icon="ti-crown" title="No Last Man Standing yet"
-          description="Pick one team to win each week; the last one standing takes the pot. Join one with the code you were sent, or set one up in Admin."
+          description="Pick one team to win each week; the last one standing wins the bragging points. Points only, never money. Join one with the code you were sent, or set one up in Admin."
           action={<Link to="/admin" className="btn btn-primary btn-sm">Set one up in Admin</Link>} />
       </Card>
       <JoinCompetition onJoined={() => window.location.reload()} />
@@ -214,7 +214,7 @@ function GameHeader({ data, mine }) {
 
   let line
   if (game.status === 'won') line = `Won by ${game.winner?.display_name || 'a player'} in ${rn(game.ended_round)}`
-  else if (game.status === 'no_winner') line = `No winner. Everyone left went out in ${rn(game.ended_round)}, so the pot rolls over`
+  else if (game.status === 'no_winner') line = `No winner. Everyone left went out in ${rn(game.ended_round)}, so the points carry over`
   else if (!lock) line = `${rn(game.current_round)} · fixtures loading`
   else if (locked) line = `${rn(game.current_round)} · locked, results come in automatically`
   else line = `${rn(game.current_round)} · picks lock ${formatUK(lock, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
@@ -227,11 +227,12 @@ function GameHeader({ data, mine }) {
         <div style={{ minWidth: 0 }}>
           <SectionLabel>Last Man Standing · {game.league_name} · Game {game.game_number}</SectionLabel>
           <p className="text-3xl font-bold mt-1" style={{ color: 'var(--txt-primary)' }}>
-            {pot}<span className="text-sm font-medium ml-1.5" style={{ color: 'var(--txt-muted)' }}>pts in the pot</span>
+            {pot}<span className="text-sm font-medium ml-1.5" style={{ color: 'var(--txt-muted)' }}>points to play for</span>
           </p>
           <p className="text-[11px] mt-0.5" style={{ color: 'var(--txt-muted)' }}>
             {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} from {players} player{players === 1 ? '' : 's'}
-            {game.carried_points > 0 && ` + ${game.carried_points} rolled over`}
+            {game.carried_points > 0 && ` + ${game.carried_points} carried over`}
+            {' · Bragging points only, no money'}
           </p>
         </div>
         <span className="text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
@@ -396,7 +397,7 @@ function EntryBar({ data, mine, entry, onSelect, onAdd, onRemove, saving }) {
           <button type="button" onClick={onAdd} disabled={saving != null}
             className="rounded-full px-3 py-1 text-xs font-semibold"
             style={{ background: 'transparent', color: 'var(--accent)', border: '0.5px dashed var(--accent)' }}>
-            {mine.length ? '+ Add entry' : 'Join this game'} · {game.entry_points} pts
+            {mine.length ? '+ Add entry' : 'Join this game'}
           </button>
         )}
       </div>
@@ -419,13 +420,13 @@ function PickTab({ data, me, myPicks, myPick, onPick, saving }) {
     <Card className="p-4">
       <p className="text-sm" style={{ color: 'var(--txt-primary)' }}>
         {game.status === 'won'
-          ? `${game.winner?.display_name || 'The winner'} took the ${game.pot} point pot.`
-          : `Nobody was left standing, so the ${game.pot} points roll into the next game.`}
+          ? `${game.winner?.display_name || 'The winner'} won ${game.pot} bragging points.`
+          : `Nobody was left standing, so the ${game.pot} points carry into the next game.`}
       </p>
       <p className="text-xs mt-1" style={{ color: 'var(--txt-muted)' }}>
         {game.status === 'won'
           ? 'The next game starts when the admin sets it up. Everyone in the competition gets an entry.'
-          : `Everyone in this game is re-entered in the next one for ${game.base_points} more points. New entries cost ${game.base_points * (game.rollover_level + 2)}.`}
+          : `Everyone in this game is re-entered in the next one for ${game.base_points} more points. New entries are worth ${game.base_points * (game.rollover_level + 2)}.`}
       </p>
     </Card>
   )
@@ -654,7 +655,7 @@ function HistoryTab({ data, userId }) {
           {games.filter(g => g.status === 'won' || g.status === 'no_winner').map(g => (
             <Row key={g.id} name={`Game ${g.game_number} · ${g.league_name}`}
               right={<span style={{ color: 'var(--txt-second)' }}>
-                {g.status === 'won' ? `${g.winner?.display_name || 'Winner'} won ${g.pot} pts` : `No winner · ${g.pot} pts rolled over`}
+                {g.status === 'won' ? `${g.winner?.display_name || 'Winner'} won ${g.pot} pts` : `No winner · ${g.pot} pts carried over`}
               </span>} />
           ))}
         </Card>

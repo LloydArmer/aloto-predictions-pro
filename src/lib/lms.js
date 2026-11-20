@@ -107,7 +107,7 @@ export const LMS_ERRORS = {
   not_admin: 'Only the admin can do that.',
   bad_sport: 'Choose Football or NFL for the game.',
   device_needed: 'Start your free Last Man Standing game from the ALOTO app on your phone.',
-  pro_needed: 'The free plan includes one Last Man Standing game per phone. Upgrade to Pro in Settings → ALOTO Pro to start another, including after a roll-over.',
+  pro_needed: 'The free plan includes one Last Man Standing game per phone. Upgrade to Pro in Settings → ALOTO Pro to start another, including after a carry-over.',
 }
 
 /** Entry label: "Entry 2" when a player has more than one, else blank. */

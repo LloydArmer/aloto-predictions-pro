@@ -324,13 +324,13 @@ function messageFor(e: any, sports: Map<string, Sport>): Note | null {
         body: (e.reason === 'no_pick'
           ? `No team left to give you in ${gw}${entry}.`
           : `${e.team} ${e.reason === 'drew' ? 'drew' : 'lost'} in ${gw}${entry}.`)
-          + (e.no_winner ? ` Nobody's left, so the ${e.pot} points roll over to the next game.` : ''),
+          + (e.no_winner ? ` Nobody's left, so the ${e.pot} points carry over to the next game.` : ''),
       }
     case 'winner':
       return {
         user_id: e.user_id, link, tag, kind: 'lms',
         title: `Last Man Standing! 🏆 ${e.competition}`,
-        body: `You're the last one left and win the pot: ${e.pot} points. Bragging rights are yours.`,
+        body: `You're the last one left and win ${e.pot} bragging points. Bragging rights are yours.`,
       }
     case 'autopick':
       return {

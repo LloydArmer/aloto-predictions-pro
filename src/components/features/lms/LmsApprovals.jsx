@@ -120,7 +120,7 @@ export function LmsAddPlayers({ competitionId, data, onDone }) {
         )
       })}
       <p className="px-3 py-2 text-[10px]" style={{ color: 'var(--txt-muted)', borderTop: '0.5px solid var(--border)' }}>
-        Adds an entry for that player, already approved. Each entry costs {game.entry_points} pts. Open until the first kick-off.
+        Adds an entry for that player, already approved. Each entry is worth {game.entry_points} points (bragging points only). Open until the first kick-off.
       </p>
     </div>
   )
