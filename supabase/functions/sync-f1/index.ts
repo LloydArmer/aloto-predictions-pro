@@ -305,12 +305,22 @@ async function refreshTimes(season: number) {
 /* Results                                                             */
 /* ------------------------------------------------------------------ */
 
-async function writeResults(raceId: string, session: Session, season: number, ranked: { driver: any, team: any, position: number | null, gap?: string | null, note?: string | null }[]) {
+/**
+ * Writes a session's result from the feed. Only rows that changed are
+ * written, so updated_at says when the feed last changed its mind.
+ * A confirmed session is left alone, unless `correct` is set: then a result
+ * the feed confirmed by itself is corrected (never one an admin set by hand).
+ */
+async function writeResults(raceId: string, session: Session, season: number, ranked: { driver: any, team: any, position: number | null, gap?: string | null, note?: string | null }[], correct = false) {
   const map = await driverMap(season)
-  // Only touch a session that is still provisional: a confirmed result is the admin's.
   const { data: race } = await supabase.from('f1_races').select('*').eq('id', raceId).single()
-  if (race?.[SESSIONS.find(x => x.s === session)!.confirmed]) return 0
-  let n = 0
+  const { data: existing } = await supabase.from('f1_results').select('driver_id, position, gap, note').eq('race_id', raceId).eq('session', session)
+  if (race?.[SESSIONS.find(x => x.s === session)!.confirmed]) {
+    if (!correct) return { n: 0, changed: 0 }
+    if ((existing ?? []).some(e => e.note === 'Set by admin')) return { n: 0, changed: 0 }
+  }
+  const before = new Map((existing ?? []).map(e => [e.driver_id, e]))
+  let n = 0, changed = 0
   for (const r of ranked) {
     let driverId = map.get(Number(r.driver?.id))
     if (!driverId) {
@@ -319,13 +329,29 @@ async function writeResults(raceId: string, session: Session, season: number, ra
       if (!driverId) continue
       map.set(Number(r.driver.id), driverId)
     }
+    n++
+    const was = before.get(driverId)
+    if (was && was.position === r.position && (was.gap ?? null) === (r.gap ?? null) && (was.note ?? null) === (r.note ?? null)) continue
     const { error } = await supabase.from('f1_results').upsert({
       race_id: raceId, session, driver_id: driverId, position: r.position,
       gap: r.gap ?? null, note: r.note ?? null, provisional: true, updated_at: new Date().toISOString(),
     }, { onConflict: 'race_id,session,driver_id' })
-    if (!error) n++
+    if (!error) changed++
   }
-  return n
+  return { n, changed }
+}
+
+/** Minutes since the feed last changed this session's result. */
+async function minutesSinceChange(raceId: string, session: Session) {
+  const { data } = await supabase.from('f1_results').select('updated_at').eq('race_id', raceId).eq('session', session)
+    .order('updated_at', { ascending: false }).limit(1)
+  return data?.length ? (Date.now() - +new Date(data[0].updated_at)) / MIN : 0
+}
+
+/** "1:34.151" or "94.151" in seconds, or null. */
+function lapSecs(t: unknown): number | null {
+  const m = /^(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(String(t ?? '').trim())
+  return m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : null
 }
 
 const posOf = (r: any) => { const p = Number(r.position); return Number.isFinite(p) && p > 0 ? p : null }
@@ -338,8 +364,10 @@ async function qualifyingResult(qualis: any[]) {
   let anyDone = false, allDone = sessions.length > 0
   for (const s of sessions) {
     if (/completed/i.test(s.status ?? '')) anyDone = true; else allDone = false
-    const rows = (await apiGet('/rankings/races', { race: String(s.id) }))
+    let rows = (await apiGet('/rankings/races', { race: String(s.id) }))
       .filter((r: any) => posOf(r)).sort((a: any, b: any) => posOf(a)! - posOf(b)!)
+    // Within a part, the order is the lap times. Use them when every driver has one.
+    if (rows.length && rows.every((r: any) => lapSecs(r.time) != null)) rows = [...rows].sort((a: any, b: any) => lapSecs(a.time)! - lapSecs(b.time)!)
     for (const r of rows) {
       const id = Number(r.driver?.id)
       if (seen.has(id)) continue
@@ -381,7 +409,12 @@ async function weekendSessions(race: any) {
 
 const LIVE = /live|progress|running|started/i
 
-async function fetchResults(raceId: string, sessions: Session[] = ['sprint_grid', 'sprint', 'grid', 'race']) {
+// The feed can say a session is completed while its timing is still settling
+// (Las Vegas 2026: the Q3 order was saved mid-update). So a result is only
+// confirmed once the feed is completed AND hasn't changed for this long.
+const SETTLE_MINUTES = 20
+
+async function fetchResults(raceId: string, sessions: Session[] = ['sprint_grid', 'sprint', 'grid', 'race'], recheck = false) {
   const { data: race } = await supabase.from('f1_races').select('*').eq('id', raceId).single()
   if (!race) return { error: 'Race not found.' }
   const out: Record<string, unknown> = {}
@@ -391,7 +424,9 @@ async function fetchResults(raceId: string, sessions: Session[] = ['sprint_grid'
 
   for (const def of SESSIONS) {
     const s = def.s
-    if (!sessions.includes(s) || race[def.confirmed]) continue
+    if (!sessions.includes(s)) continue
+    // A recheck looks only at confirmed sessions; a normal fetch only at open ones.
+    if (recheck !== !!race[def.confirmed]) continue
     if ((s === 'sprint_grid' || s === 'sprint') && !race.sprint_at) continue
 
     let done = false, rows: any[] = []
@@ -410,7 +445,7 @@ async function fetchResults(raceId: string, sessions: Session[] = ['sprint_grid'
       done = /completed/i.test(st.status ?? '')
       if (live || done) rows = await raceResult(apiId)
       if (live) liveNow = s
-      if (s === 'race') {
+      if (recheck) { /* leave the race's live fields as they are */ } else if (s === 'race') {
         await supabase.from('f1_races').update({
           live_lap: st.lap, total_laps: st.total ?? race.total_laps,
           ...(/cancel/i.test(st.status ?? '') ? { status: 'cancelled' } : {}),
@@ -419,9 +454,22 @@ async function fetchResults(raceId: string, sessions: Session[] = ['sprint_grid'
         await supabase.from('f1_races').update({ live_lap: st.lap }).eq('id', raceId)
       }
     }
-    if (rows.length) out[s] = await writeResults(raceId, s, race.season, rows)
+    if (recheck) {
+      // Already confirmed by the feed: if the feed has since corrected it,
+      // take the correction and score everyone again.
+      if (!done || !rows.length) continue
+      const w = await writeResults(raceId, s, race.season, rows, true)
+      if (w.changed) {
+        await supabase.rpc('f1_confirm_session', { p_race_id: raceId, p_session: s })
+        out[`${s}_corrected`] = w.changed
+        if (s === 'race' || s === 'sprint') await syncStandings(race.season)
+      }
+      continue
+    }
+    const w = rows.length ? await writeResults(raceId, s, race.season, rows) : { n: 0, changed: 0 }
+    if (rows.length) out[s] = w.n
     out[`${s}_done`] = done
-    if (done && rows.length && autoOk) {
+    if (done && rows.length && autoOk && !w.changed && await minutesSinceChange(raceId, s) >= SETTLE_MINUTES) {
       const { error } = await supabase.rpc('f1_confirm_session', { p_race_id: raceId, p_session: s })
       if (!error) {
         out[`${s}_confirmed`] = true
@@ -430,7 +478,7 @@ async function fetchResults(raceId: string, sessions: Session[] = ['sprint_grid'
     }
   }
 
-  await supabase.from('f1_races').update({ live_session: liveNow, live_updated_at: new Date().toISOString() }).eq('id', raceId)
+  if (!recheck) await supabase.from('f1_races').update({ live_session: liveNow, live_updated_at: new Date().toISOString() }).eq('id', raceId)
   return out
 }
 
@@ -486,18 +534,39 @@ async function syncLive() {
     if (due.length) work.push({ id: r.id, sessions: due })
   }
 
+  // For 36 hours after each session, look again every 15 minutes at results
+  // that were confirmed, in case the feed corrected them (late timing
+  // updates, stewards' penalties). A result set by hand is never touched.
+  const RECHECK_HOURS = 36
+  const { data: lastRecheck } = await supabase.from('f1_sync_log').select('ran_at').eq('kind', 'recheck').order('ran_at', { ascending: false }).limit(1)
+  const recheck: { id: string, sessions: Session[] }[] = []
+  if (!lastRecheck?.length || now - +new Date(lastRecheck[0].ran_at) >= 15 * MIN) {
+    const { data: recent } = await supabase.from('f1_races').select('*')
+      .neq('status', 'cancelled')
+      .gte('race_at', new Date(now - RECHECK_HOURS * 60 * MIN).toISOString())
+      .lte('race_at', new Date(now + 3 * 24 * 60 * MIN).toISOString())
+    for (const r of recent ?? []) {
+      const due = SESSIONS.filter(d => r[d.at] && r[d.confirmed] && now <= +new Date(r[d.at]) + RECHECK_HOURS * 60 * MIN).map(d => d.s)
+      if (due.length) recheck.push({ id: r.id, sessions: due })
+    }
+  }
+
   // Once a day, bring the calendar's times up to date.
   const { data: lastTimes } = await supabase.from('f1_sync_log').select('ran_at').eq('kind', 'times').order('ran_at', { ascending: false }).limit(1)
   const { count: raceCount } = await supabase.from('f1_races').select('id', { count: 'exact', head: true }).eq('season', thisSeason())
   const timesDue = raceCount && (!lastTimes?.length || now - +new Date(lastTimes[0].ran_at) > 24 * 60 * MIN)
 
-  if (!work.length && !timesDue) return { note: 'No F1 session in progress' }
+  if (!work.length && !timesDue && !recheck.length) return { note: 'No F1 session in progress' }
   if (await quotaRemaining() < 10) { await log('live', 0, 'Daily quota reached'); return { skipped: 'Daily F1 API quota reached' } }
 
   const out: Record<string, unknown> = {}
   if (timesDue) out.times = await refreshTimes(thisSeason())
   for (const w of work) out[w.id] = await fetchResults(w.id, w.sessions)
   if (work.length) await log('live', work.length)
+  if (recheck.length) {
+    for (const w of recheck) out[`recheck:${w.id}`] = await fetchResults(w.id, w.sessions, true)
+    await log('recheck', recheck.length)
+  }
   return out
 }
 
