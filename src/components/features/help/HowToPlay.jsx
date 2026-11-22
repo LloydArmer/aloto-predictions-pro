@@ -289,6 +289,7 @@ const F1 = [
       ['Grid tab', 'Put all 22 drivers in the order you think they\'ll qualify. Tap a driver, then tap another to swap them, or use the arrows.'],
       ['Race tab', 'Put all 22 in the order you think they\'ll finish. Start from qualifying copies the real grid once it\'s in.'],
       ['Save', 'Tap Save for each tab. You can change a pick as often as you like until it locks.'],
+      ['See other players\' picks', 'Once a pick has locked, choose a player in Picks of, above your points. You see their order, with the points each driver scored them in green and where the others really finished.'],
     ],
     notes: [
       ['When picks lock', 'The grid when qualifying starts. The race at lights out. On sprint weekends, the sprint grid when sprint qualifying starts and the sprint at its start.'],
@@ -308,7 +309,7 @@ const F1 = [
     summary: 'Standings in an F1 league has three views: your league table, each race weekend\'s scores, and the real championship.',
     steps: [
       ['Table', 'Standings → Table. Grid (qualifying and sprint qualifying picks), Race, Sprint and Season points, then the total. You are highlighted.'],
-      ['Race results', 'Standings → Race results. Choose a weekend to see everyone\'s points for it. Tap a name to see their grid and race picks.'],
+      ['Race results', 'Standings → Race results. Choose a weekend to see everyone\'s points for it. Tap a name to see their grid and race picks. For their points driver by driver, use Picks of on Predict.'],
       ['Championship', 'Standings → Championship. The real drivers\' and constructors\' standings, which the season predictions are settled on.'],
     ],
     notes: [

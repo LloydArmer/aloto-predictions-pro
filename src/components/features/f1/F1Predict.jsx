@@ -44,6 +44,11 @@ export default function F1Predict() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [tab, setTab] = useState('grid')
+  // Whose picks are shown. Once a session locks, anyone in the league can
+  // look at another player's picks and how each one scored.
+  const [viewUser, setViewUser] = useState(null)
+  const [players, setPlayers] = useState([])
+  const [theirs, setTheirs] = useState(EMPTY)
   const location = useLocation()
   useEffect(() => {
     if (new URLSearchParams(location.search).get('tab') === 'season') setTab('season')
@@ -58,6 +63,11 @@ export default function F1Predict() {
       const [list, rl] = await Promise.all([loadF1Races(supabase, comp), loadF1Rules(supabase, comp)])
       if (cancelled) return
       setRaces(list); setRules(rl)
+      const { data: parts } = await supabase.from('participants').select('user_id, profiles:user_id(display_name)').eq('competition_id', comp)
+      if (cancelled) return
+      setPlayers((parts || []).map(p => ({ id: p.user_id, name: p.profiles?.display_name || 'Player' }))
+        .sort((a, b) => a.name.localeCompare(b.name)))
+      setViewUser(null)
       const cur = currentRace(list)
       setRaceId(cur?.id || null)
       if (!cur) setLoading(false)
@@ -71,6 +81,15 @@ export default function F1Predict() {
   }, [comp])
 
   useEffect(() => { if (race && user) loadRace() }, [raceId, user?.id])
+
+  const viewing = viewUser && viewUser !== user?.id ? viewUser : null
+  const viewingName = viewing ? (players.find(p => p.id === viewing)?.name || 'Player') : null
+  useEffect(() => {
+    if (!viewing || !raceId) { setTheirs(EMPTY); return }
+    let cancelled = false
+    loadF1Picks(supabase, raceId, viewing).then(pk => { if (!cancelled) setTheirs(pk) })
+    return () => { cancelled = true }
+  }, [viewing, raceId])
 
   async function loadRace() {
     setLoading(true)
@@ -122,21 +141,23 @@ export default function F1Predict() {
   const sessionDef = F1_SESSIONS.find(x => x.key === session)
   const quali = isQualiSession(session)
   const locked = race ? isLocked(race, session) : true
+  // Another player's picks only once the session has locked.
+  const lockedPicks = (viewing && locked ? theirs : saved)[session]
   const count = quali ? Math.min(rules?.gridPositions ?? 22, drivers.length) : Math.min(rules?.racePositions ?? 22, drivers.length)
   const items = orders[session].map(id => byId.get(id)).filter(Boolean).map(driverItem)
   const savedIds = saved[session].map(p => p.driver_id)
   const dirty = !locked && orders[session].slice(0, count).join() !== savedIds.slice(0, count).join()
   const result = results[session]
   const confirmed = race?.[confirmedField(session)]
-  const shownPicks = locked ? saved[session] : orders[session].slice(0, count).map((driver_id, i) => ({ driver_id, position: i + 1 }))
+  const shownPicks = locked ? lockedPicks : orders[session].slice(0, count).map((driver_id, i) => ({ driver_id, position: i + 1 }))
   const scored = rules && result.length ? scorePicks(session, shownPicks, result, rules) : null
 
   // After lock, the rows are your saved picks; each shows where that driver is.
-  const lockedItems = saved[session].map(p => byId.get(p.driver_id)).filter(Boolean).map(driverItem)
+  const lockedItems = lockedPicks.map(p => byId.get(p.driver_id)).filter(Boolean).map(driverItem)
   const marks = {}
   if (locked && result.length) {
     const pos = new Map(result.map(r => [r.driver_id, r.position]))
-    saved[session].forEach(p => {
+    lockedPicks.forEach(p => {
       const at = pos.get(p.driver_id)
       const ok = at === p.position
       marks[p.driver_id] = ok
@@ -193,11 +214,21 @@ export default function F1Predict() {
         : <>
           <F1RaceHeader race={race} />
 
+          {locked && players.length > 1 && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--txt-muted)' }}>Picks of</span>
+              <Select value={viewing || user?.id || ''} onChange={e => setViewUser(e.target.value)} className="flex-1">
+                {players.map(p => <option key={p.id} value={p.id}>{p.id === user?.id ? `You (${p.name})` : p.name}</option>)}
+              </Select>
+            </div>
+          )}
+
           <Card className="p-3.5 mb-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>
-                  {quali ? `Your ${session === 'sprint_grid' ? 'sprint grid' : 'grid'}` : `Your ${session === 'sprint' ? 'sprint' : 'race'} order, 1 to ${count}`}
+                  {(viewing && locked ? `${viewingName}'s` : 'Your') + ' '}
+                  {quali ? (session === 'sprint_grid' ? 'sprint grid' : 'grid') : `${session === 'sprint' ? 'sprint' : 'race'} order, 1 to ${count}`}
                 </p>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--txt-muted)' }}>
                   {quali
@@ -229,8 +260,8 @@ export default function F1Predict() {
 
           {drivers.length === 0 ? (
             <EmptyState icon="ti-users" title="No drivers yet" description="The admin loads this season's drivers in Admin → Races." />
-          ) : locked && !saved[session].length ? (
-            <EmptyState icon="ti-lock" title="No picks made" description={`${sessionDef.name} started before a pick was saved.`} />
+          ) : locked && !lockedPicks.length ? (
+            <EmptyState icon="ti-lock" title="No picks made" description={`${viewing ? viewingName : 'You'} didn't save a pick before ${sessionDef.name.toLowerCase()} started.`} />
           ) : (
             <F1OrderPicker
               items={locked ? lockedItems : items}
