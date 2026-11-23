@@ -41,6 +41,16 @@ export async function loadF1Rules(supabase, competitionId) {
   return f1Rules(data)
 }
 
+/** How many places count: all 22 in a full-order league, 3 in a Top 3 league. */
+export const countedPlaces = (session, rules) => isQualiSession(session) ? rules.gridPositions : rules.racePositions
+
+/** The two kinds of F1 league: the whole order counts, or only the top 3. */
+export const F1_PICK_MODES = [
+  { key: 'full', places: 22, label: 'Full order (all 22 places count)' },
+  { key: 'top3', places: 3,  label: 'Top 3 (only 1st, 2nd and 3rd count)' },
+]
+export const pickModeOf = rules => (rules.gridPositions <= 3 && rules.racePositions <= 3) ? 'top3' : 'full'
+
 /** Points one placed driver is worth if exactly right. */
 export function pointsForPlace(session, position, rules) {
   if (isQualiSession(session)) return position <= rules.gridPositions ? rules.gridPoints : 0
@@ -58,7 +68,9 @@ export function scorePicks(session, picks, result, rules) {
   const at = new Map((result || []).filter(r => r.position).map(r => [r.position, r.driver_id]))
   let points = 0, correct = 0
   const hits = new Set()
+  const limit = countedPlaces(session, rules)
   for (const p of picks || []) {
+    if (p.position > limit) continue
     if (at.get(p.position) === p.driver_id) {
       const pts = pointsForPlace(session, p.position, rules)
       points += pts; correct++; hits.add(p.position)

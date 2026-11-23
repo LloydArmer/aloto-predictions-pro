@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { loadF1Races, loadF1Drivers, loadF1Results } from '../../../lib/sports/f1/data'
-import { F1_DEFAULT_RACE_POINTS, F1_DEFAULT_SPRINT_POINTS, f1Rules, sessionsFor, confirmedField } from '../../../lib/sports/f1/scoring'
+import { F1_DEFAULT_RACE_POINTS, F1_DEFAULT_SPRINT_POINTS, f1Rules, sessionsFor, confirmedField, F1_PICK_MODES, pickModeOf } from '../../../lib/sports/f1/scoring'
 import { Card, Button, Input, Select, Spinner, EmptyState } from '../../ui'
 import F1OrderPicker from './F1OrderPicker'
 import { driverItem, inOrder } from './f1Items'
@@ -255,18 +255,22 @@ export function F1ScoringTab({ competitionId }) {
 
   useEffect(() => {
     supabase.from('point_rules').select('*').eq('competition_id', competitionId).maybeSingle()
-      .then(({ data }) => setRules(f1Rules(data)))
+      .then(({ data }) => { const r = f1Rules(data); setRules({ ...r, mode: pickModeOf(r) }) })
   }, [competitionId])
 
   if (!rules) return <div className="flex justify-center py-10"><Spinner /></div>
+  const shownPlaces = rules.mode === 'top3' ? 3 : 22
 
   const setPts = (key, i, v) => setRules(r => { const a = [...r[key]]; a[i] = v; return { ...r, [key]: a } })
 
   async function save() {
     setSaving(true)
-    const n = Number(rules.racePositions) || 22
-    const list = key => Array.from({ length: n }, (_, i) => Number(rules[key][i]) || 0)
+    // Always the points for all 22 places, so switching back from Top 3 keeps them.
+    const list = key => Array.from({ length: 22 }, (_, i) => Number(rules[key][i]) || 0)
+    const places = rules.mode === 'top3' ? 3 : 22
     const { data, error } = await supabase.from('point_rules').update({
+      f1_grid_positions: places,
+      f1_race_positions: places,
       f1_grid_points: Number(rules.gridPoints) || 0,
       f1_race_points: list('racePoints'),
       f1_sprint_points: list('sprintPoints'),
@@ -279,12 +283,22 @@ export function F1ScoringTab({ competitionId }) {
   return (
     <div>
       <Card className="p-4 mb-3">
+        <Label>What counts</Label>
+        <Select value={rules.mode} onChange={e => setRules(r => ({ ...r, mode: e.target.value }))} className="w-full">
+          {F1_PICK_MODES.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </Select>
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>
+          Players always put all 22 drivers in order. In Top 3, only their 1st, 2nd and 3rd score, for the grid, the race and (on sprint weekends) the sprint.
+        </p>
+      </Card>
+
+      <Card className="p-4 mb-3">
         <Label>Grid (qualifying and sprint qualifying)</Label>
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm" style={{ color: 'var(--txt-second)' }}>Each driver in exactly the right place</span>
           <Input type="number" min="0" value={rules.gridPoints} onChange={e => setRules(r => ({ ...r, gridPoints: e.target.value }))} style={{ width: 70 }} />
         </div>
-        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>All {rules.gridPositions} places count. Default 5.</p>
+        <p className="text-xs mt-2" style={{ color: 'var(--txt-muted)' }}>{shownPlaces === 3 ? 'The top 3 places count.' : 'All 22 places count.'} Default 5.</p>
       </Card>
 
       {[['racePoints', 'Race (finishing order)', F1_DEFAULT_RACE_POINTS, 'Use the defaults',
@@ -299,7 +313,7 @@ export function F1ScoringTab({ competitionId }) {
           </div>
           <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>{help}</p>
           <div className="grid grid-cols-4 gap-2">
-            {Array.from({ length: Number(rules.racePositions) || 22 }, (_, i) => (
+            {Array.from({ length: shownPlaces }, (_, i) => (
               <label key={i} className="flex items-center gap-1.5">
                 <span className="text-xs text-right" style={{ width: 28, color: 'var(--txt-muted)' }}>P{i + 1}</span>
                 <Input type="number" min="0" value={rules[key][i] ?? 0} onChange={e => setPts(key, i, e.target.value)} style={{ width: '100%', minWidth: 0 }} />

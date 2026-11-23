@@ -6,6 +6,7 @@ import { supabase } from '../../../lib/supabase'
 import { sortGameweeks } from '../../../lib/gameweeks'
 import { recalculateGameweek, recalculateGameweekForAllLinkedCompetitions, resolveBracketRound, scoreOnePrediction, resolvePointRules } from '../../../lib/scoring'
 import { NFL_RULE_FIELDS } from '../../../lib/sports/nfl/scoring'
+import { F1_PICK_MODES } from '../../../lib/sports/f1/scoring'
 import { recalculateGameweekForEachSport } from '../../../lib/sports'
 import NflGamePicker from '../nfl/NflGamePicker'
 import { generateRoundRobinFixtures, resolveGroupRound } from '../../../lib/groupStage'
@@ -213,6 +214,8 @@ export default function Admin() {
 function CompetitionsTab({ user, competitions, loading, createCompetition, refetchComps, selectedComp, setSelectedComp, leagueOnly = false, sport = 'football', canCreate = true }) {
   const [name, setName] = useState('')
   const [format, setFormat] = useState('league')
+  // F1 only: does the whole order count, or just the top 3? (Brittany, 23 Nov 2026)
+  const [f1Mode, setF1Mode] = useState('full')
   const [lmsPoints, setLmsPoints] = useState(10)
   const [lmsLeague, setLmsLeague] = useState({ id: 39, name: 'Premier League' })
   // In the Last Man Standing section the admin chooses Football or NFL.
@@ -260,6 +263,10 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
       const comp = await createCompetition({ name: name.trim(), format: fmt, emoji, created_by: user.id })
       setSelectedComp(comp.id)
       setName(''); setFormat('league')
+      if (sport === 'f1' && f1Mode === 'top3') {
+        await supabase.from('point_rules').update({ f1_grid_positions: 3, f1_race_positions: 3 }).eq('competition_id', comp.id)
+      }
+      setF1Mode('full')
       if (fmt === LMS_FORMAT) {
         // Start its first game straight away, on the next gameweek, so the
         // admin only has to share the code.
@@ -339,6 +346,17 @@ function CompetitionsTab({ user, competitions, loading, createCompetition, refet
                 )}
               </div>
             </div>
+            {sport === 'f1' && (
+              <div>
+                <p className="text-xs mb-1" style={{ color: 'var(--txt-muted)' }}>What counts</p>
+                <Select value={f1Mode} onChange={e => setF1Mode(e.target.value)} className="w-full">
+                  {F1_PICK_MODES.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                </Select>
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--txt-muted)' }}>
+                  Players put all 22 drivers in order for the grid, the race and, on sprint weekends, the sprint. Top 3 scores only their 1st, 2nd and 3rd, with the usual points. You can change this later in Admin → Scoring.
+                </p>
+              </div>
+            )}
             {fmt === LMS_FORMAT && (
               <div>
                 {lmsSection && <>

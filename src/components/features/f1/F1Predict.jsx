@@ -158,6 +158,7 @@ export default function F1Predict() {
   if (locked && result.length) {
     const pos = new Map(result.map(r => [r.driver_id, r.position]))
     lockedPicks.forEach(p => {
+      if (p.position > count) return   // below the places that count: no mark
       const at = pos.get(p.driver_id)
       const ok = at === p.position
       marks[p.driver_id] = ok
@@ -228,11 +229,11 @@ export default function F1Predict() {
               <div className="min-w-0">
                 <p className="text-sm font-semibold" style={{ color: 'var(--txt-primary)' }}>
                   {(viewing && locked ? `${viewingName}'s` : 'Your') + ' '}
-                  {quali ? (session === 'sprint_grid' ? 'sprint grid' : 'grid') : `${session === 'sprint' ? 'sprint' : 'race'} order, 1 to ${count}`}
+                  {quali ? (session === 'sprint_grid' ? 'sprint grid' : 'grid') + (count < drivers.length ? `, top ${count}` : '') : `${session === 'sprint' ? 'sprint' : 'race'} order, 1 to ${count}`}
                 </p>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--txt-muted)' }}>
                   {quali
-                    ? `${rules?.gridPoints ?? 5} points for each driver in exactly the right place in ${sessionDef.name.toLowerCase()}.`
+                    ? `${rules?.gridPoints ?? 5} points for each driver in exactly the right place in ${sessionDef.name.toLowerCase()}${count < drivers.length ? `, for the top ${count}` : ''}.`
                     : `Each driver in exactly the right place scores what that place scores in the ${session === 'sprint' ? 'sprint' : 'race'}.`}
                 </p>
                 <p className="text-xs mt-1" style={{ color: locked ? 'var(--txt-muted)' : 'var(--amber)' }}>

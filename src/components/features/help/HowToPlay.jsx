@@ -294,6 +294,7 @@ const F1 = [
     notes: [
       ['When picks lock', 'The grid when qualifying starts. The race at lights out. On sprint weekends, the sprint grid when sprint qualifying starts and the sprint at its start.'],
       ['Grid points', '5 points for each driver in exactly the right place, for all 22. The same for the sprint grid.'],
+      ['Top 3 leagues', 'Your admin can make the league Top 3. You still put all 22 drivers in order, but only your 1st, 2nd and 3rd score: 5 points each on the grid, 25, 18 and 15 in the race, 8, 7 and 6 in the sprint. The rest sit under a Not scored line.'],
       ['Race points', 'A driver in exactly the right place scores what that place pays in F1: 25, 18, 15, 12, 10, 8, 6, 4, 2 and 1 for 1st to 10th, then 1 point for 11th to 22nd.'],
       ['Sprint points', 'The sprint points: 8, 7, 6, 5, 4, 3, 2 and 1 for 1st to 8th.'],
       ['Who sets the points', 'Your league admin, in Admin → Scoring. Every place can be changed.'],
@@ -415,6 +416,7 @@ const ADMIN = [
       ['Drivers', 'Loaded with the first races. Refresh drivers if the line-up changes mid-season.'],
       ['Confirm results', 'Open a race. Each session shows its order from the feed as Provisional. Tap Confirm and score. Or switch on Confirm and score results automatically.'],
       ['Correct a result', 'Set by hand puts the order right (a late penalty, say) and scores it again. Reopen takes a confirmed session\'s points off until you confirm it again.'],
+      ['Full order or Top 3', 'When you create the league, choose What counts: Full order (all 22 places score) or Top 3 (only 1st, 2nd and 3rd score, for the grid, the race and the sprint). Players still order all 22 drivers. Change it any time in Admin → Scoring.'],
       ['Points', 'Admin → Scoring: grid points per place, and the points for every race and sprint finishing place.'],
       ['Season', 'Admin → Season: open it, set the deadline, the points, and switch on the full tables (Pro). Update from current standings shows where everyone would be now; Settle the season after the last race.'],
     ],
