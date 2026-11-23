@@ -171,7 +171,11 @@ struct PlayerBadge: View {
     var size: CGFloat = 34
 
     var body: some View {
-        if let k = Kit.parse(kit) {
+        if let h = Helmet.parse(kit) {
+            // NFL / F1: a helmet in the player's colours with their initials.
+            HelmetView(helmet: h, initials: Helmet.initials(from: name))
+                .frame(width: size, height: size)
+        } else if let k = Kit.parse(kit) {
             // Taller frame when shorts will be drawn, or the kit is squashed
             // into a square and the proportions go wrong. The ratio matches the
             // web app's viewBox: 64 tall against 48 wide.
@@ -297,5 +301,174 @@ struct KitView: View {
         default:
             EmptyView()   // plain — the base colour is the whole shirt
         }
+    }
+}
+
+// MARK: - NFL and F1 helmets
+
+/// A player's helmet, sent by the server in the kit field as
+///
+///     helmet:#6a4c93:#f5f5f5        NFL
+///     racehelmet:#6a4c93:#f5f5f5    F1
+///
+/// shell colour, then stripe (also used for the initials). Drawn on the same
+/// 100-unit grid as src/components/ui/Helmet.jsx so the two match.
+struct Helmet {
+    let racing: Bool
+    let shell: Color
+    let stripe: Color
+    let darkShell: Bool
+    let sameColours: Bool
+
+    static func parse(_ spec: String?) -> Helmet? {
+        guard let spec, !spec.isEmpty else { return nil }
+        let parts = spec.split(separator: ":").map(String.init)
+        guard parts.count >= 2, parts[0] == "helmet" || parts[0] == "racehelmet" else { return nil }
+        let shellHex = parts[1]
+        guard let shell = Color(hex: shellHex) else { return nil }
+        let stripeHex = (parts.count > 2 && Color(hex: parts[2]) != nil) ? parts[2] : "#f5f5f5"
+        return Helmet(racing: parts[0] == "racehelmet",
+                      shell: shell,
+                      stripe: Color(hex: stripeHex) ?? .white,
+                      darkShell: luminance(shellHex) < 70,
+                      sameColours: shellHex.lowercased() == stripeHex.lowercased())
+    }
+
+    /// Two letters at most, matching helmetInitials() in Helmet.jsx.
+    static func initials(from name: String) -> String {
+        let words = name.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+        guard let first = words.first else { return "?" }
+        if words.count == 1 { return String(first.prefix(2)).uppercased() }
+        return (String(first.prefix(1)) + String(words[1].prefix(1))).uppercased()
+    }
+
+    private static func luminance(_ hex: String) -> Double {
+        var s = hex
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard let v = UInt64(s, radix: 16) else { return 255 }
+        return 0.299 * Double((v >> 16) & 0xFF) + 0.587 * Double((v >> 8) & 0xFF) + 0.114 * Double(v & 0xFF)
+    }
+
+    /// Initials in the stripe colour, unless it matches the shell.
+    var markColour: Color {
+        if !sameColours { return stripe }
+        return darkShell ? .white : Color(white: 0.07)
+    }
+
+    /// A dark helmet vanishes on a dark lock screen, so it gets a light edge.
+    var rimColour: Color { darkShell ? Color.white.opacity(0.55) : Color.black.opacity(0.25) }
+}
+
+/// Scales SVG-style coordinates on a 100 grid into the given rect.
+private struct HelmetGrid {
+    let rect: CGRect
+    var s: CGFloat { min(rect.width, rect.height) / 100 }
+    func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * s, y: rect.minY + y * s) }
+}
+
+struct NflShellShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let g = HelmetGrid(rect: rect); var p = Path()
+        p.move(to: g.p(12, 58))
+        p.addCurve(to: g.p(54, 10), control1: g.p(8, 32), control2: g.p(28, 10))
+        p.addCurve(to: g.p(88, 42), control1: g.p(74, 10), control2: g.p(86, 24))
+        p.addLine(to: g.p(74, 47))
+        p.addLine(to: g.p(66, 74))
+        p.addCurve(to: g.p(32, 80), control1: g.p(58, 82), control2: g.p(44, 84))
+        p.addCurve(to: g.p(12, 58), control1: g.p(20, 76), control2: g.p(14, 68))
+        p.closeSubpath(); return p
+    }
+}
+
+struct NflStripeShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let g = HelmetGrid(rect: rect); var p = Path()
+        p.move(to: g.p(28, 28))
+        p.addCurve(to: g.p(66, 21), control1: g.p(38, 19), control2: g.p(54, 16))
+        return p
+    }
+}
+
+struct FaceMaskShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let g = HelmetGrid(rect: rect); var p = Path()
+        p.move(to: g.p(70, 50)); p.addLine(to: g.p(91, 47))
+        p.addCurve(to: g.p(88, 81), control1: g.p(95, 58), control2: g.p(94, 72))
+        p.addLine(to: g.p(64, 83))
+        p.move(to: g.p(71, 65)); p.addLine(to: g.p(93, 63))
+        p.move(to: g.p(80, 49)); p.addLine(to: g.p(78, 82))
+        return p
+    }
+}
+
+struct RaceShellShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let g = HelmetGrid(rect: rect); var p = Path()
+        p.move(to: g.p(10, 56))
+        p.addCurve(to: g.p(56, 10), control1: g.p(8, 30), control2: g.p(28, 10))
+        p.addCurve(to: g.p(94, 50), control1: g.p(80, 10), control2: g.p(94, 30))
+        p.addCurve(to: g.p(84, 78), control1: g.p(94, 62), control2: g.p(90, 72))
+        p.addLine(to: g.p(80, 84))
+        p.addCurve(to: g.p(24, 85), control1: g.p(66, 91), control2: g.p(40, 91))
+        p.addCurve(to: g.p(10, 56), control1: g.p(16, 78), control2: g.p(11, 68))
+        p.closeSubpath(); return p
+    }
+}
+
+struct RaceStripeShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let g = HelmetGrid(rect: rect); var p = Path()
+        p.move(to: g.p(18, 70))
+        p.addCurve(to: g.p(68, 66), control1: g.p(34, 63), control2: g.p(50, 72))
+        return p
+    }
+}
+
+struct VisorShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let g = HelmetGrid(rect: rect); var p = Path()
+        p.move(to: g.p(44, 38)); p.addLine(to: g.p(88, 36))
+        p.addCurve(to: g.p(89, 55), control1: g.p(90, 42), control2: g.p(90, 49))
+        p.addLine(to: g.p(50, 57))
+        p.addCurve(to: g.p(44, 51), control1: g.p(46, 57), control2: g.p(44, 54))
+        p.closeSubpath(); return p
+    }
+}
+
+struct HelmetView: View {
+    let helmet: Helmet
+    let initials: String
+
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height) / 100
+            ZStack(alignment: .topLeading) {
+                if helmet.racing {
+                    RaceShellShape().fill(helmet.shell)
+                    RaceShellShape().stroke(helmet.rimColour, lineWidth: 2 * s)
+                    RaceStripeShape().stroke(helmet.stripe, style: StrokeStyle(lineWidth: 4 * s, lineCap: .round))
+                    VisorShape().fill(Color(red: 0.10, green: 0.10, blue: 0.13))
+                    mark(size: 18 * s, centreX: 27 * s, baseline: 56 * s)
+                } else {
+                    NflShellShape().fill(helmet.shell)
+                    NflShellShape().stroke(helmet.rimColour, lineWidth: 2 * s)
+                    NflStripeShape().stroke(helmet.stripe, style: StrokeStyle(lineWidth: 4 * s, lineCap: .round))
+                    mark(size: 22 * s, centreX: 42 * s, baseline: 61 * s)
+                    FaceMaskShape().stroke(Color(red: 0.60, green: 0.63, blue: 0.66),
+                                           style: StrokeStyle(lineWidth: 5 * s, lineCap: .round, lineJoin: .round))
+                }
+            }
+            .frame(width: 100 * s, height: 100 * s)
+        }
+    }
+
+    /// The initials, centred on x with their baseline where the SVG puts it.
+    private func mark(size: CGFloat, centreX: CGFloat, baseline: CGFloat) -> some View {
+        Text(initials)
+            .font(.system(size: size, weight: .black))
+            .foregroundStyle(helmet.markColour)
+            .lineLimit(1)
+            .fixedSize()
+            .position(x: centreX, y: baseline - size * 0.36)
     }
 }

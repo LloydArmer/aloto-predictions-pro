@@ -10,6 +10,7 @@ import JoinCompetition from '../competitions/JoinCompetition'
 import HowToPlay from '../help/HowToPlay'
 import ProUpgrade from './ProUpgrade'
 import BadgePicker from './BadgePicker'
+import HelmetPicker from './HelmetPicker'
 import Diagnostics from './Diagnostics'
 import toast from 'react-hot-toast'
 import { Capacitor } from '@capacitor/core'
@@ -257,7 +258,10 @@ export default function Settings() {
 
       {/* Above Pro: it's a two-second choice with an immediate visible result,
           which makes a better first thing to meet than a price. */}
-      <BadgePicker />
+      {/* NFL and F1 players pick helmet colours instead of a football kit. */}
+      {activeSport === 'nfl' || activeSport === 'f1'
+        ? <HelmetPicker sport={activeSport} />
+        : <BadgePicker />}
 
       {/* Near the top, above the housekeeping. Someone who has hit a limit is
           sent here, and hunting past reminder settings for the upgrade would be

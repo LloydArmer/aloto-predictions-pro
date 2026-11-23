@@ -289,6 +289,19 @@ async function rulesFor(competitionId: string) {
 }
 
 /** Which sport a gameweek belongs to. Defaults to football, as before. */
+/**
+ * What the lock screen card draws for the player. Football: their kit, as
+ * before. NFL / F1: 'helmet:<shell>:<stripe>' or 'racehelmet:<shell>:<stripe>'
+ * from profiles.helmet, falling back to standard colours so an NFL card never
+ * shows a football kit. An older app build doesn't know these and shows
+ * initials instead.
+ */
+function badgeFor(sport: Sport, me: { badge_kit?: string | null, helmet?: string | null } | undefined): string | null {
+  if (sport === 'football') return me?.badge_kit ?? null
+  const colours = /^#[0-9a-fA-F]{6}(:#[0-9a-fA-F]{6})?$/.test(me?.helmet ?? '') ? me!.helmet! : '#6a4c93:#f5f5f5'
+  return `${sport === 'f1' ? 'racehelmet' : 'helmet'}:${colours}`
+}
+
 async function sportFor(gameweekId: string): Promise<Sport> {
   if (sportCache.has(gameweekId)) return sportCache.get(gameweekId)!
   const gw = await gameweekFor(gameweekId)
@@ -575,7 +588,7 @@ async function startNew(result: any) {
     if (!startTokens?.length) continue
 
     const { data: profiles } = await supabase.from('profiles')
-      .select('id, display_name, badge_kit').in('id', toStart)
+      .select('id, display_name, badge_kit, helmet').in('id', toStart)
     const profileById = new Map((profiles ?? []).map(p => [p.id, p]))
 
     const f1Race = sport === 'f1' ? (await f1RaceFor(gameweekId)).race : null
@@ -611,9 +624,11 @@ async function startNew(result: any) {
             competitionName: opponent?.competition_name || gw.competitions?.name || '',
             gameweekLabel: label,
             myName: me?.display_name ?? '',
-            myKit: me?.badge_kit ?? null,
+            // Football shows the player's kit. NFL and F1 show a helmet in the
+            // player's colours (profiles.helmet), drawn by KitShape.swift.
+            myKit: badgeFor(sport, me),
             opponentName: opponent?.opponent_name ?? null,
-            opponentKit: opponent?.opponent_kit ?? null,
+            opponentKit: sport === 'football' ? (opponent?.opponent_kit ?? null) : null,
             roundLabel: opponent?.round_label ?? null,
             ref,
           },
