@@ -57,6 +57,26 @@ struct GameweekActivityAttributes: ActivityAttributes {
         /// "Full time". Composed on the server so the wording can change
         /// without shipping a new build.
         var statusLine: String
+
+        /// Every cup tie this gameweek, when there are two or more (a Knockout
+        /// cup and a Group + Knockout scored from the same gameweek). Nil with
+        /// one tie or none: the card then shows the single tie as before.
+        /// Optional so pushes from before this field still decode.
+        var ties: [TieLine]?
+    }
+
+    /// One tie, as a single line on the lock screen card.
+    public struct TieLine: Codable, Hashable {
+        /// "ALOTO Champions League"
+        var comp: String
+        /// "Group round 18", "Quarter-final"
+        var round: String?
+        /// The opponent's name and kit.
+        var opp: String
+        var oppKit: String?
+        /// Your points and theirs in this tie.
+        var my: Int
+        var their: Int
     }
 
     // ---- Fixed for the life of the activity ----

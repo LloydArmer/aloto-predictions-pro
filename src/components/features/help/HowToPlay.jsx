@@ -165,6 +165,7 @@ const PLAYING = [
       ['How a tie works', 'You\'re drawn against another player for a gameweek. Whoever scores more that week goes through.'],
       ['Level scores', 'A replay in the next gameweek.'],
       ['Group + Knockout', 'A round-robin group stage first, then the top players go into the bracket.'],
+      ['Your ties, live', 'In a week you have a tie, your league\'s Dashboard lists every one under the main card, with both scores moving as goals go in. Open the cup itself for the full head to head. On iPhone the Lock Screen card shows every tie that week too.'],
     ],
     tip: 'Follow the draw under Standings → Cup.',
   },

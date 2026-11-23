@@ -384,20 +384,36 @@ async function stateFor(userId: string, gameweekId: string) {
     .select('fixture_id, predicted_home, predicted_away')
     .eq('gameweek_id', gameweekId).eq('user_id', userId)
 
-  // The opponent, if there is a cup tie or group fixture this gameweek.
-  const { data: opp } = await supabase.rpc('my_gameweek_opponent_for', {
-    p_user_id: userId,
-    p_gameweek_id: gameweekId,
+  // Every cup tie or group fixture this gameweek (138). Before 138 is run,
+  // the single tie my_gameweek_opponent_for gives.
+  let allTies: any[] = []
+  const { data: tieRows, error: tieErr } = await supabase.rpc('my_gameweek_ties_for', {
+    p_user_id: userId, p_gameweek_id: gameweekId,
   })
-  const opponent = Array.isArray(opp) ? opp[0] : opp
+  if (!tieErr) allTies = (tieRows ?? []).filter((t: any) => t.opponent_id)
+  else {
+    const { data: opp } = await supabase.rpc('my_gameweek_opponent_for', { p_user_id: userId, p_gameweek_id: gameweekId })
+    const one = Array.isArray(opp) ? opp[0] : opp
+    if (one?.opponent_id) allTies = [one]
+  }
+  const opponent = allTies[0] ?? null
 
-  let opponentPoints: number | null = null
-  if (opponent?.opponent_id) {
+  // Each tie scored by its own competition's rules.
+  const tieLines = await Promise.all(allTies.map(async (t: any) => {
+    const tRules = t.competition_id ? await rulesFor(t.competition_id) : rules
     const { data: oppPreds } = await supabase.from('predictions')
       .select('fixture_id, predicted_home, predicted_away')
-      .eq('gameweek_id', gameweekId).eq('user_id', opponent.opponent_id)
-    opponentPoints = pointsForSport(sport, fixtures, oppPreds ?? [], rules)
-  }
+      .eq('gameweek_id', gameweekId).eq('user_id', t.opponent_id)
+    return {
+      comp: String(t.competition_name ?? ''),
+      round: t.round_label ?? null,
+      opp: String(t.opponent_name ?? ''),
+      oppKit: sport === 'football' ? (t.opponent_kit ?? null) : null,
+      my: pointsForSport(sport, fixtures, preds ?? [], tRules),
+      their: pointsForSport(sport, fixtures, oppPreds ?? [], tRules),
+    }
+  }))
+  const opponentPoints: number | null = tieLines.length ? tieLines[0].their : null
 
   const inPlay = inPlayCount(fixtures, sport)
   const finished = allFinished(fixtures, sport)
@@ -421,6 +437,10 @@ async function stateFor(userId: string, gameweekId: string) {
       positionDelta: null as number | null,
       matchesInPlay: inPlay,
       statusLine: statusLine(inPlay, finished, sport),
+      // Two or more ties: the card lists each one (Brittany, 23 Nov 2026).
+      // Left out with one tie, so the payload stays as small as before. An
+      // older app build ignores it and shows the first tie.
+      ...(tieLines.length >= 2 ? { ties: tieLines.slice(0, 3) } : {}),
     },
   }
 }

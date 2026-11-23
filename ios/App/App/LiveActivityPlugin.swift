@@ -145,7 +145,8 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             position:       call.getInt("position"),
             playerCount:    call.getInt("playerCount"),
             matchesInPlay:  call.getInt("matchesInPlay") ?? 0,
-            statusLine:     call.getString("statusLine") ?? ""
+            statusLine:     call.getString("statusLine") ?? "",
+            ties:           Self.ties(call)
         )
 
         do {
@@ -184,7 +185,8 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             position:       call.getInt("position"),
             playerCount:    call.getInt("playerCount"),
             matchesInPlay:  call.getInt("matchesInPlay") ?? 0,
-            statusLine:     call.getString("statusLine") ?? ""
+            statusLine:     call.getString("statusLine") ?? "",
+            ties:           Self.ties(call)
         )
 
         Task {
@@ -295,5 +297,20 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private static func hex(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The ties list, when the app sends two or more ([{comp, round, opp, oppKit, my, their}]).
+    private static func ties(_ call: CAPPluginCall) -> [GameweekActivityAttributes.TieLine]? {
+        guard let rows = call.getArray("ties") as? [[String: Any]], rows.count >= 2 else { return nil }
+        return rows.prefix(3).map { r in
+            GameweekActivityAttributes.TieLine(
+                comp: r["comp"] as? String ?? "",
+                round: r["round"] as? String,
+                opp: r["opp"] as? String ?? "",
+                oppKit: r["oppKit"] as? String,
+                my: (r["my"] as? NSNumber)?.intValue ?? 0,
+                their: (r["their"] as? NSNumber)?.intValue ?? 0
+            )
+        }
     }
 }

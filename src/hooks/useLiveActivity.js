@@ -90,21 +90,36 @@ export function useLiveActivity(competitionId, userId) {
           .select('fixture_id, predicted_home, predicted_away')
           .eq('gameweek_id', gw.id).eq('user_id', userId)
 
-        // Opponent, if there's a cup tie or group fixture this gameweek.
-        const { data: oppRows } = await supabase.rpc('my_gameweek_opponent', {
-          p_gameweek_id: gw.id,
-        })
-        const opponent = Array.isArray(oppRows) ? oppRows[0] : oppRows
+        // Every cup tie or group fixture this gameweek (138), or the single
+        // one my_gameweek_opponent gives before 138 has been run.
+        let allTies = []
+        const { data: tieRows, error: tieErr } = await supabase.rpc('my_gameweek_ties', { p_gameweek_id: gw.id })
+        if (!tieErr) allTies = (tieRows || []).filter(t => t.opponent_id)
+        else {
+          const { data: oppRows } = await supabase.rpc('my_gameweek_opponent', { p_gameweek_id: gw.id })
+          const one = Array.isArray(oppRows) ? oppRows[0] : oppRows
+          if (one?.opponent_id) allTies = [one]
+        }
+        // The tie in the competition on screen first, if there is one.
+        allTies.sort((a, b) => (b.competition_id === competitionId) - (a.competition_id === competitionId))
+        const opponent = allTies[0] || null
 
         const myPoints = totalFor(fixtures, preds || [], activeRules)
 
-        let opponentPoints = null
-        if (opponent?.opponent_id) {
+        // Each tie scored by its own competition's rules.
+        const ties = await Promise.all(allTies.map(async t => {
+          const tRules = (t.competition_id && await resolvePointRules(supabase, t.competition_id).catch(() => null)) || activeRules
           const { data: oppPreds } = await supabase.from('predictions')
             .select('fixture_id, predicted_home, predicted_away')
-            .eq('gameweek_id', gw.id).eq('user_id', opponent.opponent_id)
-          opponentPoints = totalFor(fixtures, oppPreds || [], activeRules)
-        }
+            .eq('gameweek_id', gw.id).eq('user_id', t.opponent_id)
+          return {
+            comp: t.competition_name || '', round: t.round_label || null,
+            opp: t.opponent_name || '', oppKit: t.opponent_kit || null,
+            my: totalFor(fixtures, preds || [], tRules),
+            their: totalFor(fixtures, oppPreds || [], tRules),
+          }
+        }))
+        const opponentPoints = ties.length ? ties[0].their : null
 
         const inPlayCount = (fixtures || []).filter(isInPlay).length
 
@@ -123,6 +138,8 @@ export function useLiveActivity(competitionId, userId) {
           opponentPoints,
           matchesInPlay: inPlayCount,
           statusLine: inPlayCount === 1 ? '1 match in play' : `${inPlayCount} matches in play`,
+          // Two or more ties: the card lists each one.
+          ...(ties.length >= 2 ? { ties: ties.slice(0, 3) } : {}),
         })
 
         startedRef.current = id

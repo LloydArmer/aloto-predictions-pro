@@ -35,7 +35,15 @@ struct ALOTOWidgetLiveActivity: Widget {
         ActivityConfiguration(for: GameweekActivityAttributes.self) { context in
 
             // ---- Lock screen and notification banner ----
-            LockScreenView(context: context)
+            // Two or more cup ties this gameweek: one line each, so none is
+            // hidden (Brittany, 23 Nov 2026). Otherwise the single-row card.
+            Group {
+                if let ties = context.state.ties, ties.count >= 2 {
+                    MultiTieView(context: context, ties: ties)
+                } else {
+                    LockScreenView(context: context)
+                }
+            }
                 .activityBackgroundTint(cardBackground)
                 .activitySystemActionForegroundColor(Color.white)
 
@@ -294,6 +302,64 @@ private struct LockScreenView: View {
                         }
                         .foregroundStyle(d > 0 ? upColour : downColour)
                     }
+                }
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+    }
+}
+
+/// The lock screen card when there is more than one tie: the gameweek and
+/// what's happening along the top, then one line per tie with both scores.
+private struct MultiTieView: View {
+    let context: ActivityViewContext<GameweekActivityAttributes>
+    let ties: [GameweekActivityAttributes.TieLine]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(context.attributes.gameweekLabel)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                if let pos = context.state.position {
+                    PositionLine(position: pos,
+                                 playerCount: context.state.playerCount,
+                                 delta: context.state.positionDelta)
+                }
+                Spacer(minLength: 4)
+                if context.state.matchesInPlay > 0 {
+                    Circle().fill(Color.orange).frame(width: 5, height: 5)
+                }
+                Text(context.state.statusLine)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+
+            ForEach(Array(ties.prefix(3).enumerated()), id: \.offset) { _, tie in
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(tie.comp)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text([tie.round, "v \(tie.opp)"].compactMap { $0 }.joined(separator: " · "))
+                            .font(.system(size: 9))
+                            .foregroundStyle(Color.white.opacity(0.5))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Text("\(tie.my)")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(tie.my >= tie.their ? Color.white : Color.white.opacity(0.6))
+                    Text("–")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.white.opacity(0.4))
+                    Text("\(tie.their)")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(tie.their >= tie.my ? Color.white : Color.white.opacity(0.6))
+                    PlayerBadge(kit: tie.oppKit, name: tie.opp, size: 18)
                 }
             }
         }

@@ -55,11 +55,16 @@ export default function MatchupCard({ competitionId, userId }) {
 
   if (loading || !data) return null
 
+  const others = data.otherTies?.length
+    ? <OtherTies ties={data.otherTies} gameweek={data.gameweek} live={data.live}/>
+    : null
+
   /* ---- Cup tie ---- */
   if (data.kind === 'tie') {
     const { ties, gameweek, competitionName, roundLabel, live, inPlayCount, fromOtherCompetition } = data
 
     return (
+      <>
       <Card className="p-0 mb-3 overflow-hidden">
         <div className="flex items-center gap-2 px-3.5 py-2.5"
           style={{ borderBottom: '1px solid var(--border)' }}>
@@ -86,6 +91,8 @@ export default function MatchupCard({ competitionId, userId }) {
 
         <TieSwiper ties={ties} roundLabel={roundLabel}/>
       </Card>
+      {others}
+      </>
     )
   }
 
@@ -102,6 +109,7 @@ export default function MatchupCard({ competitionId, userId }) {
               : ''
 
   return (
+    <>
     <Card className="p-0 mb-3 overflow-hidden">
       <div className="flex items-center gap-2 px-3.5 py-2.5"
         style={{ borderBottom: '1px solid var(--border)' }}>
@@ -133,6 +141,38 @@ export default function MatchupCard({ competitionId, userId }) {
 
         {best && <Stat value={best.points} label={`Best — ${best.name}`} muted/>}
       </div>
+    </Card>
+    {others}
+    </>
+  )
+}
+
+/**
+ * Your ties in other competitions this gameweek: one small row each, under
+ * the main card. The cup itself still shows the full head-to-head.
+ */
+function OtherTies({ ties, gameweek, live }) {
+  return (
+    <Card className="p-0 mb-3 overflow-hidden">
+      <div className="flex items-center gap-2 px-3.5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+        {live && <span className="live-dot" aria-hidden="true"/>}
+        <p className="text-[11px] font-semibold uppercase tracking-wide flex-1" style={{ color: 'var(--txt-muted)' }}>
+          {ties.length === 1 ? 'Your cup tie' : 'Your cup ties'}
+        </p>
+        <span className="text-[11px]" style={{ color: 'var(--txt-muted)' }}>{gameweek}</span>
+      </div>
+      {ties.map((t, i) => (
+        <div key={t.id} className="flex items-center gap-2.5 px-3.5 py-2.5" style={{ borderTop: i ? '0.5px solid var(--border)' : 'none' }}>
+          <div className="flex-1" style={{ minWidth: 0 }}>
+            <p className="text-sm font-semibold" style={{ color: 'var(--txt-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.competitionName}</p>
+            <p className="text-[11px]" style={{ color: 'var(--txt-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.roundLabel} · v {t.opponentName}</p>
+          </div>
+          <span className="font-bold text-lg" style={{ color: t.mine >= t.theirs ? 'var(--txt-primary)' : 'var(--txt-second)' }}>{t.mine}</span>
+          <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>–</span>
+          <span className="font-bold text-lg" style={{ color: t.theirs >= t.mine ? 'var(--txt-primary)' : 'var(--txt-second)' }}>{t.theirs}</span>
+          <PlayerMark kit={t.opponentKit} displayName={t.opponentName} size={22}/>
+        </div>
+      ))}
     </Card>
   )
 }
@@ -319,9 +359,13 @@ async function build(competitionId, userId) {
   const started = played.length > 0 || live
   const progress = { played: played.length, total: counted.length }
 
-  // Is there a cup tie or group fixture this gameweek?
-  const { data: oppRows } = await supabase.rpc('my_gameweek_opponent', { p_gameweek_id: gw.id })
-  const opponent = Array.isArray(oppRows) ? oppRows[0] : oppRows
+  // Every cup tie or group fixture this player has in this gameweek. The one
+  // belonging to the competition on screen gets the big card; ties in other
+  // competitions (a cup scored from the league's gameweek) show smaller,
+  // underneath, so the Dashboard the app opens on always has them.
+  const allTies = await myTies(gw.id)
+  const opponent = allTies.find(t => t.competition_id === competitionId) || null
+  const otherTies = await compactTies(allTies.filter(t => t !== opponent), gw.id, userId, fixtures)
 
   if (opponent?.opponent_id) {
     const [stored, liveMine, liveTheirs, meProfile] = await Promise.all([
@@ -368,6 +412,7 @@ async function build(competitionId, userId) {
       roundLabel: opponent.round_label,
       live, inPlayCount,
       ties,
+      otherTies,
     }
   }
 
@@ -430,6 +475,7 @@ async function build(competitionId, userId) {
     position,
     playerCount: scores.length,
     movement,
+    otherTies,
     // Nobody is "best" on a gameweek nobody has played. A name against a zero
     // reads as a result when it is just the first row of a tie.
     best: started && scores[0] && scores[0].userId !== userId && scores[0].points > 0
@@ -556,6 +602,40 @@ async function pointsFor(gameweekId, userId, fixtures, rules) {
     .eq('gameweek_id', gameweekId).eq('user_id', userId)
 
   return totalFor(preds || [], fixtures, rules)
+}
+
+/**
+ * Every tie this player has in the gameweek, across all their competitions.
+ * Uses my_gameweek_ties (138); before that has been run, falls back to the
+ * single tie my_gameweek_opponent gives.
+ */
+async function myTies(gameweekId) {
+  const { data, error } = await supabase.rpc('my_gameweek_ties', { p_gameweek_id: gameweekId })
+  if (!error) return (data || []).filter(t => t.opponent_id)
+  const { data: one } = await supabase.rpc('my_gameweek_opponent', { p_gameweek_id: gameweekId })
+  const row = Array.isArray(one) ? one[0] : one
+  return row?.opponent_id ? [row] : []
+}
+
+/** The small tie rows: each one's points, stored once scored, live until then. */
+async function compactTies(ties, gameweekId, userId, fixtures) {
+  return Promise.all(ties.map(async t => {
+    const rules = (await resolvePointRules(supabase, t.competition_id).catch(() => null)) || defaultRules()
+    const [stored, mine, theirs] = await Promise.all([
+      storedTiePoints(t, gameweekId, userId),
+      pointsFor(gameweekId, userId, fixtures, rules),
+      pointsFor(gameweekId, t.opponent_id, fixtures, rules),
+    ])
+    return {
+      id: `${t.kind}:${t.match_id || t.competition_id}`,
+      competitionName: t.competition_name || '',
+      roundLabel: t.round_label || '',
+      opponentName: t.opponent_name || 'Opponent',
+      opponentKit: t.opponent_kit || null,
+      mine: stored?.mine ?? mine,
+      theirs: stored?.theirs ?? theirs,
+    }
+  }))
 }
 
 /**
