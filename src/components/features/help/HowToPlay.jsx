@@ -363,6 +363,7 @@ const ADMIN = [
       ['Create it', 'Admin → Competitions. League for a points table, Knockout or Group + Knockout for a cup. For a Last Man Standing, first choose 👑 Last Man Standing in the sport menu at the top.'],
       ['Set the points', 'Admin → Scoring. In NFL that is the correct winner, team score, each margin line and the two full house bonuses. Set any to 0 to switch it off.'],
       ['Invite people', 'Admin → Players. Share the six-character join code.'],
+      ['Players you already have', 'Admin → Players → Add players from another competition. Choose the league, untick anyone you don\'t want, and tap Add. They see the new competition straight away, no code needed. Ideal for a cup run alongside your league.'],
       ['Cups', 'Admin → Cup. A cup borrows its scoring from a league you nominate, so set the league up first.'],
     ],
     tip: 'Admin → Players shows who will actually receive reminders, so you know who to chase.',

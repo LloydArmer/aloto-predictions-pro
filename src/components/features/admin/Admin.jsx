@@ -2544,6 +2544,47 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
   const [channel] = useState('whatsapp_share')
   const [adding, setAdding] = useState(false)
   const [sendingId, setSendingId] = useState(null)
+  // Add everyone from another competition you run (Brittany, 25 Nov 2026):
+  // a cup for the people already in the league, without new join codes.
+  const sources = competitions.filter(c => c.id !== competitionId && !isLms(c))
+  const [sourceId, setSourceId] = useState('')
+  const [copying, setCopying] = useState(false)
+  // The chosen competition's players who aren't here yet, all ticked to start.
+  const [sourcePlayers, setSourcePlayers] = useState([])
+  const [picked, setPicked] = useState(new Set())
+
+  useEffect(() => {
+    setSourcePlayers([]); setPicked(new Set())
+    if (!sourceId) return
+    let cancelled = false
+    supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', sourceId)
+      .then(({ data }) => {
+        if (cancelled) return
+        const here = new Set(participants.map(p => p.user_id))
+        const list = (data || []).filter(p => !here.has(p.user_id))
+          .map(p => ({ id: p.user_id, name: p.profiles?.display_name || 'Player' }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+        setSourcePlayers(list); setPicked(new Set(list.map(p => p.id)))
+      })
+    return () => { cancelled = true }
+  }, [sourceId, participants])
+
+  function togglePick(id) { setPicked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n }) }
+
+  async function addFromCompetition() {
+    const src = sources.find(c => c.id === sourceId)
+    if (!src) { toast.error('Choose a competition first'); return }
+    if (!picked.size) { toast.error('Tick at least one player'); return }
+    setCopying(true)
+    try {
+      const { data, error } = await supabase.rpc('add_players_from_competition', { p_target: competitionId, p_source: src.id, p_user_ids: [...picked] })
+      if (error) throw error
+      if (!data?.ok) { toast.error(data?.error === 'not_admin' ? 'You need to be an admin of both competitions' : 'Could not add the players'); return }
+      toast.success(data.added ? `${data.added} player${data.added === 1 ? '' : 's'} added from ${src.name}` : `Everyone in ${src.name} is already here`)
+      setSourceId(''); load()
+    } catch { toast.error('Could not add the players. Check your connection and try again.') }
+    finally { setCopying(false) }
+  }
 
   useEffect(() => { if (competitionId) load(); else { setParticipants([]); setInvitations([]) } }, [competitionId])
 
@@ -2671,6 +2712,46 @@ function ParticipantsTab({ competitionId, competitions, inviterName }) {
         initialCode={joinCode}
         onChanged={setJoinCode}
       />
+
+      {sources.length > 0 && (
+        <Card className="p-4 mb-4">
+          <AdminLabel className="mb-2">Add players from another competition</AdminLabel>
+          <p className="text-xs mb-3" style={{ color: 'var(--txt-muted)' }}>
+            Choose one of your competitions, untick anyone you don't want, and add the rest in one go. They see this competition straight away, with no join code.
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <Select value={sourceId} onChange={e => setSourceId(e.target.value)} style={{ flex: '1 1 200px', minWidth: 0 }}>
+              <option value="">Choose a competition…</option>
+              {sources.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+          {sourceId && (sourcePlayers.length === 0 ? (
+            <p className="text-xs mt-3" style={{ color: 'var(--txt-muted)' }}>Everyone in that competition is already here.</p>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mt-3 mb-1">
+                <span className="text-xs" style={{ color: 'var(--txt-muted)' }}>{picked.size} of {sourcePlayers.length} ticked</span>
+                <button className="text-xs" style={{ color: 'var(--accent)' }}
+                  onClick={() => setPicked(picked.size === sourcePlayers.length ? new Set() : new Set(sourcePlayers.map(p => p.id)))}>
+                  {picked.size === sourcePlayers.length ? 'Untick all' : 'Tick all'}
+                </button>
+              </div>
+              <div className="rounded-md overflow-hidden mb-3" style={{ border: '0.5px solid var(--border)', maxHeight: 280, overflowY: 'auto' }}>
+                {sourcePlayers.map((p, i) => (
+                  <label key={p.id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer"
+                    style={{ borderTop: i ? '0.5px solid var(--border)' : 'none', color: 'var(--txt-primary)' }}>
+                    <input type="checkbox" checked={picked.has(p.id)} onChange={() => togglePick(p.id)} />
+                    {p.name}
+                  </label>
+                ))}
+              </div>
+              <Button variant="primary" className="w-full" disabled={!picked.size || copying} onClick={addFromCompetition}>
+                {copying ? 'Adding…' : `Add ${picked.size} player${picked.size === 1 ? '' : 's'}`}
+              </Button>
+            </>
+          ))}
+        </Card>
+      )}
 
       <Card className="p-4 mb-4">
         <AdminLabel className="mb-3">Add a player manually</AdminLabel>
