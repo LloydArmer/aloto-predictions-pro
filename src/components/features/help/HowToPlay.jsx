@@ -209,6 +209,7 @@ const PLAYING = [
       ['Monthly', 'Each month\'s table, by the gameweeks your admin assigns to it.'],
       ['Cup', 'The draw and results, if your competition has one.'],
       ['Season', 'Season prediction results once they\'re scored.'],
+      ['Averages', 'Every player\'s average points per finished gameweek, best week, exact scores and correct results. Tap a heading to sort. Triple Points weeks count at their normal score.'],
       ['Chat', 'The speech-bubble icon in the top bar. Each competition has its own chat, with replies and @mentions. Tap ⋯ on a message to reply, report it or block someone.'],
     ],
   },

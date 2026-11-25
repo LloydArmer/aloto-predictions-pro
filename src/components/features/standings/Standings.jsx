@@ -8,6 +8,7 @@ import Table from '../table/Table'
 import Bracket from '../bracket/Bracket'
 import SeasonResults from '../season/SeasonResults'
 import LiveStandings from './LiveStandings'
+import PlayerAverages from './PlayerAverages'
 import { Spinner, EmptyState } from '../../ui'
 
 /**
@@ -59,6 +60,7 @@ export default function Standings() {
     ...(isLeagueLike ? [['overall', 'Overall'], ['monthly', 'Monthly']] : []),
     ...(available.cup ? [['cup', 'Cup']] : []),
     ...(available.season ? [['season', 'Season']] : []),
+    ...(compObj ? [['averages', 'Averages']] : []),
   ]
 
   if (loading) return <div className="flex justify-center py-20"><Spinner size="lg"/></div>
@@ -99,6 +101,7 @@ export default function Standings() {
       {(view === 'overall' || view === 'monthly') && <Table embeddedView={view}/>}
       {view === 'cup' && <Bracket embedded/>}
       {view === 'season' && <SeasonResults competitionId={comp} userId={user?.id}/>}
+      {view === 'averages' && <PlayerAverages competitionId={comp} userId={user?.id}/>}
     </div>
   )
 }
