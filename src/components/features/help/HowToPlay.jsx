@@ -112,6 +112,8 @@ const PLAYING = [
     notes: [
       ['Hidden until kick-off', 'Nobody sees your prediction before the fixture locks. Not other players, not your admin.'],
       ['Missed one?', 'If Saturday\'s early game has started, you can still predict Sunday\'s.'],
+      ['Team form', 'Each fixture shows both teams\' last 5 games (W, D, L, oldest first) and their league position. League and cup games both count.'],
+      ['Your average', 'Your Dashboard shows your average points per finished gameweek, everyone\'s average and your best week. Triple Points weeks count at their normal score.'],
     ],
   },
   {
@@ -165,6 +167,7 @@ const PLAYING = [
       ['How a tie works', 'You\'re drawn against another player for a gameweek. Whoever scores more that week goes through.'],
       ['Level scores', 'A replay in the next gameweek.'],
       ['Group + Knockout', 'A round-robin group stage first, then the top players go into the bracket.'],
+      ['Player form', 'The head to head shows each player\'s last 5 results in that cup, W, D or L, oldest first.'],
       ['Your ties, live', 'In a week you have a tie, your league\'s Dashboard lists every one under the main card, with both scores moving as goals go in. Open the cup itself for the full head to head. On iPhone the Lock Screen card shows every tie that week too.'],
     ],
     tip: 'Follow the draw under Standings → Cup.',

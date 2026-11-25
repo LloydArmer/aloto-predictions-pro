@@ -12,6 +12,8 @@ import SeasonPredictions from '../season/SeasonPredictions'
 import { effectiveScore, isInPlay, isFinished, liveLabel } from '../../../lib/livePoints'
 import { fitName } from '../../../lib/names'
 import { noteGoodMoment } from '../../../lib/review'
+import { ordinal } from '../../../lib/lms'
+import { FormChips } from '../lms/LmsStats'
 import toast from 'react-hot-toast'
 import { format, isPast } from 'date-fns'
 
@@ -132,7 +134,58 @@ function AllPredictions({ fixtureId, fixture, userId, rules }) {
   )
 }
 
-function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSave }) {
+/**
+ * Last 5 results and league position for every team in the gameweek, from
+ * team_form (migration 141; sync-lms loads the leagues the matches come from).
+ * Form is taken from before the gameweek's first kick-off, so an old gameweek
+ * shows the form the teams had going into it. Returns {} until loaded, and
+ * stays {} if 141 has not been run.
+ */
+function useTeamForm(fixtures) {
+  const [form, setForm] = useState({})
+  const teams = [...new Set(fixtures.flatMap(f => [f.home_team, f.away_team]))].sort()
+  const first = fixtures.reduce((m, f) => (!m || f.kickoff_time < m ? f.kickoff_time : m), null)
+  const key = teams.join('|') + first
+  useEffect(() => {
+    if (!teams.length) { setForm({}); return }
+    let cancelled = false
+    supabase.rpc('team_form', { p_teams: teams, p_before: first }).then(({ data, error }) => {
+      if (cancelled) return
+      if (error) { setForm({}); return }
+      const map = {}
+      ;(data || []).forEach(r => {
+        const k = r.team.toLowerCase()
+        map[k] = map[k] || { position: r.table_position, form: [] }
+        map[k].form.push({ res: r.res, opp: r.opponent, home: r.home, score: r.score })
+      })
+      setForm(map)
+    })
+    return () => { cancelled = true }
+  }, [key])
+  return form
+}
+
+/** One line per team: name, league position and last five results. */
+function TeamFormRows({ fixture, form }) {
+  const rows = [[fixture.home_team, 'H'], [fixture.away_team, 'A']]
+    .map(([name, side]) => ({ name, side, ...(form[name?.toLowerCase()] || {}) }))
+  if (!rows.some(r => r.form?.length)) return null
+  return (
+    <div className="mb-3 rounded-md px-2.5 py-2" style={{ background: 'var(--bg-elevated)' }}>
+      {rows.map(r => (
+        <div key={r.side} className="flex items-center justify-between gap-2 py-0.5">
+          <span className="text-xs truncate" style={{ color: 'var(--txt-second)' }}>
+            {r.name}
+            <span style={{ color: 'var(--txt-muted)' }}> ({r.side}){r.position ? ` · ${ordinal(r.position)}` : ''}</span>
+          </span>
+          <FormChips form={r.form || []} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSave, form = {} }) {
   const [home, setHome] = useState(prediction?.predicted_home ?? '')
   const [away, setAway] = useState(prediction?.predicted_away ?? '')
   const [saving, setSaving] = useState(false)
@@ -210,6 +263,7 @@ function FixtureCard({ fixture, prediction, userId, count, rules, gwLabel, onSav
         {fixture.home_team} <span style={{ color:'var(--txt-muted)', fontWeight:400 }}>vs</span> {fixture.away_team}
       </p>
       <p className="text-xs mb-3" style={{ color:'var(--txt-muted)' }}>{gwLabel} · KO: {format(kickoff,'EEE d MMM')} at {format(kickoff,'HH:mm')}</p>
+      {!isVoid && !hasResult && <TeamFormRows fixture={fixture} form={form} />}
 
       {/* In play: the live score, a clock, and what it's currently worth.
           Amber and labelled provisional throughout, because a disallowed goal
@@ -691,6 +745,7 @@ export default function Predict() {
   const [counts, setCounts] = useState({})
   const { fixtures, loading: lf } = useFixtures(selectedGW?.id)
   const { predictions, loading: lp, savePrediction } = usePredictions(selectedGW?.id, user?.id)
+  const teamForm = useTeamForm(fixtures)
 
   useEffect(() => { if (comp) { loadGWs(); loadRules() } }, [comp])
   useEffect(() => { if (selectedGW) loadCounts() }, [selectedGW])
@@ -839,7 +894,12 @@ export default function Predict() {
       {tab === 'mine' && (
         lf || lp ? <div className="flex justify-center py-20"><Spinner size="lg"/></div>
         : fixtures.length === 0 ? <EmptyState icon="ti-calendar-off" title="No fixtures this gameweek" description="Fixtures will appear when the admin adds them"/>
-        : fixtures.map(f => <FixtureCard key={f.id} fixture={{ ...f, ...(liveData[f.id] || {}) }} prediction={predictions[f.id]} userId={user?.id} count={counts[f.id]} rules={rules} gwLabel={selectedGW?.number} onSave={(fid,h,a)=>savePrediction(fid,h,a,selectedGW.id,user.id)}/>)
+        : <>
+            {Object.keys(teamForm).length > 0 && (
+              <p className="text-[11px] mb-2" style={{ color: 'var(--txt-muted)' }}>Form is each team's last 5 games, oldest → latest</p>
+            )}
+            {fixtures.map(f => <FixtureCard key={f.id} fixture={{ ...f, ...(liveData[f.id] || {}) }} prediction={predictions[f.id]} userId={user?.id} count={counts[f.id]} rules={rules} gwLabel={selectedGW?.number} form={teamForm} onSave={(fid,h,a)=>savePrediction(fid,h,a,selectedGW.id,user.id)}/>)}
+          </>
       )}
 
       {tab === 'results' && (

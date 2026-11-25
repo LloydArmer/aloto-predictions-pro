@@ -16,6 +16,9 @@
 //             3. Sends "you're through / you're out / you've won", the
 //                automatic-pick notice and the pick reminders (24 hours and
 //                2 hours before the deadline).
+//             4. Team form for the Predict match cards: loads the season and
+//                table of every league a predicted match is in (Premier
+//                League, Championship, ...), at most twice a day. See 141.
 //   fixtures  { sport: 'football' | 'nfl', league_id } Load a league's season
 //             now, for an admin setting up a game. Admins of a Last Man
 //             Standing only; a league is refreshed at most every 5 minutes.
@@ -295,6 +298,112 @@ async function refreshLeagues() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Team form for the Predict match cards (migration 141)               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Loads the leagues that predicted matches come from (Premier League,
+ * Championship, ...) into lms_fixtures / lms_standings, so team_form() can
+ * show each team's last 5 and its league position.
+ *
+ * 1. Linked matches in the next 14 days that don't yet know their league are
+ *    looked up once, 20 per request, and their league saved on the fixture.
+ * 2. Each league (not cups: those have no Regular Season rounds) gets its
+ *    season and table refreshed at most every 12 hours: two requests.
+ * 3. A team in a CUP match (FA Cup, Champions League...) has its last 5 games
+ *    in any competition fetched directly, one request per team, at most every
+ *    12 hours, into team_recent_fixtures.
+ * Leagues a Last Man Standing game already keeps fresh are skipped.
+ * Never throws: form is a nice-to-have and must not stop LMS settling.
+ */
+async function refreshFormLeagues(lmsLeagues: Set<string>) {
+  const done: unknown[] = []
+  try {
+    const now = Date.now()
+    const { data: upcoming } = await supabase.from('fixtures')
+      .select('id, api_fixture_id, api_league_id, api_season, api_league_kind, api_home_team_id, api_away_team_id, home_team, away_team')
+      .not('api_fixture_id', 'is', null).is('api_nfl_game_id', null)
+      .gte('kickoff_time', new Date(now - 24 * HOUR).toISOString())
+      .lte('kickoff_time', new Date(now + 14 * 24 * HOUR).toISOString())
+    const list = upcoming ?? []
+
+    // 1. Which league each match is in.
+    const unknown = list.filter(f => !f.api_league_kind || !f.api_home_team_id)
+    for (let i = 0; i < unknown.length && i < 60; i += 20) {
+      if (await quotaRemaining('football') <= 0) break
+      const ids = unknown.slice(i, i + 20).map(f => f.api_fixture_id).join('-')
+      const found = await apiGet('football', '/fixtures', { ids })
+      for (const m of found) {
+        const kind = footballRound(m.league?.round) != null ? 'league' : 'cup'
+        const info = {
+          api_league_id: m.league?.id ?? null, api_season: m.league?.season ?? null, api_league_kind: kind,
+          api_home_team_id: m.teams?.home?.id ?? null, api_away_team_id: m.teams?.away?.id ?? null,
+        }
+        await supabase.from('fixtures').update(info).eq('api_fixture_id', m.fixture.id)
+        const f = list.find(x => x.api_fixture_id === m.fixture.id)
+        if (f) Object.assign(f, info)
+      }
+    }
+
+    // 2. Each league's season and table, twice a day.
+    const leagues = new Map<string, { league_id: number; season: number }>()
+    for (const f of list) {
+      if (f.api_league_kind !== 'league' || !f.api_league_id || !f.api_season) continue
+      const k = `football:${f.api_league_id}:${f.api_season}`
+      if (!lmsLeagues.has(k)) leagues.set(k, { league_id: f.api_league_id, season: f.api_season })
+    }
+    for (const l of leagues.values()) {
+      const state = await syncState('football', l.league_id, l.season)
+      const fixturesDue = now - state.fixturesAt > 12 * HOUR
+      const tableDue = now - state.standingsAt > 12 * HOUR
+      if (!fixturesDue && !tableDue) continue
+      if (await quotaRemaining('football') <= 0) { done.push({ ...l, skipped: 'Daily API quota reached' }); break }
+      const entry: Record<string, unknown> = { form: true, league_id: l.league_id }
+      if (fixturesDue) entry.fixtures = await refreshFixtures('football', l.league_id, l.season)
+      if (tableDue) entry.table = await refreshStandings('football', l.league_id, l.season)
+      done.push(entry)
+    }
+
+    // 3. Teams in cup matches: their last 5 in any competition.
+    const cupTeams = new Map<number, string>()
+    for (const f of list) {
+      if (f.api_league_kind !== 'cup') continue
+      if (f.api_home_team_id) cupTeams.set(f.api_home_team_id, f.home_team)
+      if (f.api_away_team_id) cupTeams.set(f.api_away_team_id, f.away_team)
+    }
+    if (cupTeams.size) {
+      const { data: synced } = await supabase.from('team_form_sync')
+        .select('team_id, fetched_at').in('team_id', [...cupTeams.keys()])
+      const fresh = new Set((synced ?? []).filter(t => now - +new Date(t.fetched_at) < 12 * HOUR).map(t => t.team_id))
+      let fetched = 0
+      for (const [teamId, name] of cupTeams) {
+        if (fresh.has(teamId) || fetched >= 40) continue
+        if (await quotaRemaining('football') <= 0) { done.push({ cupTeams: 'Daily API quota reached' }); break }
+        const games = await apiGet('football', '/fixtures', { team: String(teamId), last: '5' })
+        const rows = games.map((g: any) => ({
+          api_fixture_id: g.fixture.id,
+          kickoff: g.fixture.date,
+          status: g.fixture.status?.short ?? 'NS',
+          home_team_id: g.teams.home.id, home_team: g.teams.home.name,
+          away_team_id: g.teams.away.id, away_team: g.teams.away.name,
+          home_goals: g.goals?.home ?? null, away_goals: g.goals?.away ?? null,
+          updated_at: new Date().toISOString(),
+        }))
+        if (rows.length) await supabase.from('team_recent_fixtures').upsert(rows, { onConflict: 'api_fixture_id' })
+        await supabase.from('team_form_sync').upsert({ team_id: teamId, team_name: name, fetched_at: new Date().toISOString() })
+        fetched++
+      }
+      if (fetched) done.push({ form: true, cupTeams: fetched })
+    }
+  } catch (err) {
+    const message = String(err instanceof Error ? err.message : err)
+    await logError(`form: ${message}`)
+    done.push({ form: true, error: message })
+  }
+  return done
+}
+
+/* ------------------------------------------------------------------ */
 /* Notifications                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -405,6 +514,11 @@ async function sendAll(notes: Note[]) {
 async function run() {
   const out: Record<string, unknown> = {}
   out.leagues = await refreshLeagues()
+
+  // Team form for Predict: the leagues predicted matches come from.
+  const { data: lmsGames } = await supabase.from('lms_games')
+    .select('sport, league_id, season').in('status', ['open', 'running'])
+  out.form = await refreshFormLeagues(new Set((lmsGames ?? []).map(g => `${g.sport}:${g.league_id}:${g.season}`)))
 
   const { data: events, error: settleError } = await supabase.rpc('lms_settle')
   if (settleError) throw new Error(`lms_settle failed: ${settleError.message}`)

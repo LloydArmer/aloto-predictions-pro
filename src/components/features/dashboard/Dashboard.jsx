@@ -7,6 +7,7 @@ import { useLeaderboard } from '../../../hooks/useLeaderboard'
 import { sortGameweeks } from '../../../lib/gameweeks'
 import { useLiveActivity } from '../../../hooks/useLiveActivity'
 import { supabase } from '../../../lib/supabase'
+import AveragePoints from './AveragePoints'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import JoinCompetition from '../competitions/JoinCompetition'
 import ReminderBanner from './ReminderBanner'
@@ -279,6 +280,7 @@ export default function Dashboard() {
               <StatCard label="Exact scores"    value={stats?.exact ?? 0}  sub="bonus pts earned"/>
               <StatCard label="Correct results" value={stats?.correct ?? 0} sub="correct predictions"/>
             </div>
+            <AveragePoints competitionId={comp} userId={user?.id} />
             {myTpPlays.length > 0 && (
               <div className="grid grid-cols-2 gap-2.5 mb-5">
                 {['first','second'].map(half => {
@@ -299,6 +301,10 @@ export default function Dashboard() {
             )}
             {myTpPlays.length === 0 && <div className="mb-5"/>}
             </>
+          )}
+
+          {(compObj?.format === 'knockout' || compObj?.format === 'group_knockout') && (
+            <AveragePoints competitionId={comp} userId={user?.id} />
           )}
 
           {groupStanding && (

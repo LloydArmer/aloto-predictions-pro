@@ -4,6 +4,7 @@ import { Card } from '../../ui'
 import Shirt, { PlayerMark } from '../../ui/Shirt'
 import { effectiveScore, isInPlay } from '../../../lib/livePoints'
 import { resolvePointRules, defaultRules, scoreOnePrediction } from '../../../lib/scoring'
+import { FormChips } from '../lms/LmsStats'
 
 /**
  * The head-to-head card at the top of the dashboard.
@@ -270,6 +271,9 @@ function Side({ player, highlight }) {
       <p className="text-xs mt-1" style={{ color: 'var(--txt-second)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {player.name}
       </p>
+      {player.form?.length > 0 && (
+        <div className="flex justify-center mt-1.5"><FormChips form={player.form}/></div>
+      )}
       {player.record && (
         <p style={{ fontSize: 10, color: 'var(--txt-muted)', marginTop: 2 }}>{player.record}</p>
       )}
@@ -392,11 +396,18 @@ async function build(competitionId, userId) {
     const myTie = {
       id: 'mine',
       isMine: true,
-      left:  { name: meProfile.data?.display_name ?? 'You', kit: meProfile.data?.badge_kit, points: mine },
-      right: { name: opponent.opponent_name, kit: opponent.opponent_kit, points: theirs },
+      left:  { uid: userId, name: meProfile.data?.display_name ?? 'You', kit: meProfile.data?.badge_kit, points: mine },
+      right: { uid: opponent.opponent_id, name: opponent.opponent_name, kit: opponent.opponent_kit, points: theirs },
     }
 
     const ties = await roundTies(opponent, gw.id, userId, fixtures, activeRules, myTie)
+
+    // Each player's last five results in this cup, under their name.
+    const forms = await playerForms(opponent.competition_id || competitionId)
+    ties.forEach(t => {
+      t.left.form = forms.get(t.left.uid) || []
+      t.right.form = forms.get(t.right.uid) || []
+    })
 
     return {
       kind: 'tie',
@@ -520,6 +531,7 @@ async function roundTies(opponent, gameweekId, userId, fixtures, rules, myTie) {
     const livePoints = await livePointsFor(gameweekId, everyone, fixtures, rules)
 
     const sideFor = (uid, profile, stored) => ({
+      uid,
       name: profile?.display_name ?? '',
       kit: profile?.badge_kit,
       // Stored wins once scored, because only it carries the gameweek bonuses.
@@ -554,6 +566,46 @@ async function roundTies(opponent, gameweekId, userId, fixtures, rules, myTie) {
   } catch {
     return [myTie]
   }
+}
+
+/**
+ * Every player's last five results in a cup, oldest first: group fixtures,
+ * then knockout ties, finished ones only. W/D/L from the player's side, the
+ * same chips Last Man Standing uses for teams. Never throws: no form is
+ * better than no card.
+ */
+async function playerForms(competitionId) {
+  const forms = new Map()
+  try {
+    const [{ data: group }, { data: ko }] = await Promise.all([
+      supabase.from('group_fixtures')
+        .select('home_user_id, away_user_id, home_points, away_points, result, round_number, home:home_user_id(display_name), away:away_user_id(display_name)')
+        .eq('competition_id', competitionId).eq('status', 'completed'),
+      supabase.from('bracket_matches')
+        .select('home_user_id, away_user_id, home_points, away_points, winner_user_id, round_order, is_replay, created_at, home:home_user_id(display_name), away:away_user_id(display_name)')
+        .eq('competition_id', competitionId).eq('status', 'completed'),
+    ])
+    const games = [
+      ...(group || []).sort((a, b) => a.round_number - b.round_number).map(g => ({
+        ...g, winner: g.result === 'home' ? g.home_user_id : g.result === 'away' ? g.away_user_id : null,
+      })),
+      ...(ko || []).sort((a, b) => a.round_order - b.round_order || (a.is_replay ? 1 : 0) - (b.is_replay ? 1 : 0))
+        .map(k => ({ ...k, winner: k.winner_user_id })),
+    ]
+    games.forEach(g => {
+      if (!g.home_user_id || !g.away_user_id) return
+      ;[[g.home_user_id, true], [g.away_user_id, false]].forEach(([uid, home]) => {
+        const mine = home ? g.home_points : g.away_points
+        const theirs = home ? g.away_points : g.home_points
+        const res = g.winner ? (g.winner === uid ? 'W' : 'L') : 'D'
+        const list = forms.get(uid) || []
+        list.push({ res, home, score: `${mine ?? 0}-${theirs ?? 0}`, opp: (home ? g.away : g.home)?.display_name || '' })
+        forms.set(uid, list)
+      })
+    })
+    forms.forEach((list, uid) => forms.set(uid, list.slice(-5)))
+  } catch { /* no form */ }
+  return forms
 }
 
 /** Provisional points for several people at once. */
