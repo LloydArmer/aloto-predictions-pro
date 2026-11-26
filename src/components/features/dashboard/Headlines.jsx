@@ -177,6 +177,57 @@ export default function Headlines({ competitionId, isLeague, userId }) {
           }
         } catch { /* cups are a bonus */ }
 
+        // Last Man Standing games the viewer is in: who is still in, who went
+        // out in the latest round, or who is the last one standing.
+        try {
+          const { data: lmsComps } = userId
+            ? await supabase.from('participants').select('competition_id, competitions!inner(name, sport)')
+                .eq('user_id', userId).eq('competitions.sport', 'lms')
+            : { data: [] }
+          const compIds = (lmsComps || []).map(c => c.competition_id)
+          const compName = new Map((lmsComps || []).map(c => [c.competition_id, cupName(c.competitions?.name)]))
+          if (compIds.length) {
+            const { data: games } = await supabase.from('lms_games')
+              .select('id, competition_id, status, start_round, current_round, sport, winner_user_id, finished_at')
+              .in('competition_id', compIds).in('status', ['open', 'running', 'finished'])
+              .order('game_number', { ascending: false })
+            const latest = new Map()
+            ;(games || []).forEach(g => { if (!latest.has(g.competition_id)) latest.set(g.competition_id, g) })
+            const live = [...latest.values()].filter(g => g.status !== 'finished'
+              || (g.finished_at && Date.now() - +new Date(g.finished_at) < 7 * 24 * 3600 * 1000))
+            if (live.length) {
+              const { data: entries } = await supabase.from('lms_entries')
+                .select('game_id, user_id, status, out_round, approved, profile:user_id(display_name)')
+                .in('game_id', live.map(g => g.id))
+              live.forEach(g => {
+                const nm = compName.get(g.competition_id)
+                const rd = r => `${g.sport === 'nfl' ? 'Week ' : 'GW'}${r}`
+                const es = (entries || []).filter(e => e.game_id === g.id && e.approved !== false)
+                const who = e => short(e.profile?.display_name)
+                if (g.status === 'finished') {
+                  const w = es.find(e => e.user_id === g.winner_user_id)
+                  if (w) out.push({ icon: '👑', text: `${who(w)} is the last one standing in ${nm}` })
+                  return
+                }
+                if (g.status === 'open') {
+                  if (es.length) out.push({ icon: '👑', text: `${nm} starts ${rd(g.start_round)}: ${es.length} entr${es.length === 1 ? 'y' : 'ies'} so far` })
+                  return
+                }
+                const alive = es.filter(e => e.status === 'alive')
+                const lastOut = Math.max(0, ...es.map(e => e.out_round || 0))
+                if (lastOut) {
+                  const outNow = [...new Set(es.filter(e => e.out_round === lastOut).map(who))]
+                  out.push({ icon: '👑', text: `${nm}: ${alive.length} of ${es.length} still in after ${rd(lastOut)}` })
+                  if (outNow.length <= 6) out.push({ icon: '❌', text: `Out of ${nm} in ${rd(lastOut)}: ${list(outNow)}` })
+                  else out.push({ icon: '❌', text: `${outNow.length} players went out of ${nm} in ${rd(lastOut)}` })
+                } else {
+                  out.push({ icon: '👑', text: `${nm}: all ${es.length} entries still in, ${rd(g.current_round)} under way` })
+                }
+              })
+            }
+          }
+        } catch { /* LMS is a bonus */ }
+
         if (!cancelled) setItems(out)
       } catch { if (!cancelled) setItems([]) }
     })()

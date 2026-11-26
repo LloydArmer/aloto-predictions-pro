@@ -113,7 +113,7 @@ const PLAYING = [
       ['Hidden until kick-off', 'Nobody sees your prediction before the fixture locks. Not other players, not your admin.'],
       ['Missed one?', 'If Saturday\'s early game has started, you can still predict Sunday\'s.'],
       ['Team form', 'Each fixture shows both teams\' last 5 games (W, D, L, oldest first) and their league position. League and cup games both count.'],
-      ['Headlines', 'The strip at the top of your Dashboard scrolls through the week\'s news: who has played Triple Points (shown once the gameweek kicks off), last gameweek\'s top scorer, the most exact scores, any full house and the biggest climber. Hold a finger on it to pause.'],
+      ['Headlines', 'The strip at the top of your Dashboard scrolls through the week\'s news: who has played Triple Points (shown once the gameweek kicks off), last gameweek\'s top scorer, the most exact scores, any full house and the biggest climber, plus your cup rounds and who is still in your Last Man Standing. Hold a finger on it to pause.'],
       ['Your average', 'Your Dashboard shows your average points per finished gameweek, everyone\'s average and your best week. Triple Points weeks count at their normal score.'],
     ],
   },
