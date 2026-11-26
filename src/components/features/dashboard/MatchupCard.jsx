@@ -408,8 +408,10 @@ async function build(competitionId, userId) {
 
     const ties = await roundTies(opponent, gw.id, userId, fixtures, activeRules, myTie)
 
-    // Each player's last five results in this cup, under their name.
-    const forms = await playerForms(opponent.competition_id || competitionId)
+    // Each player's last five cup results, under their name: every cup and
+    // group they play in, newest five, so a cup that has only just been drawn
+    // still shows how people have been getting on.
+    const forms = await playerForms(ties.flatMap(t => [t.left.uid, t.right.uid]).filter(Boolean))
     ties.forEach(t => {
       t.left.form = forms.get(t.left.uid) || []
       t.right.form = forms.get(t.right.uid) || []
@@ -575,32 +577,48 @@ async function roundTies(opponent, gameweekId, userId, fixtures, rules, myTie) {
 }
 
 /**
- * Every player's last five results in a cup, oldest first: group fixtures,
- * then knockout ties, finished ones only. W/D/L from the player's side, the
- * same chips Last Man Standing uses for teams. Never throws: no form is
- * better than no card.
+ * Each player's last five cup results, oldest first, across EVERY cup and
+ * group stage they are in (a brand-new cup has none of its own yet). Finished
+ * ties only, in gameweek order. W/D/L from the player's side, the same chips
+ * Last Man Standing uses for teams. Never throws: no form is better than no card.
  */
-async function playerForms(competitionId) {
+async function playerForms(userIds) {
   const forms = new Map()
+  const ids = [...new Set(userIds)]
+  if (!ids.length) return forms
   try {
+    const list = ids.join(',')
+    const who = `home_user_id.in.(${list}),away_user_id.in.(${list})`
     const [{ data: group }, { data: ko }] = await Promise.all([
       supabase.from('group_fixtures')
-        .select('home_user_id, away_user_id, home_points, away_points, result, round_number, home:home_user_id(display_name), away:away_user_id(display_name)')
-        .eq('competition_id', competitionId).eq('status', 'completed'),
+        .select('competition_id, home_user_id, away_user_id, home_points, away_points, result, round_number, gameweek_id, home:home_user_id(display_name), away:away_user_id(display_name)')
+        .eq('status', 'completed').or(who),
       supabase.from('bracket_matches')
-        .select('home_user_id, away_user_id, home_points, away_points, winner_user_id, round_order, is_replay, created_at, home:home_user_id(display_name), away:away_user_id(display_name)')
-        .eq('competition_id', competitionId).eq('status', 'completed'),
+        .select('competition_id, round, home_user_id, away_user_id, home_points, away_points, winner_user_id, round_order, is_replay, gameweek_id, home:home_user_id(display_name), away:away_user_id(display_name)')
+        .eq('status', 'completed').or(who),
     ])
+    // A knockout round can name its gameweek on the round rather than the tie.
+    const koComps = [...new Set((ko || []).filter(k => !k.gameweek_id).map(k => k.competition_id))]
+    const { data: rounds } = koComps.length
+      ? await supabase.from('bracket_round_gameweeks').select('competition_id, round, gameweek_id').in('competition_id', koComps)
+      : { data: [] }
+    const roundGw = new Map((rounds || []).map(r => [`${r.competition_id}:${r.round}`, r.gameweek_id]))
     const games = [
-      ...(group || []).sort((a, b) => a.round_number - b.round_number).map(g => ({
-        ...g, winner: g.result === 'home' ? g.home_user_id : g.result === 'away' ? g.away_user_id : null,
-      })),
-      ...(ko || []).sort((a, b) => a.round_order - b.round_order || (a.is_replay ? 1 : 0) - (b.is_replay ? 1 : 0))
-        .map(k => ({ ...k, winner: k.winner_user_id })),
+      ...(group || []).map(g => ({ ...g, gw: g.gameweek_id, sub: g.round_number,
+        winner: g.result === 'home' ? g.home_user_id : g.result === 'away' ? g.away_user_id : null })),
+      ...(ko || []).map(k => ({ ...k, gw: k.gameweek_id || roundGw.get(`${k.competition_id}:${k.round}`),
+        sub: 1000 + k.round_order * 2 + (k.is_replay ? 1 : 0), winner: k.winner_user_id })),
     ]
+    const gwIds = [...new Set(games.map(g => g.gw).filter(Boolean))]
+    const { data: gws } = gwIds.length
+      ? await supabase.from('gameweeks').select('id, number').in('id', gwIds)
+      : { data: [] }
+    const gwNum = new Map((gws || []).map(g => [g.id, parseInt(String(g.number ?? '').replace(/\D/g, ''), 10) || 0]))
+    games.sort((a, b) => (gwNum.get(a.gw) ?? 0) - (gwNum.get(b.gw) ?? 0) || a.sub - b.sub)
     games.forEach(g => {
       if (!g.home_user_id || !g.away_user_id) return
       ;[[g.home_user_id, true], [g.away_user_id, false]].forEach(([uid, home]) => {
+        if (!ids.includes(uid)) return
         const mine = home ? g.home_points : g.away_points
         const theirs = home ? g.away_points : g.home_points
         const res = g.winner ? (g.winner === uid ? 'W' : 'L') : 'D'
