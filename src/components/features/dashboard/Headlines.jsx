@@ -18,6 +18,7 @@ const list = names => names.length <= 1 ? names[0] : `${names.slice(0, -1).join(
  * climber, most exact scores and any full house, plus the knockout rounds
  * of the viewer's cups being played this gameweek and who went through last.
  *
+ * League news comes from the viewer's league, even on a cup's Dashboard.
  * Triple Points plays are only shown once the gameweek's first match has
  * kicked off. They can't be changed after that, and nobody gets a heads-up
  * on someone else's plan before the deadline.
@@ -30,7 +31,23 @@ export default function Headlines({ competitionId, isLeague, userId }) {
     let cancelled = false
     ;(async () => {
       try {
-        const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', competitionId)
+        // League news (top scorer, Triple Points, climbers) always comes from
+        // the LEAGUE: on a cup's Dashboard it uses the viewer's league that
+        // plays the same gameweeks, because Triple Points only exists there
+        // and a cup's own gameweek scores leave it out.
+        let src = competitionId, srcLeague = isLeague
+        if (!isLeague && userId) {
+          const { data: myLeagues } = await supabase.from('participants')
+            .select('competition_id, competitions!inner(format)').eq('user_id', userId).eq('competitions.format', 'league')
+          const { data: cupGws } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', competitionId)
+          const leagueIds = (myLeagues || []).map(l => l.competition_id)
+          if (leagueIds.length && cupGws?.length) {
+            const { data: shared } = await supabase.from('competition_gameweeks').select('competition_id')
+              .in('competition_id', leagueIds).in('gameweek_id', cupGws.map(g => g.gameweek_id)).limit(1)
+            if (shared?.[0]) { src = shared[0].competition_id; srcLeague = true }
+          }
+        }
+        const { data: links } = await supabase.from('competition_gameweeks').select('gameweek_id').eq('competition_id', src)
         const ids = (links || []).map(l => l.gameweek_id)
         if (!ids.length) { setItems([]); return }
         const { data: gwsRaw } = await supabase.from('gameweeks').select('id, number, status').in('id', ids)
@@ -40,20 +57,20 @@ export default function Headlines({ competitionId, isLeague, userId }) {
         const last = done[done.length - 1]
 
         const [{ data: parts }, { data: scores }] = await Promise.all([
-          supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', competitionId),
+          supabase.from('participants').select('user_id, profiles(display_name)').eq('competition_id', src),
           supabase.from('gameweek_scores').select('user_id, gameweek_id, points, exact_scores, full_house_results, full_house_scores')
-            .eq('competition_id', competitionId).in('gameweek_id', done.map(g => g.id)),
+            .eq('competition_id', src).in('gameweek_id', done.map(g => g.id)),
         ])
         const name = new Map((parts || []).map(p => [p.user_id, short(p.profiles?.display_name)]))
         const out = []
 
         // Triple Points this gameweek, once it has kicked off.
-        if (isLeague && current) {
+        if (srcLeague && current) {
           const { data: fx } = await supabase.from('fixtures').select('kickoff_time').eq('gameweek_id', current.id)
           const first = (fx || []).map(f => f.kickoff_time).sort()[0]
           if (first && new Date(first) <= new Date()) {
             const { data: tp } = await supabase.from('triple_points_plays').select('user_id')
-              .eq('competition_id', competitionId).eq('gameweek_id', current.id)
+              .eq('competition_id', src).eq('gameweek_id', current.id)
             const who = (tp || []).map(t => name.get(t.user_id)).filter(Boolean)
             if (who.length) out.push({ icon: '⚡', text: `${list(who)} ${who.length === 1 ? 'has' : 'have'} played Triple Points in ${label(current.number)}` })
           }
@@ -62,8 +79,8 @@ export default function Headlines({ competitionId, isLeague, userId }) {
         if (last) {
           const rows = (scores || []).filter(s => s.gameweek_id === last.id)
           // Who played Triple Points last gameweek, and what it got them.
-          const { data: lastTp } = isLeague
-            ? await supabase.from('triple_points_plays').select('user_id').eq('competition_id', competitionId).eq('gameweek_id', last.id)
+          const { data: lastTp } = srcLeague
+            ? await supabase.from('triple_points_plays').select('user_id').eq('competition_id', src).eq('gameweek_id', last.id)
             : { data: [] }
           const tripled = new Set((lastTp || []).map(t => t.user_id))
           const top = Math.max(0, ...rows.map(r => r.points || 0))
@@ -164,7 +181,7 @@ export default function Headlines({ competitionId, isLeague, userId }) {
       } catch { if (!cancelled) setItems([]) }
     })()
     return () => { cancelled = true }
-  }, [competitionId, isLeague])
+  }, [competitionId, isLeague, userId])
 
   if (!items.length) return null
   const line = items.map((h, i) => (
