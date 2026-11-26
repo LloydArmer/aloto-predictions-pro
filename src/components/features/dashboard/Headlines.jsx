@@ -57,9 +57,22 @@ export default function Headlines({ competitionId, isLeague }) {
 
         if (last) {
           const rows = (scores || []).filter(s => s.gameweek_id === last.id)
+          // Who played Triple Points last gameweek, and what it got them.
+          const { data: lastTp } = isLeague
+            ? await supabase.from('triple_points_plays').select('user_id').eq('competition_id', competitionId).eq('gameweek_id', last.id)
+            : { data: [] }
+          const tripled = new Set((lastTp || []).map(t => t.user_id))
           const top = Math.max(0, ...rows.map(r => r.points || 0))
-          const toppers = rows.filter(r => (r.points || 0) === top && top > 0).map(r => name.get(r.user_id)).filter(Boolean)
-          if (toppers.length) out.push({ icon: '🏆', text: `${list(toppers)} topped ${label(last.number)} with ${top} pts` })
+          const topRows = rows.filter(r => (r.points || 0) === top && top > 0)
+          const toppers = topRows.map(r => name.get(r.user_id)).filter(Boolean)
+          if (toppers.length) {
+            const boosted = topRows.length === 1 && tripled.has(topRows[0].user_id)
+            out.push({ icon: '🏆', text: `${list(toppers)} topped ${label(last.number)} with ${top} pts${boosted ? ', thanks to Triple Points ⚡' : ''}` })
+          }
+          const tpRows = rows.filter(r => tripled.has(r.user_id) && name.get(r.user_id))
+          if (tpRows.length) {
+            out.push({ icon: '⚡', text: `Triple Points in ${label(last.number)}: ${list(tpRows.map(r => `${name.get(r.user_id)} ${r.points || 0} pts`))}` })
+          }
 
           const exact = Math.max(0, ...rows.map(r => r.exact_scores || 0))
           const sharp = rows.filter(r => (r.exact_scores || 0) === exact && exact > 1).map(r => name.get(r.user_id)).filter(Boolean)
