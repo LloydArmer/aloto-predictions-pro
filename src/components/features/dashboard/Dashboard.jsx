@@ -267,7 +267,7 @@ export default function Dashboard() {
         <>
           {/* Above the stats. High enough to be seen, and it disappears for a
               week if dismissed rather than nagging on every visit. */}
-          <Headlines competitionId={comp} isLeague={compObj?.format === 'league'} />
+          <Headlines competitionId={comp} isLeague={compObj?.format === 'league'} userId={user?.id} />
 
           <KitPrompt />
 
