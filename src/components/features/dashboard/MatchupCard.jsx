@@ -378,11 +378,13 @@ async function build(competitionId, userId) {
     (f.home_score != null && f.away_score != null) || FINISHED.includes(f.live_status))
 
   const settled = counted.length > 0 && played.length === counted.length
-  const started = played.length > 0 || live
   const progress = { played: played.length, total: counted.length }
   // Before a ball is kicked, say when the first one is, rather than a bare
   // "Not started" that reads as if the gameweek isn't open.
   const firstKickoff = counted.map(f => f.kickoff_time).filter(Boolean).sort()[0] || null
+  // Started once the first match has kicked off, even if the live feed hasn't
+  // reported it yet.
+  const started = played.length > 0 || live || (!!firstKickoff && new Date(firstKickoff) <= new Date())
 
   // Every cup tie or group fixture this player has in this gameweek. The one
   // belonging to the competition on screen gets the big card; ties in other

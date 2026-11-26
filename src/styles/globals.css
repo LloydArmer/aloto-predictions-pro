@@ -350,3 +350,13 @@
     .score-box { width: 46px; height: 46px; font-size: 17px; }
   }
 }
+
+/* Dashboard headlines ticker (Headlines.jsx). Runs right to left forever; the
+   content is doubled so the loop is seamless. Paused under a finger and for
+   anyone who has asked their phone for less motion. */
+@keyframes headline-scroll { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+.headline-track { display: inline-flex; white-space: nowrap; animation: headline-scroll var(--headline-secs, 30s) linear infinite; }
+.headline-strip:active .headline-track { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .headline-track { animation: none; white-space: normal; flex-wrap: wrap; }
+}

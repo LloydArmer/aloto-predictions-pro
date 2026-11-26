@@ -8,6 +8,7 @@ import { sortGameweeks } from '../../../lib/gameweeks'
 import { useLiveActivity } from '../../../hooks/useLiveActivity'
 import { supabase } from '../../../lib/supabase'
 import AveragePoints from './AveragePoints'
+import Headlines from './Headlines'
 import { StatCard, Badge, Card, SectionLabel, Spinner, EmptyState } from '../../ui'
 import JoinCompetition from '../competitions/JoinCompetition'
 import ReminderBanner from './ReminderBanner'
@@ -266,6 +267,8 @@ export default function Dashboard() {
         <>
           {/* Above the stats. High enough to be seen, and it disappears for a
               week if dismissed rather than nagging on every visit. */}
+          <Headlines competitionId={comp} isLeague={compObj?.format === 'league'} />
+
           <KitPrompt />
 
           {/* The head to head, above everything. It is the thing people open
