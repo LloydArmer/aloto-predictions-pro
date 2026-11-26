@@ -5,6 +5,7 @@ import Shirt, { PlayerMark } from '../../ui/Shirt'
 import { effectiveScore, isInPlay } from '../../../lib/livePoints'
 import { resolvePointRules, defaultRules, scoreOnePrediction } from '../../../lib/scoring'
 import { FormChips } from '../lms/LmsStats'
+import { format } from 'date-fns'
 
 /**
  * The head-to-head card at the top of the dashboard.
@@ -99,7 +100,7 @@ export default function MatchupCard({ competitionId, userId }) {
 
   /* ---- League summary ---- */
   const { gameweek, competitionName, myPoints, position, playerCount, movement, best,
-          live, inPlayCount, settled, started, progress } = data
+          live, inPlayCount, settled, started, progress, firstKickoff } = data
 
   // Three states, not two. FINAL only once every fixture that counts has a
   // result; part-played shows how far through it is; a gameweek nobody has
@@ -128,7 +129,9 @@ export default function MatchupCard({ competitionId, userId }) {
 
       <div className="flex items-center px-3.5 py-3.5">
         <Stat value={started ? myPoints : '—'}
-          label={!started ? 'Not started' : settled ? 'Your points' : 'Points so far'}/>
+          label={!started
+            ? (firstKickoff ? `Kicks off ${format(new Date(firstKickoff), 'EEE HH:mm')}` : 'Not started')
+            : settled ? 'Your points' : 'Points so far'}/>
 
         <Stat
           value={movement === 0 || movement == null
@@ -335,7 +338,7 @@ async function build(competitionId, userId) {
 
   const [{ data: fixtures }, rules] = await Promise.all([
     supabase.from('fixtures')
-      .select('id, status, home_score, away_score, live_home_score, live_away_score, live_status')
+      .select('id, status, kickoff_time, home_score, away_score, live_home_score, live_away_score, live_status')
       .eq('gameweek_id', gw.id),
     resolvePointRules(supabase, competitionId),
   ])
@@ -362,6 +365,9 @@ async function build(competitionId, userId) {
   const settled = counted.length > 0 && played.length === counted.length
   const started = played.length > 0 || live
   const progress = { played: played.length, total: counted.length }
+  // Before a ball is kicked, say when the first one is, rather than a bare
+  // "Not started" that reads as if the gameweek isn't open.
+  const firstKickoff = counted.map(f => f.kickoff_time).filter(Boolean).sort()[0] || null
 
   // Every cup tie or group fixture this player has in this gameweek. The one
   // belonging to the competition on screen gets the big card; ties in other
@@ -481,7 +487,7 @@ async function build(competitionId, userId) {
     kind: 'league',
     competitionName: comp?.name ?? '',
     gameweek: gw.number,
-    live, inPlayCount, settled, started, progress,
+    live, inPlayCount, settled, started, progress, firstKickoff,
     myPoints: mine?.points ?? 0,
     position,
     playerCount: scores.length,

@@ -97,7 +97,7 @@ export default function PlayerAverages({ competitionId, userId }) {
               </span>
               <span className="w-12 text-right font-semibold" style={{ color: sort === 'avg' ? 'var(--accent)' : 'var(--txt-primary)' }}>{one(r.avg)}</span>
               <span className="w-12 text-right" style={{ color: 'var(--txt-second)' }}>
-                {r.best}{r.bestGw ? <span className="block text-[10px]" style={{ color: 'var(--txt-muted)' }}>GW{r.bestGw}</span> : null}
+                {r.best}{r.bestGw ? <span className="block text-[10px]" style={{ color: 'var(--txt-muted)' }}>{/^\d+$/.test(String(r.bestGw)) ? `GW${r.bestGw}` : r.bestGw}</span> : null}
               </span>
               <span className="w-12 text-right" style={{ color: 'var(--txt-second)' }}>{r.exact}</span>
               <span className="w-12 text-right" style={{ color: 'var(--txt-second)' }}>{r.correct}</span>

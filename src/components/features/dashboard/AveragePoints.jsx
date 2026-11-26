@@ -71,7 +71,7 @@ export default function AveragePoints({ competitionId, userId }) {
           )}
           {avg.best && (
             <p style={{ color: 'var(--txt-second)' }}>
-              Best: <strong style={{ color: 'var(--txt-primary)' }}>{avg.best.points}</strong> in GW{avg.best.number}
+              Best: <strong style={{ color: 'var(--txt-primary)' }}>{avg.best.points}</strong> in {/^\d+$/.test(String(avg.best.number)) ? `GW${avg.best.number}` : avg.best.number}
             </p>
           )}
         </div>
