@@ -6,6 +6,7 @@ import { effectiveScore, isInPlay } from '../../../lib/livePoints'
 import { resolvePointRules, defaultRules, scoreOnePrediction } from '../../../lib/scoring'
 import { FormChips } from '../lms/LmsStats'
 import { format } from 'date-fns'
+import { countdown } from '../../../lib/lms'
 
 /**
  * The head-to-head card at the top of the dashboard.
@@ -100,7 +101,7 @@ export default function MatchupCard({ competitionId, userId }) {
 
   /* ---- League summary ---- */
   const { gameweek, competitionName, myPoints, position, playerCount, movement, best,
-          live, inPlayCount, settled, started, progress, firstKickoff } = data
+          live, inPlayCount, settled, started, progress, firstKickoff, preview } = data
 
   // Three states, not two. FINAL only once every fixture that counts has a
   // result; part-played shows how far through it is; a gameweek nobody has
@@ -127,24 +128,38 @@ export default function MatchupCard({ competitionId, userId }) {
         </span>
       </div>
 
-      <div className="flex items-center px-3.5 py-3.5">
-        <Stat value={started ? myPoints : '—'}
-          label={!started
-            ? (firstKickoff ? `Kicks off ${format(new Date(firstKickoff), 'EEE HH:mm')}` : 'Not started')
-            : settled ? 'Your points' : 'Points so far'}/>
-
-        <Stat
-          value={movement === 0 || movement == null
-            ? (position ? `#${position}` : '—')
-            : `${movement > 0 ? '▲' : '▼'}${Math.abs(movement)}`}
-          // Green for climbing, red for falling, plain when static. Movement is
-          // the bit people look for.
-          colour={movement > 0 ? 'var(--green)' : movement < 0 ? 'var(--red)' : undefined}
-          label={position ? `#${position} of ${playerCount}` : ''}
-        />
-
-        {best && <Stat value={best.points} label={`Best — ${best.name}`} muted/>}
-      </div>
+      {!started && preview ? (
+        <div className="flex items-center px-3.5 py-3.5">
+          <Stat value={(firstKickoff && countdown(firstKickoff)) || 'Soon'}
+            label={firstKickoff ? `kick-off ${format(new Date(firstKickoff), 'EEE HH:mm')}` : 'to kick-off'}/>
+          <Stat value={`${preview.predicted}/${preview.total}`}
+            colour={preview.total && preview.predicted === preview.total ? 'var(--green)' : 'var(--amber)'}
+            label={preview.total && preview.predicted === preview.total ? 'all predicted' : 'predicted'}/>
+          {preview.last && (
+            <Stat value={preview.last.points} muted
+              label={`pts in ${/^\d+$/.test(String(preview.last.number)) ? `GW${preview.last.number}` : preview.last.number}`}/>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center px-3.5 py-3.5">
+          <Stat value={started ? myPoints : '—'}
+            label={!started
+              ? (firstKickoff ? `Kicks off ${format(new Date(firstKickoff), 'EEE HH:mm')}` : 'Not started')
+              : settled ? 'Your points' : 'Points so far'}/>
+  
+          <Stat
+            value={movement === 0 || movement == null
+              ? (position ? `#${position}` : '—')
+              : `${movement > 0 ? '▲' : '▼'}${Math.abs(movement)}`}
+            // Green for climbing, red for falling, plain when static. Movement is
+            // the bit people look for.
+            colour={movement > 0 ? 'var(--green)' : movement < 0 ? 'var(--red)' : undefined}
+            label={position ? `#${position} of ${playerCount}` : ''}
+          />
+  
+          {best && <Stat value={best.points} label={`Best — ${best.name}`} muted/>}
+        </div>
+      )}
     </Card>
     {others}
     </>
@@ -485,11 +500,31 @@ async function build(competitionId, userId) {
     if (prevPos && position) movement = prevPos - position
   }
 
+  // Before kick-off: time to the first match, how many of its fixtures you've
+  // predicted, and what you scored last week, instead of two empty dashes.
+  let preview = null
+  if (!started) {
+    const { data: myPreds } = await supabase.from('predictions')
+      .select('fixture_id').eq('gameweek_id', gw.id).eq('user_id', userId)
+    const ids = new Set(counted.map(f => f.id))
+    // Last finished gameweek before this one: what you scored in it.
+    const prev = [...ordered].reverse().find(g => g.status === 'completed' && gwOrder(g) < gwOrder(gw))
+    const { data: prevScore } = prev
+      ? await supabase.from('gameweek_scores').select('points')
+          .eq('competition_id', competitionId).eq('gameweek_id', prev.id).eq('user_id', userId).maybeSingle()
+      : { data: null }
+    preview = {
+      last: prev ? { number: prev.number, points: prevScore?.points ?? 0 } : null,
+      predicted: (myPreds || []).filter(p => ids.has(p.fixture_id)).length,
+      total: counted.length,
+    }
+  }
+
   return {
     kind: 'league',
     competitionName: comp?.name ?? '',
     gameweek: gw.number,
-    live, inPlayCount, settled, started, progress, firstKickoff,
+    live, inPlayCount, settled, started, progress, firstKickoff, preview,
     myPoints: mine?.points ?? 0,
     position,
     playerCount: scores.length,
